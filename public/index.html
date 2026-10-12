@@ -64,10 +64,11 @@
                 <h2>Biến một chủ đề<br />thành <span>video học nhanh.</span></h2>
                 <p>Ba câu giao tiếp thật. Giọng đọc Việt – Anh. Một Reel dọc sẵn sàng cho lịch của bạn.</p>
                 <div class="hero-controls">
-                  <label class="select-wrap"><span class="sr-only">Chọn chủ đề</span><select id="topic-select"><option value="">Chọn một chủ đề</option></select><span class="select-chevron">⌄</span></label>
+                  <label class="select-wrap"><span class="sr-only">Chọn chủ đề</span><select id="topic-select"><option value="">AI t&#7921; ch&#7885;n ch&#7911; &#273;&#7873;</option></select><span class="select-chevron">⌄</span></label>
                   <button class="button button-outline" id="add-topic">+ Thêm chủ đề</button>
                   <button class="button button-dark" id="generate-button"><span>✳</span> Tạo video mới <span class="button-arrow">↗</span></button>
                 </div>
+                <p class="content-history-note" id="content-history-note" aria-live="polite"></p>
                 <label class="checkline"><input type="checkbox" id="local-template" /> Chỉ dùng mẫu cục bộ phù hợp nếu AI chưa kết nối</label>
               </div>
               <div class="hero-art" aria-hidden="true">
@@ -129,7 +130,8 @@
                   <section class="voice-side-settings" aria-label="Cài đặt giọng tiếng Việt">
                     <label>Giọng tiếng Việt<select id="vi-voice"><option value="vi-VN-HoaiMyNeural">Hoài My — Nữ</option><option value="vi-VN-NamMinhNeural">Nam Minh — Nam</option></select></label>
                     <button class="button button-outline button-small" id="preview-vi" type="button">▶ Nghe thử tiếng Việt</button>
-                    <label>Tốc độ tiếng Anh<input id="en-rate" value="-8%" /></label>
+                    <div class="speed-control"><label for="en-rate-slider">Tốc độ <output id="en-rate-label">1x</output></label><input id="en-rate-slider" type="range" min="50" max="150" step="1" value="100" /></div>
+<details class="manual-voice-settings"><summary>Nhập giọng / tốc độ thủ công</summary><label>Tốc độ tiếng Anh (Edge TTS)<input id="en-rate" value="-8%" /></label></details>
                   </section>
                   <section class="english-voice-picker" aria-labelledby="english-voice-heading">
                     <label id="english-voice-heading" for="en-locale">Giọng đọc<select id="en-locale"><option value="en-US">Tiếng Anh (Mỹ) (en-US)</option></select></label>
@@ -150,7 +152,7 @@
           </section>
 
           <section class="view" id="view-logs">
-            <div class="page-title-row"><div><div class="eyebrow">THEO DÕI HỆ THỐNG</div><h1>Nhật ký hoạt động</h1><p class="lead">Lỗi kỹ thuật, trạng thái job và các sự kiện từ worker.</p></div><a class="button button-outline" href="/api/logs/export">Tải nhật ký đã ẩn thông tin nhạy cảm ↓</a></div>
+            <div class="page-title-row"><div><div class="eyebrow">THEO DÕI HỆ THỐNG</div><h1>Nhật ký hoạt động</h1><p class="lead">Lỗi kỹ thuật, trạng thái job và các sự kiện từ worker.</p></div><div class="page-title-actions"><a class="button button-outline" href="/api/logs/export">Tải nhật ký đã ẩn thông tin nhạy cảm ↓</a><button id="clear-logs" class="button button-outline clear-logs" type="button">Xóa nhật ký</button></div></div>
             <div class="panel log-panel"><div class="log-header"><span>THỜI GIAN</span><span>MỨC</span><span>SỰ KIỆN</span><span>CHI TIẾT</span></div><div id="logs-list"></div></div>
           </section>
         </div>

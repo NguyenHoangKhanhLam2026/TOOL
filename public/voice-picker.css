@@ -18,3 +18,5 @@
 .english-voice-choice:focus-visible,.english-voice-preview:focus-visible{outline:3px solid #6254ef55;outline-offset:1px}
 @media(max-width:850px){.voice-settings-layout{grid-template-columns:1fr}.voice-side-settings{grid-template-columns:1fr 1fr;align-items:end}.voice-side-settings .button{height:40px}}
 @media(max-width:520px){.voice-side-settings{grid-template-columns:1fr}.english-voice-grid{min-width:680px}}
+
+.speed-control label{display:flex;align-items:center;justify-content:space-between}.speed-control output{color:#172b55;font-size:13px;font-weight:700}.voice-side-settings .speed-control input[type=range]{height:18px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;accent-color:#1677f2;cursor:pointer}.manual-voice-settings{color:#344054;font-size:11px}.manual-voice-settings summary{cursor:pointer;list-style:disclosure-closed}.manual-voice-settings[open] summary{margin-bottom:9px}.manual-voice-settings label{margin-top:8px}

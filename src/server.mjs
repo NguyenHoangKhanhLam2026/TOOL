@@ -176,6 +176,36 @@ function safeOutputPath(value) {
   return resolved.startsWith(`${path.resolve(PATHS.output)}${path.sep}`) ? resolved : null;
 }
 
+function attachVideoProgress(videos) {
+  const jobs = db.prepare("SELECT id,status,payload_json FROM jobs WHERE type='create_video' ORDER BY created_at DESC LIMIT 100").all().map((job) => {
+    try { return { ...job, payload: JSON.parse(job.payload_json) }; } catch { return { ...job, payload: {} }; }
+  });
+  const logs = db.prepare('SELECT job_id,code,message FROM logs WHERE id IN (SELECT id FROM logs ORDER BY id DESC LIMIT 1500) ORDER BY id').all();
+  const logsByJob = new Map();
+  for (const row of logs) {
+    if (!logsByJob.has(row.job_id)) logsByJob.set(row.job_id, []);
+    logsByJob.get(row.job_id).push(row);
+  }
+  return videos.map((video) => {
+    const job = jobs.find((item) => item.payload.videoId === video.id || item.payload.scriptId === video.script_id);
+    const events = job ? logsByJob.get(job.id) || [] : [];
+    const lastAttempt = events.findLastIndex((item) => item.code === 'JOB_STARTED');
+    const currentEvents = events.slice(Math.max(0, lastAttempt));
+    const scriptReady = currentEvents.some((item) => item.code === 'SCRIPT_READY');
+    const ttsReady = currentEvents.some((item) => item.code === 'TTS_READY');
+    const videoReady = ['ready', 'scheduled', 'published'].includes(video.status);
+    const failed = video.status === 'failed';
+    const failedStep = failed ? !scriptReady ? 'script' : !ttsReady ? 'voice' : 'render' : null;
+    const steps = [
+      { id: 'script', label: 'Kịch bản', status: scriptReady || videoReady ? 'done' : failedStep === 'script' ? 'error' : 'active' },
+      { id: 'voice', label: 'Giọng đọc', status: ttsReady || videoReady ? 'done' : failedStep === 'voice' ? 'error' : scriptReady ? 'active' : 'waiting' },
+      { id: 'render', label: 'Render video', status: videoReady ? 'done' : failedStep === 'render' ? 'error' : ttsReady ? 'active' : 'waiting' },
+      { id: 'complete', label: 'Hoàn tất', status: videoReady ? 'done' : 'waiting' }
+    ];
+    return { ...video, pipeline: { steps, error: failed ? video.last_error : null } };
+  });
+}
+
 async function handleApi(req, res, url) {
   if (req.method !== 'GET' && !sameOrigin(req)) return json(res, 403, { error: 'Yêu cầu không cùng nguồn.' });
   const route = `${req.method} ${url.pathname}`;
@@ -289,7 +319,7 @@ async function handleApi(req, res, url) {
     try { const topic = addTopic(body.category, body.title); log('INFO', 'TOPIC_ADDED', `Đã thêm chủ đề ${topic.title}.`); return json(res, 201, { topic }); }
     catch (error) { return json(res, 400, { error: /UNIQUE constraint failed/i.test(error.message) ? 'Chủ đề này đã có trong thư viện.' : error.message }); }
   }
-  if (route === 'GET /api/videos') return json(res, 200, { videos: listVideos() });
+  if (route === 'GET /api/videos') return json(res, 200, { videos: attachVideoProgress(listVideos()) });
   const deleteVideoMatch = url.pathname.match(/^\/api\/videos\/([\w-]+)$/);
   if (req.method === 'DELETE' && deleteVideoMatch) {
     let video;
@@ -313,6 +343,11 @@ async function handleApi(req, res, url) {
   if (route === 'GET /api/schedules') return json(res, 200, { schedules: listSchedules() });
   if (route === 'GET /api/publish-history') return json(res, 200, { history: listPublishHistory() });
   if (route === 'GET /api/logs') return json(res, 200, { logs: db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id DESC LIMIT 100').all() });
+  if (route === 'DELETE /api/logs') {
+    const count = db.prepare('SELECT COUNT(*) AS count FROM logs').get().count;
+    db.prepare('DELETE FROM logs').run();
+    return json(res, 200, { deleted: count });
+  }
   if (route === 'GET /api/logs/export') {
     const lines = db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id').all();
     const safe = lines.map((item) => ({ ...item, message: item.message.replace(/(access_token|refresh_token|Authorization)\s*[:=]\s*[^\s,&]+/gi, '$1=[ẩn]') }));

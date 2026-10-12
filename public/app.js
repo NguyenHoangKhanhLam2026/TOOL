@@ -1,6 +1,7 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
+const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
 const state = { view: 'overview', topics: [], videos: [], schedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null };
 const EN_US_VOICES = [
   { id: 'en-US-AvaNeural', name: 'Ava', gender: 'Nữ' },
@@ -53,6 +54,7 @@ function setView(view) {
   $$('.view').forEach((item) => item.classList.toggle('active', item.id === `view-${view}`));
   $$('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
   $('#page-breadcrumb').textContent = labels[view];
+  if (view === 'library') loadVideos();
   if (view === 'schedule') loadSchedules();
   if (view === 'settings') loadSettings();
   if (view === 'logs') loadLogs();
@@ -70,6 +72,18 @@ function statusClass(status) {
   return 'neutral';
 }
 
+function pipelineErrorMessage(video) {
+  const error = String(video.pipeline?.error || video.last_error || 'Có lỗi trong quá trình tạo video.');
+  if (error.includes('NoAudioReceived')) return 'Edge TTS không trả âm thanh. Thử lại hoặc đổi giọng đọc.';
+  return error.split(/\r?\n/).find(Boolean)?.slice(0, 220) || 'Có lỗi trong quá trình tạo video.';
+}
+
+function videoProgressMarkup(video) {
+  if (!video.pipeline?.steps) return '';
+  const steps = video.pipeline.steps.map((step) => `<div class="pipeline-step ${step.status}" title="${escapeHtml(step.label)}: ${step.status === 'done' ? 'Đã hoàn tất' : step.status === 'error' ? 'Bị lỗi' : step.status === 'active' ? 'Đang thực hiện' : 'Đang chờ'}"><span class="pipeline-light"></span><span>${escapeHtml(step.label)}</span></div>`).join('');
+  const error = video.pipeline.error ? `<p class="pipeline-error">${escapeHtml(pipelineErrorMessage(video))}</p>` : '';
+  return `<div class="video-pipeline" aria-label="Tiến trình tạo video">${steps}</div>${error}`;
+}
 function videoCard(video, compact = false) {
   const thumb = video.thumbnail_path ? `<img src="/api/videos/${encodeURIComponent(video.id)}/thumbnail" alt="Thumbnail ${escapeHtml(video.topic)}" loading="lazy" />` : `<span class="video-placeholder">${escapeHtml(video.topic || 'Video mới')}<small>${video.status === 'processing' ? 'Đang tạo các đoạn đọc và render…' : video.last_error ? escapeHtml(video.last_error) : 'Chưa có bản render'}</small></span>`;
   const cardClass = compact ? 'video-card' : 'library-row';
@@ -83,7 +97,7 @@ function videoCard(video, compact = false) {
   const caption = escapeHtml(video.caption || '');
   const category = video.category || video.provider || 'Video học tiếng Anh';
   if (compact) return `<article class="${cardClass}"><a class="video-thumb" href="${video.video_path ? `/api/videos/${encodeURIComponent(video.id)}/file` : '#'}" ${video.video_path ? 'target="_blank"' : ''}>${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></a><div class="video-info"><h3>${escapeHtml(video.topic || video.title)}</h3><p>${caption}</p><div class="video-meta"><span class="video-category">${escapeHtml(category)}</span><div class="video-actions">${actions}</div></div></div></article>`;
-  return `<article class="${cardClass}"><div class="video-thumb">${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></div><div class="library-main"><h3>${escapeHtml(video.title || video.topic)}</h3><p class="library-caption">${caption}</p><div class="row-meta"><span>${escapeHtml(video.category || 'Chưa phân nhóm')}</span><span>•</span><span>${dateText(video.created_at, { dateStyle: 'medium' })}</span><span>•</span><span>${escapeHtml(video.provider || 'AI')}</span>${video.duration_seconds ? `<span>•</span><span>${Number(video.duration_seconds).toFixed(1)} giây</span>` : ''}</div>${video.last_error ? `<p class="inline-status">${escapeHtml(video.last_error)}</p>` : ''}</div><span class="state-pill ${statusClass(video.status)}">${escapeHtml(statusName(video.status, video))}</span><div class="row-actions">${actions}</div></article>`;
+  return `<article class="${cardClass}"><div class="video-thumb">${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></div><div class="library-main"><h3>${escapeHtml(video.title || video.topic)}</h3><p class="library-caption">${caption}</p><div class="row-meta"><span>${escapeHtml(video.category || 'Chưa phân nhóm')}</span><span>•</span><span>${dateText(video.created_at, { dateStyle: 'medium' })}</span><span>•</span><span>${escapeHtml(video.provider || 'AI')}</span>${video.duration_seconds ? `<span>•</span><span>${Number(video.duration_seconds).toFixed(1)} giây</span>` : ''}</div>${video.last_error && !video.pipeline?.error ? `<p class="inline-status">${escapeHtml(video.last_error)}</p>` : ''}${videoProgressMarkup(video)}</div><span class="state-pill ${statusClass(video.status)}">${escapeHtml(statusName(video.status, video))}</span><div class="row-actions">${actions}</div></article>`;
 }
 
 function renderOverview() {
@@ -97,6 +111,11 @@ function renderOverview() {
   $('#worker-label').textContent = data.system.worker ? 'Worker đang hoạt động' : 'Worker đang tắt';
   $('#worker-pill').classList.toggle('offline', !data.system.worker);
   $('#worker-note').hidden = data.system.worker;
+  const history = data.contentHistory || { count: 0, bytes: 0 };
+  const historyBytes = Number(history.bytes) || 0;
+  const historySize = historyBytes >= 1024 * 1024 ? `${(historyBytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.ceil(historyBytes / 1024)} KB`;
+  const historyWarning = historyBytes >= 100 * 1024 * 1024 ? ' C\u1ea3nh b\u00e1o: l\u1ecbch s\u1eed \u0111\u00e3 v\u01b0\u1ee3t 100 MB.' : '';
+  $('#content-history-note').textContent = `\u0110\u1ec3 tr\u1ed1ng ch\u1ee7 \u0111\u1ec1, AI t\u1ef1 ch\u1ecdn. \u0110ang gi\u1eef ${history.count} k\u1ecbch b\u1ea3n ch\u1ed1ng tr\u00f9ng (${historySize} v\u0103n b\u1ea3n); x\u00f3a MP4 kh\u00f4ng x\u00f3a l\u1ecbch s\u1eed.${historyWarning}`;
   const ready = (ok) => `<span class="status-indicator ${ok ? 'ok' : ''}"></span>`;
   const rows = [
     ['SQLite', data.system.database, data.system.database ? 'Đang lưu dữ liệu local' : 'Chưa khởi tạo database'],
@@ -126,7 +145,7 @@ function renderTopics() {
     if (!groups.has(topic.category)) groups.set(topic.category, []);
     groups.get(topic.category).push(topic);
   }
-  select.innerHTML = `<option value="">Chọn một chủ đề</option>` + [...groups].map(([category, topics]) => `<optgroup label="${escapeHtml(category)}">${topics.map((topic) => `<option value="${escapeHtml(topic.id)}">${escapeHtml(topic.title)}${topic.used_at && Date.now() - new Date(topic.used_at).getTime() < 14 * 86400000 ? ' · vừa dùng' : ''}</option>`).join('')}</optgroup>`).join('');
+  select.innerHTML = `<option value="">${autoTopicLabel}</option>` + [...groups].map(([category, topics]) => `<optgroup label="${escapeHtml(category)}">${topics.map((topic) => `<option value="${escapeHtml(topic.id)}">${escapeHtml(topic.title)}${topic.used_at && Date.now() - new Date(topic.used_at).getTime() < 14 * 86400000 ? ' · vừa dùng' : ''}</option>`).join('')}</optgroup>`).join('');
 }
 
 function renderLibrary() {
@@ -211,6 +230,22 @@ function renderEnglishVoices() {
   list.append(fragment);
 }
 
+function syncEnglishRateControls(rate) {
+  const input = $('#en-rate');
+  if (rate !== undefined) input.value = rate;
+  const match = String(input.value).match(/^([+-])(\d{1,3})%$/);
+  if (!match) return;
+  const slider = $('#en-rate-slider');
+  slider.value = Math.max(Number(slider.min), Math.min(Number(slider.max), 100 + (match[1] === '-' ? -1 : 1) * Number(match[2])));
+  $('#en-rate-label').textContent = `${(Number(slider.value) / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
+}
+
+function setEnglishRateFromSlider() {
+  const speed = Number($('#en-rate-slider').value);
+  const percent = speed - 100;
+  $('#en-rate').value = `${percent > 0 ? '+' : ''}${percent}%`;
+  $('#en-rate-label').textContent = `${(speed / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
+}
 async function loadSettings() {
   const [settings, system] = await Promise.all([api('/api/settings'), api('/api/system')]);
   state.settings = settings; state.system = system;
@@ -219,7 +254,7 @@ async function loadSettings() {
   selectSavedVoice($('#vi-voice'), settings.viVoice);
   $('#en-voice').value = settings.enVoice || 'en-US-JennyNeural';
   renderEnglishVoices();
-  $('#en-rate').value = settings.enRate;
+  syncEnglishRateControls(settings.enRate);
   $('#post-time').value = settings.postTime;
   $('#posts-per-day').value = settings.postsPerDay;
   $('#prepare-days').value = settings.prepareAheadDays;
@@ -256,6 +291,8 @@ async function generateVideo() {
 }
 
 let watchedJobs = new Set();
+let libraryProgressTimer;
+function refreshLibraryProgress() { if (state.view !== 'library') return; clearTimeout(libraryProgressTimer); libraryProgressTimer = setTimeout(() => loadVideos().catch(() => {}), 650); }
 function connectRealtime() {
   const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   socket.addEventListener('open', () => $('#worker-pill').classList.remove('offline'));
@@ -263,6 +300,7 @@ function connectRealtime() {
     let message;
     try { message = JSON.parse(event.data); } catch { return; }
     const log = message.data || {};
+    if (['tts:progress', 'render:progress', 'job:status'].includes(message.type)) refreshLibraryProgress();
     if (message.type === 'tts:progress' && watchedJobs.has(log.job_id)) {
       const detail = log.detail || {};
       $('#worker-label').textContent = `Đang tạo giọng ${detail.language === 'vi' ? 'Việt' : 'Anh'} · ${Math.round(Number(log.detail?.progress || 0) * 100)}%`;
@@ -454,6 +492,15 @@ function setupEvents() {
   $$('[data-generate]').forEach((button) => button.addEventListener('click', () => { setView('overview'); $('#generate-button').focus(); }));
   $('#generate-button').addEventListener('click', generateVideo);
   $$('.filter-tab').forEach((button) => button.addEventListener('click', () => { state.filter = button.dataset.filter; $$('.filter-tab').forEach((tab) => tab.classList.toggle('active', tab === button)); renderLibrary(); }));
+  $('#en-rate-slider').addEventListener('input', setEnglishRateFromSlider);
+  $('#en-rate').addEventListener('input', () => syncEnglishRateControls());
+  $('#clear-logs').addEventListener('click', async () => {
+    if (!confirm('Xóa toàn bộ nhật ký hoạt động?')) return;
+    const button = $('#clear-logs'); button.disabled = true;
+    try { const result = await api('/api/logs', { method: 'DELETE' }); state.logs = []; renderLogs(); toast(`Đã xóa ${result.deleted} mục nhật ký.`); }
+    catch (error) { toast('Không xóa được nhật ký', true, error.message); }
+    finally { button.disabled = false; }
+  });
   $('#save-settings').addEventListener('click', saveSettings);
   $('#save-facebook').addEventListener('click', saveFacebook);
   $('#test-facebook').addEventListener('click', testFacebook);

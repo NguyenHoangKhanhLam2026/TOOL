@@ -126,7 +126,7 @@ export async function renderVideo(script, videoId, audioFiles, { onProgress = ()
   for (const item of durations) if (!fs.existsSync(item.path)) throw new Error(`Thiếu âm thanh ${item.language} ở câu ${item.index}.`);
   onTimeline(timeline);
 
-  const persistentLayers = ['background', 'character', 'logo', 'footer'];
+  const persistentLayers = ['background', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'footer'];
   const layersByState = {
     intro: [...persistentLayers, 'title'],
     vietnamese: [...persistentLayers, 'scene-number', 'vietnamese-card'],
@@ -178,7 +178,13 @@ export async function renderVideo(script, videoId, audioFiles, { onProgress = ()
   const audioFilters = [];
   for (let index = 0; index < audioItems.length; index++) {
     const inputIndex = index;
-    audioFilters.push(`[${inputIndex}:a]aformat=sample_rates=44100:channel_layouts=stereo[a${index}]`);
+    const item = audioItems[index];
+    const filtersForItem = ['aresample=44100:async=0:first_pts=0', 'aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo'];
+    if (!item.silence) {
+      const fadeDuration = Math.min(0.012, item.duration / 2);
+      filtersForItem.push('deesser=i=0.3:m=0.5:f=0.5', 'afade=t=in:st=0:d=0.008', `afade=t=out:st=${Math.max(0, item.duration - fadeDuration).toFixed(3)}:d=${fadeDuration.toFixed(3)}`);
+    }
+    audioFilters.push(`[${inputIndex}:a]${filtersForItem.join(',')}[a${index}]`);
   }
   audioFilters.push(`${audioItems.map((_, index) => `[a${index}]`).join('')}concat=n=${audioItems.length}:v=0:a=1[aout]`);
   filters.push(...audioFilters);

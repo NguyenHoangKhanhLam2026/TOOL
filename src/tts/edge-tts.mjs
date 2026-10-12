@@ -17,6 +17,14 @@ function run(command, args, options = {}) {
   });
 }
 
+function isRetryableTtsError(error) {
+  return /NoAudioReceived|ConnectionResetError|ClientConnectorError|ServerDisconnectedError|TimeoutError|timed out|Cannot connect|connection reset|connection refused|network is unreachable/i.test(error.message);
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 export async function synthesizeScript(script, videoId, { onProgress = () => {} } = {}) {
   const settings = getSettings();
   const workDir = path.join(PATHS.temporary, videoId, 'audio');
@@ -46,11 +54,30 @@ export async function synthesizeScript(script, videoId, { onProgress = () => {} 
 
 export async function synthesizeSpeech(text, voice, rate, output) {
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  const requestPath = `${output}.${process.pid}.request.json`;
-  fs.writeFileSync(requestPath, JSON.stringify({ text, voice, rate, output }), 'utf8');
-  try {
-    await run(PYTHON_BIN, [path.join(ROOT, 'packages', 'tts-engine', 'python', 'synthesize.py'), requestPath]);
-  } finally { fs.rmSync(requestPath, { force: true }); }
-  if (!fs.existsSync(output) || fs.statSync(output).size < 1024) throw new Error('Edge TTS không tạo được file âm thanh hợp lệ.');
-  return output;
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const partialOutput = output + '.' + process.pid + '.' + crypto.randomUUID() + '.partial.mp3';
+    const requestPath = partialOutput + '.request.json';
+    fs.writeFileSync(requestPath, JSON.stringify({ text, voice, rate, output: partialOutput }), 'utf8');
+    try {
+      await run(PYTHON_BIN, [path.join(ROOT, 'packages', 'tts-engine', 'python', 'synthesize.py'), requestPath]);
+      if (!fs.existsSync(partialOutput) || fs.statSync(partialOutput).size < 1024) {
+        throw new Error('Edge TTS did not create a valid audio file.');
+      }
+      fs.rmSync(output, { force: true });
+      fs.renameSync(partialOutput, output);
+      return output;
+    } catch (error) {
+      lastError = error;
+      fs.rmSync(partialOutput, { force: true });
+      if (attempt === 3 || !isRetryableTtsError(error)) break;
+      await wait(attempt * 1000);
+    } finally {
+      fs.rmSync(requestPath, { force: true });
+    }
+  }
+  if (/NoAudioReceived/i.test(lastError?.message ?? '')) {
+    throw new Error('Edge TTS returned no audio after 3 attempts. Check the connection and try again.');
+  }
+  throw lastError;
 }

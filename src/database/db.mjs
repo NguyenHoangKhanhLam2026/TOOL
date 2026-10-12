@@ -154,6 +154,7 @@ export function recoverStaleJobs() {
 export function getOverview() {
   const count = (sql) => Number(db.prepare(sql).get().count);
   const rows = db.prepare('SELECT v.*,s.topic,s.title,s.caption,s.thumbnail_title FROM videos v JOIN scripts s ON s.id=v.script_id ORDER BY v.created_at DESC LIMIT 12').all();
+  const contentHistory = db.prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(length(CAST(topic || category || level || title || hook || dialogues_json || caption || hashtags_json || thumbnail_title || content_hash AS BLOB))),0) AS bytes FROM scripts`).get();
   return {
     counts: {
       videos: count('SELECT COUNT(*) AS count FROM videos'),
@@ -162,6 +163,7 @@ export function getOverview() {
       published: count("SELECT COUNT(*) AS count FROM videos WHERE status='published'"),
       queued: count("SELECT COUNT(*) AS count FROM jobs WHERE status IN ('pending','running')")
     },
+    contentHistory: { count: Number(contentHistory.count), bytes: Number(contentHistory.bytes) },
     videos: rows,
     logs: db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id DESC LIMIT 8').all()
   };
@@ -183,7 +185,8 @@ export function addTopic(category, title) {
 export function pickTopic(requestedId = null) {
   const exclusion = new Date(Date.now() - 14 * 24 * 60 * 60_000).toISOString();
   if (requestedId) return db.prepare('SELECT * FROM topics WHERE id=?').get(requestedId) || null;
-  return db.prepare('SELECT * FROM topics WHERE used_at IS NULL OR used_at<? ORDER BY used_at IS NOT NULL, random() LIMIT 1').get(exclusion) || db.prepare('SELECT * FROM topics ORDER BY random() LIMIT 1').get();
+  return db.prepare('SELECT * FROM topics WHERE used_at IS NULL OR used_at<? ORDER BY used_at IS NOT NULL, used_at, random() LIMIT 1').get(exclusion)
+    || db.prepare('SELECT * FROM topics ORDER BY used_at, random() LIMIT 1').get();
 }
 
 export function insertScript(script, topicId, provider) {

@@ -17,7 +17,7 @@ fs.writeFileSync(FONT_CONFIG, `<?xml version="1.0"?><fontconfig><dir>${fontDirXm
 process.env.FONTCONFIG_FILE ||= FONT_CONFIG;
 const { default: sharp } = await import('sharp');
 
-const REQUIRED_LAYER_IDS = ['background', 'logo', 'title', 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary', 'character', 'footer', 'cta'];
+const REQUIRED_LAYER_IDS = ['background', 'logo', 'facebook-logo', 'youtube-logo', 'title', 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary', 'character', 'footer', 'cta'];
 const VALID_SCENES = new Set(['intro', 'vietnamese', 'bilingual', 'vocabulary', 'transition', 'cta']);
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
@@ -39,7 +39,7 @@ export function validateVisualTemplate(input) {
   for (const key of ['primaryColor', 'secondaryColor', 'accentColor', 'bodyColor', 'backgroundColor', 'softGray']) {
     if (!COLOR_PATTERN.test(input.brand[key] || '')) throw new Error(`Màu thương hiệu ${key} không hợp lệ.`);
   }
-  if (!Array.isArray(input.layers) || input.layers.length !== REQUIRED_LAYER_IDS.length) throw new Error('Template phải có đủ 10 layer chuẩn.');
+  if (!Array.isArray(input.layers) || input.layers.length !== REQUIRED_LAYER_IDS.length) throw new Error('Template phải có đủ 12 layer chuẩn.');
   const seen = new Set();
   const layers = input.layers.map((layer) => {
     if (!REQUIRED_LAYER_IDS.includes(layer.id) || seen.has(layer.id)) throw new Error('Template có layer thiếu hoặc trùng ID.');
@@ -52,6 +52,7 @@ export function validateVisualTemplate(input) {
     }
     if (clean.x + clean.width > 2160 || clean.y + clean.height > 3000) throw new Error(`Layer ${layer.id} vượt giới hạn scene.`);
     if (clean.visible !== undefined && typeof clean.visible !== 'boolean') throw new Error(`Cờ hiển thị ${layer.id} không hợp lệ.`);
+    if (clean.id === 'footer' && clean.text !== undefined && (typeof clean.text !== 'string' || clean.text.length > 160)) throw new Error('Nội dung Footer tối đa 160 ký tự.');
     if (clean.fontSize !== undefined && (!Number.isFinite(Number(clean.fontSize)) || Number(clean.fontSize) < 12 || Number(clean.fontSize) > 140)) throw new Error(`Cỡ chữ ${layer.id} phải trong khoảng 12–140.`);
     for (const key of ['color', 'fill', 'stroke', 'accent', 'highlightColor']) {
       if (clean[key] !== undefined && !COLOR_PATTERN.test(clean[key])) throw new Error(`Màu ${layer.id}.${key} không hợp lệ.`);
@@ -197,7 +198,8 @@ async function layerMarkup(layerId, context) {
   if (!layer || layer.visible === false) return '';
   const brand = template.brand;
   const opacity = Math.max(0, Math.min(1, Number(layer.opacity ?? 1) * opacityFor(state, layerId)));
-  const groupStart = `<g id="layer-${xml(layerId)}" data-layer-id="${xml(layerId)}" opacity="${opacity}"${layerId === 'background' ? ' pointer-events="none"' : ' pointer-events="visiblePainted"'}>`;
+  const pointerEvents = ['background'].includes(layerId) ? 'none' : ['facebook-logo', 'youtube-logo'].includes(layerId) ? 'all' : 'visiblePainted';
+  const groupStart = `<g id="layer-${xml(layerId)}" data-layer-id="${xml(layerId)}" opacity="${opacity}" pointer-events="${pointerEvents}">`;
   if (layerId === 'background') {
     const href = await imageHref(layer.asset || 'background-main.png', embedAssets);
     return `${groupStart}<image x="${layer.x}" y="${layer.y}" width="${layer.width}" height="${layer.height}" preserveAspectRatio="xMidYMid slice" href="${href}"/></g>`;
@@ -207,6 +209,14 @@ async function layerMarkup(layerId, context) {
     const href = await imageHref(layer.asset || defaultAsset, embedAssets);
     const preserve = layerId === 'character' ? 'xMidYMax meet' : 'xMinYMid meet';
     return `${groupStart}<image x="${layer.x}" y="${layer.y}" width="${layer.width}" height="${layer.height}" preserveAspectRatio="${preserve}" href="${href}"/></g>`;
+  }
+  if (layerId === 'facebook-logo') {
+    const size = Math.min(layer.width, layer.height);
+    return `${groupStart}<rect x="${layer.x - 6}" y="${layer.y - 6}" width="${layer.width + 12}" height="${layer.height + 12}" fill="transparent" pointer-events="all"/><rect x="${layer.x}" y="${layer.y}" width="${layer.width}" height="${layer.height}" rx="${size * 0.12}" fill="#1877F2"/><text x="${layer.x + layer.width / 2}" y="${layer.y + layer.height * 0.82}" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="${size * 0.86}" font-weight="700">f</text></g>`;
+  }
+  if (layerId === 'youtube-logo') {
+    const radius = Math.min(layer.height * 0.22, layer.width * 0.18);
+    return `${groupStart}<rect x="${layer.x - 6}" y="${layer.y - 6}" width="${layer.width + 12}" height="${layer.height + 12}" fill="transparent" pointer-events="all"/><rect x="${layer.x}" y="${layer.y + layer.height * 0.12}" width="${layer.width}" height="${layer.height * 0.76}" rx="${radius}" fill="#FF0033"/><path d="M${layer.x + layer.width * 0.43} ${layer.y + layer.height * 0.31} L${layer.x + layer.width * 0.43} ${layer.y + layer.height * 0.69} L${layer.x + layer.width * 0.69} ${layer.y + layer.height * 0.5} Z" fill="#FFFFFF"/></g>`;
   }
   if (layerId === 'title') {
     const title = String(script.title || script.topic || 'Ba câu giao tiếp hôm nay');
@@ -237,12 +247,16 @@ async function layerMarkup(layerId, context) {
   }
   if (layerId === 'footer') {
     const x = layer.x; const y = layer.y + 30;
-    const icon = brand.iconFile ? `<image x="${x - 2}" y="${y - 28}" width="30" height="30" preserveAspectRatio="xMidYMid meet" href="${await imageHref(brand.iconFile, embedAssets)}"/>` : `<circle cx="${x + 11}" cy="${y - 8}" r="10" fill="${brand.secondaryColor}"/><path d="M${x + 4},${y - 8}h14M${x + 11},${y - 15}v14" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>`;
-    return `${groupStart}${icon}<text x="${x + 34}" y="${y}" fill="${color(layer.color, brand.primaryColor)}" font-family="${xml(brand.fontFamily)}, Segoe UI, sans-serif" font-size="${layer.fontSize || 24}" font-weight="${layer.fontWeight || 700}">${xml(brand.pageName)}</text></g>`;
+    const icon = brand.iconFile ? `<image x="${x - 2}" y="${y - 28}" width="30" height="30" preserveAspectRatio="xMidYMid meet" href="${await imageHref(brand.iconFile, embedAssets)}"/>` : '';
+    const textX = x + (brand.iconFile ? 34 : 0);
+    return `${groupStart}${icon}<text x="${textX}" y="${y}" fill="${color(layer.color, brand.primaryColor)}" font-family="${xml(brand.fontFamily)}, Segoe UI, sans-serif" font-size="${layer.fontSize || 24}" font-weight="${layer.fontWeight || 700}">${xml(layer.text?.trim() || brand.pageName)}</text></g>`;
   }
   if (layerId === 'cta') {
     const x = layer.x; const y = layer.y; const w = layer.width; const h = layer.height;
-    return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 26}" fill="${color(layer.fill, brand.primaryColor)}" filter="url(#softShadow)"/><circle cx="${x + 38}" cy="${y + 38}" r="10" fill="${brand.accentColor}"/><text x="${x + 62}" y="${y + 48}" fill="${color(layer.color, '#FFFFFF')}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="${layer.fontSize || 32}" font-weight="700">Follow ${xml(brand.pageName)}</text><text x="${x + 28}" y="${y + 104}" fill="#F6F0E5" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="25" font-weight="500">Luyện nói tiếng Anh mỗi ngày!</text></g>`;
+    const buttonWidth = Math.min(500, w);
+    const buttonHeight = 118;
+    const buttonX = x + (w - buttonWidth) / 2;
+    return `${groupStart}<rect x="${buttonX}" y="${y}" width="${buttonWidth}" height="${buttonHeight}" rx="${layer.radius || 0}" fill="${color(layer.fill, brand.primaryColor)}" filter="url(#softShadow)"/><text x="${x + w / 2}" y="${y + 78}" text-anchor="middle" fill="${color(layer.color, '#FFFFFF')}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="56" font-weight="700">FOLLOW</text><text x="${x + w / 2}" y="${y + 190}" text-anchor="middle" fill="#263244" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="40" font-weight="500">Follow kênh để luyện phản xạ</text><text x="${x + w / 2}" y="${y + 244}" text-anchor="middle" fill="#263244" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="40" font-weight="500">tiếng Anh mỗi ngày!</text></g>`;
   }
   return '';
 }
@@ -252,9 +266,9 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
   const sceneScript = script || { title: 'Học tiếng Anh giao tiếp mỗi ngày', topic: 'Giao tiếp hằng ngày', dialogues: [] };
   const geometry = layerGeometry(template, sceneScript, index);
   const context = { template, script: sceneScript, state, index, embedAssets, geometry };
-  const order = includeBackground ? ['background', 'character', 'logo', 'title', 'footer', 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary', 'cta'] : ['character', 'logo', 'title', 'footer', 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary', 'cta'];
+  const order = includeBackground ? ['background', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'title', 'footer', 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary', 'cta'] : ['character', 'logo', 'facebook-logo', 'youtube-logo', 'title', 'footer', 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary', 'cta'];
   const activeLayers = forceLayer ? [forceLayer] : Array.isArray(includeLayers) ? order.filter((id) => includeLayers.includes(id)) : order.filter((id) => {
-    if (id === 'background' || id === 'logo' || id === 'character' || id === 'footer') return true;
+    if (id === 'background' || id === 'logo' || id === 'facebook-logo' || id === 'youtube-logo' || id === 'character' || id === 'footer') return true;
     if (id === 'title') return state === 'intro';
     if (id === 'scene-number' || id === 'vietnamese-card') return ['vietnamese', 'bilingual', 'vocabulary', 'transition'].includes(state);
     if (id === 'english-card') return ['bilingual', 'vocabulary', 'transition'].includes(state);

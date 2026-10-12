@@ -27,6 +27,25 @@ export function assertDistinctFromRecent(script, recentSentences, threshold = 0.
   return script;
 }
 
+export function assertDistinctFromHistory(script, history, threshold = 0.82) {
+  for (const previous of history) {
+    for (const line of script.dialogues) {
+      for (const saved of previous) {
+        if (sentenceSimilarity(line.english, saved.english) >= threshold) {
+          throw new Error(`C\u00e2u ti\u1ebfng Anh g\u1ea7n gi\u1ed1ng n\u1ed9i dung \u0111\u00e3 l\u01b0u: "${saved.english}".`);
+        }
+        if (sentenceSimilarity(line.vietnamese, saved.vietnamese) >= threshold) {
+          throw new Error(`C\u00e2u ti\u1ebfng Vi\u1ec7t g\u1ea7n gi\u1ed1ng n\u1ed9i dung \u0111\u00e3 l\u01b0u: "${saved.vietnamese}".`);
+        }
+        if (normalizeText(line.term) && normalizeText(line.term) === normalizeText(saved.term)) {
+          throw new Error(`C\u1ee5m t\u1eeb tr\u1ecdng t\u00e2m \u0111\u00e3 xu\u1ea5t hi\u1ec7n trong n\u1ed9i dung \u0111\u00e3 l\u01b0u: "${saved.term}".`);
+        }
+      }
+    }
+  }
+  return script;
+}
+
 export function validateScript(raw, { maxLineChars = 150 } = {}) {
   const script = typeof raw === 'string' ? JSON.parse(raw) : raw;
   const errors = [];
@@ -45,6 +64,7 @@ export function validateScript(raw, { maxLineChars = 150 } = {}) {
     if (d?.english?.length > maxLineChars || d?.vietnamese?.length > Math.max(180, maxLineChars)) errors.push(`Câu ${i + 1} quá dài để hiển thị.`);
   }
   if (Array.isArray(script.dialogues) && new Set(script.dialogues.map((d) => normalizeText(d?.english))).size !== script.dialogues.length) errors.push('Các câu tiếng Anh bị lặp.');
+  if (Array.isArray(script.dialogues) && new Set(script.dialogues.map((dialogue) => normalizeText(dialogue?.term))).size !== script.dialogues.length) errors.push('A key phrase is repeated within the script.');
   if (errors.length) throw new Error(errors.join(' '));
   script.dialogues.forEach((d, i) => { d.index = i + 1; d.grammarNote ||= ''; });
   if (!Array.isArray(script.hashtags)) script.hashtags = [];
