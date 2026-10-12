@@ -27,6 +27,77 @@ export function startOfLocalDay(now = new Date(), timeZone = 'Asia/Ho_Chi_Minh')
   return zonedLocalToDate(`${local}T00:00`, timeZone);
 }
 
+export function localScheduleSlot(value, timeZone = 'Asia/Ho_Chi_Minh') {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date(value)).map((part) => [part.type, part.value]));
+  const day = `${parts.year}-${parts.month}-${parts.day}`;
+  const minute = Number(parts.hour) * 60 + Number(parts.minute);
+  return { day, minute, key: `${day}T${parts.hour}:${parts.minute}` };
+}
+
+const minimumPostGapMinutes = 5 * 60;
+const maximumPostGapMinutes = 8 * 60;
+
+function shiftLocalDate(dateKey, days) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+export function randomNextScheduledTime(after, timeZone = 'Asia/Ho_Chi_Minh', postsPerDay = 1, schedules = []) {
+  const now = new Date(after);
+  if (!Number.isFinite(now.getTime())) throw new Error('Mốc thời gian đặt lịch không hợp lệ.');
+  const limit = Math.max(1, Math.min(4, Number(postsPerDay) || 1));
+  const occupied = new Map();
+  const scheduleTimes = [];
+  for (const schedule of schedules) {
+    try {
+      const scheduledAt = new Date(schedule.scheduled_at ?? schedule.scheduledAt);
+      if (!Number.isFinite(scheduledAt.getTime())) continue;
+      scheduleTimes.push(scheduledAt);
+      const slot = localScheduleSlot(scheduledAt, timeZone);
+      if (!occupied.has(slot.day)) occupied.set(slot.day, { minutes: new Set(), count: 0 });
+      const day = occupied.get(slot.day);
+      day.minutes.add(slot.minute);
+      day.count += 1;
+    } catch {}
+  }
+  const latestSchedule = scheduleTimes.length ? new Date(Math.max(...scheduleTimes.map((date) => date.getTime()))) : null;
+  const base = latestSchedule && latestSchedule > now ? latestSchedule : now;
+  const isAvailable = (candidate) => {
+    const slot = localScheduleSlot(candidate, timeZone);
+    const used = occupied.get(slot.day);
+    return (!used || used.count < limit) && !used?.minutes.has(slot.minute);
+  };
+  if (latestSchedule) {
+    const intervalCandidates = [];
+    for (let gap = minimumPostGapMinutes; gap <= maximumPostGapMinutes; gap += 1) {
+      const candidate = new Date(base.getTime() + gap * 60_000);
+      if (candidate > now && isAvailable(candidate)) intervalCandidates.push(candidate);
+    }
+    if (intervalCandidates.length) return intervalCandidates[Math.floor(Math.random() * intervalCandidates.length)];
+  }
+  const firstDay = localScheduleSlot(base, timeZone).day;
+  for (let offset = 0; offset <= 370; offset += 1) {
+    const day = shiftLocalDate(firstDay, offset);
+    const start = zonedLocalToDate(`${day}T00:00`, timeZone);
+    const end = zonedLocalToDate(`${shiftLocalDate(day, 1)}T00:00`, timeZone);
+    const dayMinutes = Math.floor((end.getTime() - start.getTime()) / 60_000);
+    const used = occupied.get(day) || { minutes: new Set(), count: 0 };
+    if (used.count >= limit) continue;
+    const earliestMinute = offset === 0 ? Math.max(0, Math.floor((base.getTime() - start.getTime()) / 60_000) + 1) : 0;
+    const available = [];
+    for (let minute = earliestMinute; minute < dayMinutes; minute += 1) {
+      const candidate = new Date(start.getTime() + minute * 60_000);
+      const slot = localScheduleSlot(candidate, timeZone);
+      if (candidate > base && slot.day === day && !used.minutes.has(slot.minute)) available.push(candidate);
+    }
+    if (available.length) return available[Math.floor(Math.random() * available.length)];
+  }
+  throw new Error('Không tìm được khung giờ đăng còn trống trong 371 ngày tới.');
+}
+
 export function nextScheduledTime(after, postTime = '19:30', timeZone = 'Asia/Ho_Chi_Minh', postsPerDay = 1) {
   const [hour, minute] = postTime.split(':').map(Number);
   const now = new Date(after);

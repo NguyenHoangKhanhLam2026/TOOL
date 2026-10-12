@@ -1,8 +1,8 @@
-import { insertVideo, updateVideo, log, createSchedule, listSchedules, getSettings, getScript, getVideo, findVideoByScriptId, updateJobPayload } from '../database/db.mjs';
+import { insertVideo, updateVideo, log, createRandomSchedule, getSettings, getScript, getVideo, findVideoByScriptId, updateJobPayload } from '../database/db.mjs';
 import { createScript } from '../ai/script-service.mjs';
+import { formatCaption } from '../ai/hashtag-utils.mjs';
 import { synthesizeScript } from '../tts/edge-tts.mjs';
 import { renderVideo } from '../../packages/video-engine/render.mjs';
-import { nextScheduledTime } from '../scheduler/time.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -38,18 +38,19 @@ export async function createVideoJob(job) {
     });
     const outputDir = path.dirname(result.videoPath);
     fs.writeFileSync(path.join(outputDir, 'script.json'), JSON.stringify(script, null, 2), 'utf8');
-    fs.writeFileSync(path.join(outputDir, 'caption.txt'), `${script.caption}\n\n${script.hashtags.join(' ')}`, 'utf8');
+    fs.writeFileSync(path.join(outputDir, 'caption.txt'), formatCaption(script.caption, script.hashtags), 'utf8');
     fs.writeFileSync(path.join(outputDir, 'audio-manifest.json'), JSON.stringify(result.audioManifest, null, 2), 'utf8');
     fs.writeFileSync(path.join(outputDir, 'render-manifest.json'), JSON.stringify(result.renderManifest, null, 2), 'utf8');
     updateVideo(videoId, { status: 'ready', video_path: result.videoPath, thumbnail_path: result.thumbnailPath, duration_seconds: result.duration, last_error: null });
     log('INFO', 'VIDEO_READY', `Video ${result.width}x${result.height}, ${result.fps}, ${result.duration.toFixed(1)} giây.`, job.id);
     const settings = getSettings();
     if (job.payload.autoSchedule || settings.autoPublishEnabled) {
-      const schedules = listSchedules().filter((item) => item.status === 'scheduled' || item.status === 'publishing');
-      const last = schedules.reduce((best, item) => !best || item.scheduled_at > best ? item.scheduled_at : best, null);
-      const scheduledAt = nextScheduledTime(last ? new Date(last) : new Date(), settings.postTime, settings.timezone, settings.postsPerDay).toISOString();
-      createSchedule(videoId, scheduledAt);
-      log('INFO', 'POST_SCHEDULED', `Đã xếp video vào lịch ${scheduledAt}.`, job.id);
+      try {
+        const schedule = createRandomSchedule(videoId, settings.timezone, settings.postsPerDay);
+        log('INFO', 'POST_SCHEDULED', `Đã xếp video vào lịch ${schedule.scheduledAt}.`, job.id);
+      } catch (error) {
+        log('ERROR', 'AUTO_SCHEDULE_FAILED', error.message, job.id);
+      }
     }
     return { videoId, scriptId, provider, ...result };
   } catch (error) {

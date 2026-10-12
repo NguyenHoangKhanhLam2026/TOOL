@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PATHS, DEFAULTS } from '../config.mjs';
 import { TOPICS } from '../topics.mjs';
+import { ensureBrandHashtag, formatCaption } from '../ai/hashtag-utils.mjs';
+import { localScheduleSlot, randomNextScheduledTime } from '../scheduler/time.mjs';
 
 for (const dir of [path.dirname(PATHS.database), PATHS.output, PATHS.temporary, PATHS.logs, PATHS.private, PATHS.backups]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -62,6 +64,11 @@ db.exec(`
 `);
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(1,?)').run(new Date().toISOString());
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(2,?)').run(new Date().toISOString());
+if (!db.prepare('PRAGMA table_info(videos)').all().some((column) => column.name === 'archived_at')) {
+  try { db.exec('ALTER TABLE videos ADD COLUMN archived_at TEXT'); }
+  catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
+}
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(3,?)').run(new Date().toISOString());
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)');
 const now = new Date().toISOString();
@@ -153,13 +160,17 @@ export function recoverStaleJobs() {
 
 export function getOverview() {
   const count = (sql) => Number(db.prepare(sql).get().count);
-  const rows = db.prepare('SELECT v.*,s.topic,s.title,s.caption,s.thumbnail_title FROM videos v JOIN scripts s ON s.id=v.script_id ORDER BY v.created_at DESC LIMIT 12').all();
+  const rows = db.prepare('SELECT v.*,s.topic,s.title,s.caption,s.hashtags_json,s.thumbnail_title FROM videos v JOIN scripts s ON s.id=v.script_id WHERE v.archived_at IS NULL ORDER BY v.created_at DESC LIMIT 12').all()
+    .map((row) => {
+      const hashtags = ensureBrandHashtag(JSON.parse(row.hashtags_json));
+      return { ...row, hashtags, captionText: formatCaption(row.caption, hashtags) };
+    });
   const contentHistory = db.prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(length(CAST(topic || category || level || title || hook || dialogues_json || caption || hashtags_json || thumbnail_title || content_hash AS BLOB))),0) AS bytes FROM scripts`).get();
   return {
     counts: {
-      videos: count('SELECT COUNT(*) AS count FROM videos'),
-      ready: count("SELECT COUNT(*) AS count FROM videos WHERE status='ready'"),
-      scheduled: count("SELECT COUNT(*) AS count FROM videos WHERE status='scheduled'"),
+      videos: count('SELECT COUNT(*) AS count FROM videos WHERE archived_at IS NULL'),
+      ready: count("SELECT COUNT(*) AS count FROM videos WHERE archived_at IS NULL AND status='ready'"),
+      scheduled: count("SELECT COUNT(*) AS count FROM videos WHERE archived_at IS NULL AND status='scheduled'"),
       published: count("SELECT COUNT(*) AS count FROM videos WHERE status='published'"),
       queued: count("SELECT COUNT(*) AS count FROM jobs WHERE status IN ('pending','running')")
     },
@@ -190,6 +201,8 @@ export function pickTopic(requestedId = null) {
 }
 
 export function insertScript(script, topicId, provider) {
+  script.hashtags = ensureBrandHashtag(script.hashtags);
+  script.caption = formatCaption(script.caption, script.hashtags);
   const existing = db.prepare('SELECT id FROM scripts WHERE content_hash=?').get(script.contentHash);
   if (existing) throw new Error('Kịch bản trùng với nội dung đã lưu; hãy chọn chủ đề khác.');
   db.prepare(`INSERT INTO scripts(id,topic_id,topic,category,level,title,hook,dialogues_json,caption,hashtags_json,thumbnail_title,provider,content_hash,created_at)
@@ -208,7 +221,9 @@ export function insertVideo(scriptId, status = 'script_ready') {
 
 export function getScript(scriptId) {
   const row = db.prepare('SELECT * FROM scripts WHERE id=?').get(scriptId);
-  return row ? { ...row, dialogues: JSON.parse(row.dialogues_json), hashtags: JSON.parse(row.hashtags_json), thumbnailTitle: row.thumbnail_title, createdAt: row.created_at, contentHash: row.content_hash } : null;
+  if (!row) return null;
+  const hashtags = ensureBrandHashtag(JSON.parse(row.hashtags_json));
+  return { ...row, dialogues: JSON.parse(row.dialogues_json), hashtags, captionText: formatCaption(row.caption, hashtags), thumbnailTitle: row.thumbnail_title, createdAt: row.created_at, contentHash: row.content_hash };
 }
 
 export function getVideo(videoId) {
@@ -226,9 +241,19 @@ export function updateVideo(videoId, patch) {
   db.prepare(sql).run(...keys.map((key) => patch[key]), new Date().toISOString(), videoId);
 }
 
+export function archivePublishedVideo(videoId) {
+  const stamp = new Date().toISOString();
+  const result = db.prepare("UPDATE videos SET archived_at=?,updated_at=? WHERE id=? AND status='published' AND archived_at IS NULL")
+    .run(stamp, stamp, videoId);
+  return Number(result.changes) === 1;
+}
+
 export function listVideos() {
-  return db.prepare('SELECT v.*,s.topic,s.title,s.caption,s.hashtags_json,s.dialogues_json,s.provider FROM videos v JOIN scripts s ON s.id=v.script_id ORDER BY v.created_at DESC').all()
-    .map((v) => ({ ...v, dialogues: JSON.parse(v.dialogues_json), hashtags: JSON.parse(v.hashtags_json) }));
+  return db.prepare('SELECT v.*,s.topic,s.title,s.caption,s.hashtags_json,s.dialogues_json,s.provider FROM videos v JOIN scripts s ON s.id=v.script_id WHERE v.archived_at IS NULL ORDER BY v.created_at DESC').all()
+    .map((video) => {
+      const hashtags = ensureBrandHashtag(JSON.parse(video.hashtags_json));
+      return { ...video, dialogues: JSON.parse(video.dialogues_json), hashtags, captionText: formatCaption(video.caption, hashtags) };
+    });
 }
 
 export function deleteVideo(videoId) {
@@ -275,10 +300,7 @@ export function updatePublishHistory(id, patch) {
     .run(...keys.map((key) => patch[key]), id);
 }
 
-export function createSchedule(videoId, scheduledAt) {
-  const video = db.prepare('SELECT id,status FROM videos WHERE id=?').get(videoId);
-  if (!video) throw new Error('Không tìm thấy video.');
-  if (!['ready', 'scheduled'].includes(video.status)) throw new Error('Video chưa sẵn sàng để lên lịch.');
+function insertSchedule(videoId, scheduledAt) {
   const stamp = new Date().toISOString();
   const id = crypto.randomUUID();
   db.prepare("INSERT INTO scheduled_posts(id,video_id,scheduled_at,status,created_at,updated_at) VALUES(?,?,?,'scheduled',?,?)")
@@ -287,8 +309,54 @@ export function createSchedule(videoId, scheduledAt) {
   return { id, videoId, scheduledAt, status: 'scheduled' };
 }
 
+function scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay) {
+  const video = db.prepare('SELECT id,status,archived_at FROM videos WHERE id=?').get(videoId);
+  if (!video) throw new Error('Không tìm thấy video.');
+  if (video.archived_at || !['ready', 'scheduled'].includes(video.status)) throw new Error('Video chưa sẵn sàng để lên lịch.');
+  if (db.prepare('SELECT 1 FROM scheduled_posts WHERE video_id=? LIMIT 1').get(videoId)) throw new Error('Video này đã có trong lịch đăng.');
+  const slot = localScheduleSlot(scheduledAt, timeZone);
+  const sameDay = db.prepare('SELECT scheduled_at FROM scheduled_posts').all()
+    .map((row) => localScheduleSlot(row.scheduled_at, timeZone))
+    .filter((item) => item.day === slot.day);
+  if (sameDay.some((item) => item.minute === slot.minute)) {
+    throw Object.assign(new Error('Ngày này đã có video được xếp ở khung giờ này.'), { statusCode: 409 });
+  }
+  if (sameDay.length >= Math.max(1, Math.min(4, Number(postsPerDay) || 1))) {
+    throw Object.assign(new Error('Ngày này đã đủ số video theo giới hạn đăng mỗi ngày.'), { statusCode: 409 });
+  }
+}
+
+export function createSchedule(videoId, scheduledAt) {
+  const settings = getSettings();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    scheduleConstraints(videoId, scheduledAt, settings.timezone, settings.postsPerDay);
+    const schedule = insertSchedule(videoId, scheduledAt);
+    db.exec('COMMIT');
+    return schedule;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function createRandomSchedule(videoId, timeZone = getSettings().timezone, postsPerDay = getSettings().postsPerDay, after = new Date()) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const schedules = db.prepare('SELECT scheduled_at FROM scheduled_posts').all();
+    const scheduledAt = randomNextScheduledTime(after, timeZone, postsPerDay, schedules).toISOString();
+    scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay);
+    const schedule = insertSchedule(videoId, scheduledAt);
+    db.exec('COMMIT');
+    return schedule;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 export function listSchedules() {
-  return db.prepare(`SELECT p.*,v.status AS video_status,s.topic,s.title,s.caption FROM scheduled_posts p
+  return db.prepare(`SELECT p.*,v.status AS video_status,COALESCE(v.last_error,(SELECT h.error FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1)) AS error,s.topic,s.title,s.caption FROM scheduled_posts p
     JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id ORDER BY p.scheduled_at`).all();
 }
 

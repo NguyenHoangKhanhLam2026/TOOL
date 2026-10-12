@@ -94,7 +94,7 @@ function videoCard(video, compact = false) {
     video.video_path ? `<a class="mini-action" href="/api/videos/${encodeURIComponent(video.id)}/file" download>MP4 ↓</a>` : '',
     !compact ? `<button class="mini-action danger-action" data-delete-video-id="${escapeHtml(video.id)}" ${['processing', 'script_ready', 'publishing'].includes(video.status) ? 'disabled title="Không thể xóa khi video đang được tạo hoặc đăng"' : ''}>Xóa</button>` : ''
   ].filter(Boolean).join('');
-  const caption = escapeHtml(video.caption || '');
+  const caption = escapeHtml(video.captionText || video.caption || '');
   const category = video.category || video.provider || 'Video học tiếng Anh';
   if (compact) return `<article class="${cardClass}"><a class="video-thumb" href="${video.video_path ? `/api/videos/${encodeURIComponent(video.id)}/file` : '#'}" ${video.video_path ? 'target="_blank"' : ''}>${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></a><div class="video-info"><h3>${escapeHtml(video.topic || video.title)}</h3><p>${caption}</p><div class="video-meta"><span class="video-category">${escapeHtml(category)}</span><div class="video-actions">${actions}</div></div></div></article>`;
   return `<article class="${cardClass}"><div class="video-thumb">${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></div><div class="library-main"><h3>${escapeHtml(video.title || video.topic)}</h3><p class="library-caption">${caption}</p><div class="row-meta"><span>${escapeHtml(video.category || 'Chưa phân nhóm')}</span><span>•</span><span>${dateText(video.created_at, { dateStyle: 'medium' })}</span><span>•</span><span>${escapeHtml(video.provider || 'AI')}</span>${video.duration_seconds ? `<span>•</span><span>${Number(video.duration_seconds).toFixed(1)} giây</span>` : ''}</div>${video.last_error && !video.pipeline?.error ? `<p class="inline-status">${escapeHtml(video.last_error)}</p>` : ''}${videoProgressMarkup(video)}</div><span class="state-pill ${statusClass(video.status)}">${escapeHtml(statusName(video.status, video))}</span><div class="row-actions">${actions}</div></article>`;
@@ -160,8 +160,13 @@ function renderSchedules() {
   const schedules = state.schedules;
   const available = state.videos.filter((v) => v.status === 'ready');
   $('#schedule-video').innerHTML = `<option value="">Chọn video</option>${available.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.topic)}</option>`).join('')}`;
-  const pending = schedules.filter((item) => !['published', 'failed'].includes(item.status));
-  $('#schedule-list').innerHTML = pending.length ? pending.map((item) => `<article class="schedule-row"><span class="schedule-date">${dateText(item.scheduled_at, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.topic)}</strong><small>${escapeHtml(item.title)} · ${escapeHtml(statusName(item.video_status))}</small></div><span class="schedule-time">${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span></article>`).join('') : `<div class="empty-state"><strong>Chưa có lịch đăng</strong>Chọn video đã sẵn sàng để thêm lịch đăng.</div>`;
+  const visible = schedules.filter((item) => item.status !== 'published');
+  $('#schedule-list').innerHTML = visible.length ? visible.map((item) => {
+    const failed = item.status === 'failed';
+    const stateLabel = failed ? 'Đăng thất bại' : item.status === 'publishing' ? 'Đang đăng' : 'Đã lên lịch';
+    const error = failed && item.error ? `<small class="schedule-error">${escapeHtml(item.error)}</small>` : '';
+    return `<article class="schedule-row${failed ? ' failed' : ''}"><span class="schedule-date">${dateText(item.scheduled_at, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.topic)}</strong><small>${escapeHtml(item.title)} · ${stateLabel}</small>${error}</div><span class="schedule-time">${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span></article>`;
+  }).join('') : `<div class="empty-state"><strong>Chưa có lịch đăng</strong>Bật “Tự đăng theo lịch” trong cài đặt để xếp video sẵn sàng tự động.</div>`;
 }
 
 function renderLogs() {
@@ -255,7 +260,6 @@ async function loadSettings() {
   $('#en-voice').value = settings.enVoice || 'en-US-JennyNeural';
   renderEnglishVoices();
   syncEnglishRateControls(settings.enRate);
-  $('#post-time').value = settings.postTime;
   $('#posts-per-day').value = settings.postsPerDay;
   $('#prepare-days').value = settings.prepareAheadDays;
   $('#max-scripts').value = settings.maxScriptsPerDay;
@@ -316,7 +320,15 @@ function connectRealtime() {
       }
     }
     if (message.type === 'facebook:publish-status') {
-      if (log.code === 'PUBLISH_VERIFIED') toast('Đăng Facebook đã xác minh', false, log.message);
+      if (log.code === 'PUBLISH_VERIFIED') {
+        const simulated = String(log.message || '').includes('qua mock.');
+        toast(simulated ? 'Đăng mô phỏng hoàn tất' : 'Đăng Facebook thành công', false, log.message);
+        refreshData();
+      }
+      if (log.code === 'PUBLISH_FAILED') {
+        toast('Đăng không thành công', true, log.message);
+        refreshData();
+      }
       if (state.view === 'logs') loadLogs();
     }
   });
@@ -364,7 +376,7 @@ async function handleVideoAction(event) {
   if (button.dataset.scriptId) {
     try {
       const { script } = await api(`/api/scripts/${encodeURIComponent(button.dataset.scriptId)}`);
-      $('#dialog-content').innerHTML = `<article class="script-detail"><div class="eyebrow">${escapeHtml(script.category)} · ${escapeHtml(script.level)}</div><h2>${escapeHtml(script.title)}</h2><p>${escapeHtml(script.hook)} · Nguồn: ${escapeHtml(script.provider)}</p><div class="dialog-lines">${script.dialogues.map((line) => `<div class="dialog-line"><span class="line-num">CÂU 0${line.index}</span><p>${escapeHtml(line.vietnamese)}</p><p class="en-line">${escapeHtml(line.english)}</p><small><strong>${escapeHtml(line.term)}</strong> · ${escapeHtml(line.meaningVi)}. ${escapeHtml(line.noteVi)}</small></div>`).join('')}</div><div class="dialog-caption"><strong>Caption</strong><br>${escapeHtml(script.caption)}<br><br>${escapeHtml(script.hashtags.join(' '))}</div></article>`;
+      $('#dialog-content').innerHTML = `<article class="script-detail"><div class="eyebrow">${escapeHtml(script.category)} · ${escapeHtml(script.level)}</div><h2>${escapeHtml(script.title)}</h2><p>${escapeHtml(script.hook)} · Nguồn: ${escapeHtml(script.provider)}</p><div class="dialog-lines">${script.dialogues.map((line) => `<div class="dialog-line"><span class="line-num">CÂU 0${line.index}</span><p>${escapeHtml(line.vietnamese)}</p><p class="en-line">${escapeHtml(line.english)}</p><small><strong>${escapeHtml(line.term)}</strong> · ${escapeHtml(line.meaningVi)}. ${escapeHtml(line.noteVi)}</small></div>`).join('')}</div><div class="dialog-caption"><strong>Caption</strong><br>${escapeHtml(script.captionText || script.caption)}</div></article>`;
       $('#detail-dialog').showModal();
     } catch (error) { toast('Không mở được kịch bản', true, error.message); }
     return;
@@ -398,7 +410,7 @@ async function saveSettings() {
     const result = await api('/api/settings', { method: 'POST', body: JSON.stringify({
       ollamaBaseUrl: $('#ollama-url').value.trim(), ollamaModel: $('#ollama-model').value.trim(),
       viVoice: $('#vi-voice').value.trim(), enVoice: $('#en-voice').value.trim(), enRate: $('#en-rate').value.trim(),
-      postTime: $('#post-time').value, postsPerDay: Number($('#posts-per-day').value), prepareAheadDays: Number($('#prepare-days').value),
+      postsPerDay: Number($('#posts-per-day').value), prepareAheadDays: Number($('#prepare-days').value),
       maxScriptsPerDay: Number($('#max-scripts').value),
       facebookAdapter: $('#facebook-adapter').value, autoGenerationEnabled: $('#auto-generation').checked,
       autoPublishEnabled: $('#auto-publish').checked

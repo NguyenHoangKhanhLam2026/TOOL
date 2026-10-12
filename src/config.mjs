@@ -33,7 +33,7 @@ export const DEFAULTS = Object.freeze({
   maxLineChars: 150,
   level: 'A2-B1',
   postTime: '19:30',
-  postsPerDay: 1,
+  postsPerDay: 3,
   prepareAheadDays: 7,
   maxScriptsPerDay: 10,
   autoGenerationEnabled: false,

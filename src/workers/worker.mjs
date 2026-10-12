@@ -5,7 +5,7 @@ import { PATHS } from '../config.mjs';
 import {
   db, claimJob, finishJob, failJob, deferJob, recoverStaleJobs, log, getSettings,
   claimDueSchedule, markSchedule, queueJob, countFutureStock,
-  updatePublishHistory, getScript, updateVideo, listSchedules, beginPublish,
+  updatePublishHistory, getScript, updateVideo, beginPublish, createRandomSchedule, archivePublishedVideo,
   acquirePagePublishLock, releasePagePublishLock
 } from '../database/db.mjs';
 import { createVideoJob } from '../pipeline/create-video.mjs';
@@ -13,7 +13,7 @@ import { renderStillPreviewVideo } from '../../packages/video-engine/render.mjs'
 import { MetaGraphAdapter } from '../../packages/facebook-engine/meta-graph-adapter.mjs';
 import { MockFacebookAdapter } from '../../packages/facebook-engine/mock-adapter.mjs';
 import { chatgptStatus } from '../ai/chatgpt-plan.mjs';
-import { nextScheduledTime, startOfLocalDay } from '../scheduler/time.mjs';
+import { startOfLocalDay } from '../scheduler/time.mjs';
 
 const workerId = `worker-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 const heartbeatPath = path.join(PATHS.logs, 'worker-heartbeat.json');
@@ -60,13 +60,12 @@ function scheduleDueSlots() {
   if (!settings.autoPublishEnabled) return;
   const queuedJobs = Number(db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE type='create_video' AND status IN ('pending','running')").get().count);
   if (queuedJobs) return;
-  const unscheduled = db.prepare("SELECT v.id FROM videos v WHERE v.status='ready' AND NOT EXISTS (SELECT 1 FROM scheduled_posts p WHERE p.video_id=v.id) ORDER BY v.created_at LIMIT 1").get();
+  const unscheduled = db.prepare("SELECT v.id FROM videos v WHERE v.status='ready' AND v.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM scheduled_posts p WHERE p.video_id=v.id) ORDER BY v.created_at ASC LIMIT 1").get();
   if (!unscheduled) return;
-  const schedules = listSchedules().filter((item) => ['scheduled','publishing'].includes(item.status));
-  const last = schedules.reduce((best, item) => !best || item.scheduled_at > best ? item.scheduled_at : best, null);
-  const when = nextScheduledTime(last ? new Date(last) : new Date(), settings.postTime, settings.timezone, settings.postsPerDay).toISOString();
-  try { const stamp = new Date().toISOString(); db.prepare("INSERT INTO scheduled_posts(id,video_id,scheduled_at,status,created_at,updated_at) VALUES(?,?,?,'scheduled',?,?)").run(crypto.randomUUID(), unscheduled.id, when, stamp, stamp); updateVideo(unscheduled.id, { status: 'scheduled', scheduled_at: when }); }
-  catch (error) { log('WARN', 'AUTO_SCHEDULE_CONFLICT', error.message); }
+  try {
+    const schedule = createRandomSchedule(unscheduled.id, settings.timezone, settings.postsPerDay);
+    log('INFO', 'POST_SCHEDULED', `Đã xếp video cuối thư viện ${unscheduled.id} vào lịch ${schedule.scheduledAt}.`);
+  } catch (error) { log('WARN', 'AUTO_SCHEDULE_CONFLICT', error.message); }
 }
 
 async function publishVideo(job) {
@@ -84,6 +83,7 @@ async function publishVideo(job) {
   const gate = beginPublish(videoId, adapterName);
   if (gate.alreadyPublished) {
     updateVideo(videoId, { status: 'published', published_id: gate.record.facebook_id || gate.record.published_id, published_url: gate.record.url || gate.record.published_url });
+    if (adapterName === 'meta') archivePublishedVideo(videoId);
     const savedSchedule = scheduleId || db.prepare("SELECT id FROM scheduled_posts WHERE video_id=? AND status IN ('scheduled','publishing')").get(videoId)?.id;
     if (savedSchedule) markSchedule(savedSchedule, 'published');
     return;
@@ -98,10 +98,12 @@ async function publishVideo(job) {
     const savedSchedule = scheduleId || db.prepare("SELECT id FROM scheduled_posts WHERE video_id=? AND status IN ('scheduled','publishing')").get(videoId)?.id;
     if (savedSchedule) markSchedule(savedSchedule, 'published');
     log('INFO', 'PUBLISH_VERIFIED', `Đã xác minh Reel ${result.facebookId} qua ${adapterName}.`, job.id);
+    if (adapterName === 'meta' && archivePublishedVideo(videoId)) log('INFO', 'VIDEO_ARCHIVED', `Đã ẩn video ${videoId} khỏi thư viện sau khi đăng Facebook thành công.`, job.id);
   } catch (error) {
     updatePublishHistory(historyId, { status: adapterName === 'meta' ? 'uncertain' : 'failed', error: String(error.message).slice(0, 1000) });
     if (scheduleId) markSchedule(scheduleId, 'failed');
     updateVideo(videoId, { status: 'publish_failed', last_error: error.message });
+    log('ERROR', 'PUBLISH_FAILED', error.message, job.id);
     throw error;
   }
 }

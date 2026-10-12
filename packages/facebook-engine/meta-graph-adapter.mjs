@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { PATHS, GRAPH_VERSION } from '../../src/config.mjs';
+import { formatCaption } from '../../src/ai/hashtag-utils.mjs';
 
 const tokenFile = `${PATHS.private}/facebook-page-token.txt`;
 
@@ -67,7 +68,7 @@ export class MetaGraphAdapter {
     if (!upload.ok || uploadBody.error || uploadBody.success === false) throw new Error(`Meta tải Reel lên thất bại (${upload.status}).`);
     await graph(`${encodeURIComponent(this.pageId)}/video_reels`, {
       upload_phase: 'finish', video_id: start.video_id, video_state: 'PUBLISHED',
-      title: script.title, description: `${script.caption}\n\n${script.hashtags.join(' ')}`
+      title: script.title, description: formatCaption(script.caption, script.hashtags)
     });
     const status = await this.#waitUntilPublished(start.video_id);
     if (!status.verified) throw new Error('Meta đã nhận lệnh đăng nhưng chưa xác minh trạng thái xuất bản.');

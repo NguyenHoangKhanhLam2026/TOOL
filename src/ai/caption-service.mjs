@@ -1,8 +1,8 @@
 import { getSettings } from '../database/db.mjs';
 import { chatgptStatus, generateWithChatGPT } from './chatgpt-plan.mjs';
 import { generateWithOllama } from './ollama.mjs';
+import { BRAND_HASHTAG, ensureBrandHashtag } from './hashtag-utils.mjs';
 
-const BRAND_TAG = '#sinhradenoitienganh';
 const LENGTHS = [
   { id: 'short', weight: 30, min: 30, max: 55, target: 42, label: 'ngắn' },
   { id: 'medium', weight: 45, min: 65, max: 100, target: 82, label: 'vừa' },
@@ -48,7 +48,7 @@ function tagsFor(script, supplied = []) {
   const candidates = [...supplied.map(normalizeTag), ...topical];
   const unique = [];
   for (const tag of candidates) {
-    if (!tag || tag === BRAND_TAG || unique.includes(tag)) continue;
+    if (!tag || tag === BRAND_HASHTAG || unique.includes(tag)) continue;
     const slug = tag.slice(1);
     const relevant = GENERIC_TAGS.has(slug) || slug.startsWith('english') || slug.startsWith('tienganh') || slug.startsWith('learnenglish') || relevantWords.some((word) => slug.includes(word) || word.includes(slug));
     if (relevant) unique.push(tag);
@@ -61,7 +61,7 @@ function tagsFor(script, supplied = []) {
       if (extras.length === 2) break;
     }
   }
-  return [...new Set([...extras.slice(0, 4), BRAND_TAG])];
+  return ensureBrandHashtag(extras.slice(0, 4));
 }
 
 function parseResponse(value) {
