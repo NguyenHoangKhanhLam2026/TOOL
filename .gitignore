@@ -1,0 +1,12 @@
+node_modules/
+.env
+data/database/*.sqlite*
+data/private/
+data/outputs/*
+data/temporary/*
+data/logs/*
+data/backups/*
+!data/**/.gitkeep
+*.log
+__pycache__/
+.venv/

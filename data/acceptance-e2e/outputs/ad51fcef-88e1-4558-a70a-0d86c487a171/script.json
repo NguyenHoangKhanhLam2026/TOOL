@@ -1,0 +1,53 @@
+{
+  "id": "ac1c1cfb-be73-4fef-a223-c28ff02f8f29",
+  "topic_id": "05-2",
+  "topic": "Hỏi thăm lâu ngày",
+  "category": "Bạn bè",
+  "level": "A2-B1",
+  "title": "Tiếng Anh giao tiếp: Hỏi thăm lâu ngày",
+  "hook": "Lưu lại 3 câu tiếng Anh về chủ đề hỏi thăm lâu ngày nhé!",
+  "dialogues_json": "[{\"index\":1,\"vietnamese\":\"Gần đây mình hơi áp lực vì có quá nhiều việc.\",\"english\":\"I’ve been feeling a little overwhelmed lately.\",\"term\":\"overwhelmed\",\"meaningVi\":\"quá tải, choáng ngợp\",\"noteVi\":\"Tính từ mô tả cảm giác có quá nhiều việc phải xử lý.\",\"grammarNote\":\"\"},{\"index\":2,\"vietnamese\":\"Mình sẽ nghỉ một chút rồi quay lại với tinh thần tốt hơn.\",\"english\":\"I’ll take a short break and come back with a clearer mind.\",\"term\":\"take a short break\",\"meaningVi\":\"nghỉ giải lao một chút\",\"noteVi\":\"Cụm nói về việc nghỉ trong thời gian ngắn.\",\"grammarNote\":\"\"},{\"index\":3,\"vietnamese\":\"Bạn không cần phải giải quyết mọi thứ ngay hôm nay.\",\"english\":\"You don’t have to figure everything out today.\",\"term\":\"figure everything out\",\"meaningVi\":\"tìm cách giải quyết mọi thứ\",\"noteVi\":\"Figure out nghĩa là tìm ra lời giải hoặc cách hiểu.\",\"grammarNote\":\"\"}]",
+  "caption": "Học 3 câu tiếng Anh giao tiếp về hỏi thăm lâu ngày. Nghe, đọc theo và thử dùng hôm nay!",
+  "hashtags_json": "[\"#HocTiengAnh\",\"#EnglishEveryday\",\"#TiengAnhGiaoTiep\"]",
+  "thumbnail_title": "Hỏi thăm lâu ngày",
+  "provider": "local-template",
+  "content_hash": "ff25e49cb92010257de3fe232d5b512e0d64f6c0ed66c17183aa10b8aa6b2815",
+  "created_at": "2026-10-11T14:50:12.875Z",
+  "dialogues": [
+    {
+      "index": 1,
+      "vietnamese": "Gần đây mình hơi áp lực vì có quá nhiều việc.",
+      "english": "I’ve been feeling a little overwhelmed lately.",
+      "term": "overwhelmed",
+      "meaningVi": "quá tải, choáng ngợp",
+      "noteVi": "Tính từ mô tả cảm giác có quá nhiều việc phải xử lý.",
+      "grammarNote": ""
+    },
+    {
+      "index": 2,
+      "vietnamese": "Mình sẽ nghỉ một chút rồi quay lại với tinh thần tốt hơn.",
+      "english": "I’ll take a short break and come back with a clearer mind.",
+      "term": "take a short break",
+      "meaningVi": "nghỉ giải lao một chút",
+      "noteVi": "Cụm nói về việc nghỉ trong thời gian ngắn.",
+      "grammarNote": ""
+    },
+    {
+      "index": 3,
+      "vietnamese": "Bạn không cần phải giải quyết mọi thứ ngay hôm nay.",
+      "english": "You don’t have to figure everything out today.",
+      "term": "figure everything out",
+      "meaningVi": "tìm cách giải quyết mọi thứ",
+      "noteVi": "Figure out nghĩa là tìm ra lời giải hoặc cách hiểu.",
+      "grammarNote": ""
+    }
+  ],
+  "hashtags": [
+    "#HocTiengAnh",
+    "#EnglishEveryday",
+    "#TiengAnhGiaoTiep"
+  ],
+  "thumbnailTitle": "Hỏi thăm lâu ngày",
+  "createdAt": "2026-10-11T14:50:12.875Z",
+  "contentHash": "ff25e49cb92010257de3fe232d5b512e0d64f6c0ed66c17183aa10b8aa6b2815"
+}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="168" viewBox="0 0 960 168" role="img" aria-labelledby="title desc">
+  <title id="title">Sinh ra để nói tiếng Anh</title>
+  <desc id="desc">Biểu tượng bong bóng hội thoại chứa cuốn sách đang mở.</desc>
+  <g transform="translate(8 12)">
+    <path d="M24 4h104a20 20 0 0 1 20 20v60a20 20 0 0 1-20 20H91l-28 28v-28H24A20 20 0 0 1 4 84V24A20 20 0 0 1 24 4Z" fill="#17395D"/>
+    <path d="M31 39c14-8 28-7 42 2 14-9 28-10 42-2v34c-14-7-28-6-42 3-14-9-28-10-42-3Z" fill="#F6F0E5" stroke="#F6F0E5" stroke-linejoin="round" stroke-width="3"/>
+    <path d="M73 41v35M38 47c10-4 19-3 28 2M38 58c10-4 19-3 28 2M108 47c-10-4-19-3-28 2M108 58c-10-4-19-3-28 2" fill="none" stroke="#287D7B" stroke-linecap="round" stroke-width="4"/>
+    <circle cx="124" cy="29" r="5" fill="#D98B65"/>
+  </g>
+  <text x="178" y="76" fill="#17395D" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="39" font-weight="700" letter-spacing="-.8">Sinh ra để nói tiếng Anh</text>
+  <text x="180" y="120" fill="#287D7B" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="22" font-weight="600" letter-spacing=".15">Mỗi ngày 3 câu — tự tin giao tiếp</text>
+</svg>

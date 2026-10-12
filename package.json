@@ -1,0 +1,23 @@
+{
+  "name": "auto-english-reels-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local studio for producing Vietnamese-English learning Reels and scheduling Facebook Page posts.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "setup": "node scripts/setup-check.mjs",
+    "dev": "node src/server.mjs",
+    "build": "node --experimental-vm-modules scripts/build-check.mjs",
+    "start": "node src/server.mjs",
+    "worker": "node src/workers/worker.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "lint": "node --experimental-vm-modules scripts/lint.mjs",
+    "typecheck": "node --experimental-vm-modules scripts/typecheck.mjs"
+  },
+  "dependencies": {
+    "sharp": "^0.35.5"
+  }
+}
