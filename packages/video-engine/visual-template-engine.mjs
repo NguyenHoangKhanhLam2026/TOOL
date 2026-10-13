@@ -123,9 +123,26 @@ function glyphWeight(char) {
 }
 
 export function wrapText(value, widthPx, fontSize) {
-  const words = String(value ?? '').trim().split(/\s+/u).filter(Boolean);
+  const capacity = Math.max(1, widthPx / fontSize);
+  const words = String(value ?? '').trim().split(/\s+/u).filter(Boolean).flatMap((word) => {
+    const chunks = [];
+    let chunk = '';
+    let units = 0;
+    for (const char of word) {
+      const weight = glyphWeight(char);
+      if (chunk && units + weight > capacity) {
+        chunks.push(chunk);
+        chunk = char;
+        units = weight;
+      } else {
+        chunk += char;
+        units += weight;
+      }
+    }
+    if (chunk) chunks.push(chunk);
+    return chunks;
+  });
   if (!words.length) return [''];
-  const capacity = Math.max(8, widthPx / fontSize);
   const lines = [];
   let line = '';
   let units = 0;
@@ -137,6 +154,24 @@ export function wrapText(value, widthPx, fontSize) {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+function fitDialogueText(value, layer, isVietnamese) {
+  const preferredFontSize = Number(layer.fontSize || (isVietnamese ? 52 : 48));
+  const minFontSize = Math.min(preferredFontSize, Math.max(30, Math.floor(preferredFontSize * 0.64)));
+  const padding = Number(layer.padding || 40);
+  const contentWidth = Math.max(1, Number(layer.width) - padding * 2);
+  const maxHeight = Math.max(Number(layer.height || 0), 360);
+  let layout;
+
+  for (let fontSize = preferredFontSize; fontSize >= minFontSize; fontSize -= 1) {
+    const lineHeight = fontSize + (isVietnamese ? 15 : 13);
+    const lines = wrapText(value, contentWidth * 0.92, fontSize);
+    const height = Math.max(Number(layer.height || 0), 116 + lines.length * lineHeight);
+    layout = { lines, fontSize, lineHeight, height };
+    if (height <= maxHeight) return layout;
+  }
+  return layout;
 }
 
 function highlightMarkup(line, phrase, highlightColor) {
@@ -159,18 +194,30 @@ function layerGeometry(template, script, index) {
   const en = map.get('english-card');
   const vocab = map.get('vocabulary');
   const dialogue = script.dialogues?.[index] || { vietnamese: 'Hôm nay mình cùng luyện nói tiếng Anh nhé.', english: "Let's practice English together today.", term: 'practice English', meaningVi: 'luyện nói tiếng Anh' };
-  const viFont = Number(vi.fontSize || 52);
-  const enFont = Number(en.fontSize || 48);
-  const viLines = wrapText(dialogue.vietnamese, vi.width - (vi.padding || 42) * 2, viFont);
-  const enLines = wrapText(dialogue.english, en.width - (en.padding || 42) * 2, enFont);
+  const viLayout = fitDialogueText(dialogue.vietnamese, vi, true);
+  const enLayout = fitDialogueText(dialogue.english, en, false);
   const termText = `${dialogue.term || ''} = ${dialogue.meaningVi || ''}`;
   const vocabLines = wrapText(termText, vocab.width - (vocab.padding || 28) * 2, Number(vocab.fontSize || 32));
-  const viHeight = Math.max(vi.height, 116 + viLines.length * (viFont + 15));
-  const enHeight = Math.max(en.height, 110 + enLines.length * (enFont + 13));
+  const viHeight = viLayout.height;
+  const enHeight = Math.max(en.height, 110 + enLayout.lines.length * enLayout.lineHeight + 6);
   const enY = Math.max(en.y, vi.y + viHeight + 24);
   const vocabY = Math.max(vocab.y, enY + enHeight + 24);
   const vocabHeight = Math.max(vocab.height, 76 + vocabLines.length * (Number(vocab.fontSize || 32) + 10));
-  return { dialogue, viLines, enLines, vocabLines, viHeight, enHeight, enY, vocabY, vocabHeight };
+  return {
+    dialogue,
+    viLines: viLayout.lines,
+    viFontSize: viLayout.fontSize,
+    viLineHeight: viLayout.lineHeight,
+    enLines: enLayout.lines,
+    enFontSize: enLayout.fontSize,
+    enLineHeight: enLayout.lineHeight,
+    vocabLines,
+    viHeight,
+    enHeight,
+    enY,
+    vocabY,
+    vocabHeight
+  };
 }
 
 function shadowDef() {
@@ -231,7 +278,7 @@ async function layerMarkup(layerId, context) {
     const isVi = layerId === 'vietnamese-card';
     const x = layer.x; const y = isVi ? layer.y : geometry.enY; const w = layer.width; const h = isVi ? geometry.viHeight : geometry.enHeight;
     const lines = isVi ? geometry.viLines : geometry.enLines;
-    const padding = Number(layer.padding || 40); const fontSize = Number(layer.fontSize || (isVi ? 52 : 48)); const lineHeight = fontSize + (isVi ? 15 : 13);
+    const padding = Number(layer.padding || 40); const fontSize = isVi ? geometry.viFontSize : geometry.enFontSize; const lineHeight = isVi ? geometry.viLineHeight : geometry.enLineHeight;
     const fill = color(layer.fill, isVi ? '#E8E8E4' : '#E6F0EC');
     const accent = color(layer.accent, isVi ? brand.primaryColor : brand.secondaryColor);
     const label = isVi ? 'CÂU TIẾNG VIỆT' : 'SAY IT IN ENGLISH';

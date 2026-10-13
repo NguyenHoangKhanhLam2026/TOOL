@@ -9,3 +9,4 @@
 
 .content-history-note{max-width:590px;margin:12px 0 0;color:#768277;font-size:10px;line-height:1.55}
 .schedule-window{display:flex;align-items:center;min-height:36px;padding:0 10px;border:1px solid #e3e5dd;border-radius:8px;background:#f4f3ef;color:#718076;font-size:9px;font-weight:500}.schedule-row.failed{border-color:#efd2cb;background:#fff9f7}.schedule-row.failed .schedule-date,.schedule-row.failed .schedule-time{color:#a75f50}.schedule-copy .schedule-error{margin-top:7px;color:#aa5548;line-height:1.5;overflow-wrap:anywhere}
+.dialog-caption { white-space: pre-line; }

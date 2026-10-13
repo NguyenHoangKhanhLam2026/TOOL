@@ -78,6 +78,10 @@ function wordCount(value) {
   return String(value || '').trim().split(/\s+/).filter(Boolean).length;
 }
 
+function paragraphCount(value) {
+  return String(value || '').split(/\n\s*\n+/).map((paragraph) => paragraph.trim()).filter(Boolean).length;
+}
+
 function lessonData(script) {
   return {
     topic: script.topic,
@@ -90,7 +94,8 @@ function lessonData(script) {
 function makePrompt(script, length, style, repair = '') {
   return `Viết caption Facebook Reels bằng tiếng Việt tự nhiên cho nội dung học dưới đây.\n` +
     `Độ dài ${length.label}: ${length.min}-${length.max} từ, phong cách: ${style.label}.\n` +
-    `Caption cần dạy được điều hữu ích từ cả ba câu: giải thích cách dùng/ngữ cảnh của các cụm từ, phân biệt sắc thái hoặc lỗi thường gặp chỉ khi ghi chú nguồn có căn cứ. Không chỉ tóm tắt, không bịa kiến thức ngữ pháp hay tình huống. Có thể xen câu tiếng Anh, câu hỏi, emoji vừa phải. Thay đổi cách mở đầu và cấu trúc, tránh lời kêu gọi sáo rỗng.\n` +
+    `Tối ưu SEO tự nhiên cho Facebook: câu mở đầu phải nêu chủ đề cụ thể và cụm từ khóa chính “tiếng Anh giao tiếp” hoặc “học tiếng Anh giao tiếp”; đưa từ khóa chủ đề vào đúng ngữ cảnh. Dùng cụm từ trong bài như từ khóa phụ khi phù hợp, không nhồi hoặc lặp từ khóa.\n` +
+    `Bố cục bắt buộc đúng 3 đoạn, ngăn nhau bằng một dòng trống: (1) Mở bài 1 câu thu hút, có từ khóa chính và chủ đề; (2) Thân bài giải thích ngắn gọn cách dùng/ngữ cảnh của cả ba cụm từ, chỉ phân biệt sắc thái hoặc lỗi thường gặp khi ghi chú nguồn có căn cứ; (3) Kết bài 1 câu chốt ý hoặc gợi ý luyện tập cụ thể, tự nhiên. Không ghi nhãn “Mở bài/Thân bài/Kết bài”. Giữ độ dài câu vừa phải, không viết cả caption thành một đoạn. Không chỉ tóm tắt, không bịa kiến thức ngữ pháp hay tình huống. Có thể xen câu tiếng Anh, câu hỏi, emoji vừa phải; tránh lời kêu gọi sáo rỗng.\n` +
     `Trả đúng JSON: {"caption":"caption không kèm hashtag","hashtags":["#hashtagliênquan"]}. Chọn hashtag đúng chủ đề, không lặp; không cần thêm hashtag thương hiệu vì hệ thống sẽ bổ sung.\n` +
     `${repair ? `Sửa bản trước: ${repair}\n` : ''}` +
     `Dữ liệu thật của bài học: ${JSON.stringify(lessonData(script))}`;
@@ -100,26 +105,36 @@ function fallbackCaption(script, length, style) {
   const lines = script.dialogues || [];
   const topic = script.topic || 'giao tiếp tiếng Anh';
   const openings = {
-    story: `Có lúc chỉ một cụm từ đúng cũng giúp cuộc trò chuyện tự nhiên hơn. Bài học “${topic}” có ba cách nói đáng nhớ.`,
-    'real-life': `Trong tình huống “${topic}”, bạn có thể luyện ba câu tiếng Anh dưới đây và ghi nhớ cụm từ trong ngữ cảnh.`,
-    vocabulary: `Cùng học từ vựng qua ba câu về “${topic}”: hiểu cụm từ nằm trong câu sẽ dễ nhớ cách dùng hơn.`,
-    'communication-tip': `Mẹo giao tiếp hôm nay: ghi nhớ cả cụm từ trong câu rồi đọc lại thành tiếng. Chủ đề là “${topic}”.`,
-    question: `Bạn sẽ dùng câu nào đầu tiên khi nói về “${topic}”? Cùng xem ba cụm từ giúp diễn đạt chủ đề này.`,
-    knowledge: `Ba câu về “${topic}” giúp bạn học từ vựng ngay trong ngữ cảnh thay vì ghi nhớ từng từ riêng lẻ.`
+    story: `Muốn nói về “${topic}” tự nhiên hơn? Học tiếng Anh giao tiếp qua ba cụm từ sau.`,
+    'real-life': `Học tiếng Anh giao tiếp chủ đề “${topic}” qua một tình huống quen thuộc.`,
+    vocabulary: `Ba cụm từ tiếng Anh giao tiếp về “${topic}” sẽ dễ nhớ hơn khi học trong câu.`,
+    'communication-tip': `Mẹo học tiếng Anh giao tiếp: dùng ba cụm từ về “${topic}” đúng ngữ cảnh.`,
+    question: `Bạn diễn đạt “${topic}” bằng tiếng Anh thế nào? Cùng học ba cụm từ giao tiếp hữu ích.`,
+    knowledge: `Học tiếng Anh giao tiếp theo ngữ cảnh giúp bạn nhớ cách nói về “${topic}”.`
   };
-  const keypoints = lines.map((line) => `“${line.term}” nghĩa là “${line.meaningVi}”.`).join(' ');
-  const fixed = `${openings[style.id]}\n\n${keypoints}`;
-  const details = lines.map((line, index) => `Câu ${index + 1}: “${line.english}”. ${[line.noteVi, line.grammarNote].filter(Boolean).join(' ')}`.trim()).join('\n\n');
-  const practice = 'Đọc từng câu thành tiếng, chú ý cụm từ trong ngữ cảnh, rồi chọn một câu để tự luyện lại.';
-  const review = 'Để ôn, che phần nghĩa tiếng Việt và thử nhớ lại khi nhìn câu tiếng Anh. Sau đó nhìn nghĩa rồi tự nói lại câu. Cách luyện này giúp bạn chủ động gọi lại nội dung của cả ba câu.';
-  const extras = length.id === 'short' ? [] : [details, practice, ...(length.id === 'long' ? [review] : [])];
-  let caption = [fixed, ...extras].filter(Boolean).join('\n\n');
-  if (wordCount(caption) > length.max) {
-    const available = Math.max(0, length.max - wordCount(fixed));
-    const extraText = extras.join('\n\n').trim().split(/\s+/).slice(0, available).join(' ');
-    caption = extraText ? `${fixed}\n\n${extraText}` : fixed;
+  let opening = openings[style.id];
+  const body = lines.map((line) => `“${line.term}” nghĩa là “${line.meaningVi}”.`);
+  const keypointCount = body.length;
+  const details = lines.map((line, index) => `Câu ${index + 1}: “${line.english}”. ${[line.noteVi, line.grammarNote].filter(Boolean).join(' ')}`.trim());
+  const closing = ['Chọn một cụm từ và thử đặt câu về trải nghiệm của bạn.'];
+  const fits = () => wordCount([opening, body.join(' '), closing.join(' ')].join(' ')) <= length.max;
+
+  if (length.id !== 'short') {
+    for (const detail of details) {
+      if (wordCount([opening, body.join(' '), detail, closing.join(' ')].join(' ')) <= length.max) body.push(detail);
+    }
   }
-  return caption;
+  if (length.id === 'long') {
+    const review = 'Để ôn, thử nhớ nghĩa khi nhìn câu tiếng Anh, rồi tự nói lại câu.';
+    if (wordCount([opening, body.join(' '), ...closing, review].join(' ')) <= length.max) closing.push(review);
+  }
+  while (!fits() && body.length > keypointCount) body.pop();
+  if (!fits()) {
+    opening = `Học tiếng Anh giao tiếp về “${topic}” qua ba cụm từ.`;
+    closing.splice(1);
+    closing[0] = 'Thử dùng một cụm từ trong câu của bạn.';
+  }
+  return [opening, body.join(' '), closing.join(' ')].join('\n\n');
 }
 export async function generateCaption(script) {
   const length = selectLength();
@@ -136,10 +151,14 @@ export async function generateCaption(script) {
     try {
       const result = parseResponse(await provider(makePrompt(script, length, style, feedback)));
       const embeddedTags = result.caption.match(/#[\p{L}\p{N}_]+/gu) || [];
-      const candidate = result.caption.replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\n{3,}/g, '\n\n').trim();
+      const candidate = result.caption.replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
       const count = wordCount(candidate);
-      if (count < length.min || count > length.max) {
-        feedback = `caption có ${count} từ; cần ${length.min}-${length.max} từ. Giữ phong cách ${style.label} và độ dài ${length.label}.`;
+      const paragraphs = paragraphCount(candidate);
+      const issues = [];
+      if (count < length.min || count > length.max) issues.push(`caption có ${count} từ; cần ${length.min}-${length.max} từ`);
+      if (paragraphs !== 3) issues.push(`caption có ${paragraphs} đoạn; cần đúng 3 đoạn mở bài, thân bài, kết bài, ngăn bằng dòng trống`);
+      if (issues.length) {
+        feedback = `${issues.join('; ')}. Giữ ý đúng, từ khóa tự nhiên, phong cách ${style.label} và độ dài ${length.label}.`;
         continue;
       }
       caption = candidate;

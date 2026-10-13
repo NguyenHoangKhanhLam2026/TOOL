@@ -91,7 +91,7 @@ export function makeLocalScript(topic, now = new Date()) {
     id: crypto.randomUUID(), topic: topic.title, category: topic.category, level: 'A2-B1', title,
     hook: `Lưu lại 3 câu tiếng Anh về chủ đề ${topic.title.toLowerCase()} nhé!`,
     dialogues,
-    caption: `Học 3 câu tiếng Anh giao tiếp về ${topic.title.toLowerCase()}. Nghe, đọc theo và thử dùng hôm nay!`,
+    caption: `Học tiếng Anh giao tiếp về ${topic.title.toLowerCase()} qua ba mẫu câu ngắn.\n\nNghe, đọc theo và chú ý cách dùng từng cụm từ trong ngữ cảnh.\n\nChọn một câu và thử dùng hôm nay!`,
     hashtags: ['#HocTiengAnh', '#EnglishEveryday', '#TiengAnhGiaoTiep'],
     thumbnailTitle: topic.title,
     createdAt: now.toISOString(),
