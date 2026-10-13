@@ -4,11 +4,12 @@ Tạo một video flashcard theo chủ đề `{{topic}}` thuộc nhóm `{{catego
 
 Yêu cầu nội dung:
 - Trả về đúng một JSON object hợp lệ, không Markdown, không lời dẫn.
-- Có đúng ba câu tiếng Việt và ba câu tiếng Anh tương đương, ngắn gọn, tự nhiên và liên kết cùng tình huống.
+- Tạo số cặp câu phù hợp với tình huống: thường khoảng ba cặp, nhưng có thể ít hoặc nhiều hơn khi mạch hội thoại cần. Không thêm câu chỉ để đủ số lượng.
 - Mỗi câu tiếng Anh có một cụm từ trọng tâm. Trường `term` phải xuất hiện nguyên văn trong câu `english`.
 - Giải thích cụm từ bằng tiếng Việt; thêm ghi chú học tập ngắn, dễ hiểu.
-- Mỗi câu tối đa {{maxLineChars}} ký tự. Caption tối đa 220 ký tự; viết thành 3 đoạn mở bài, thân bài, kết bài, tối ưu tự nhiên cho từ khóa “tiếng Anh giao tiếp” và chủ đề cụ thể. Hashtag chỉ đặt trong mảng hashtags, không chèn vào nội dung caption; tối đa 5 hashtag liên quan.
-- Không dùng nội dung xúc phạm, phân biệt đối xử, sáo rỗng, quá dài hoặc sao chép.
+- Ưu tiên câu ngắn, rõ; có thể viết dài hơn khi tự nhiên vì khung thoại sẽ tự xuống dòng. Caption tối đa 220 ký tự; viết thành 3 đoạn mở bài, thân bài, kết bài, tối ưu tự nhiên cho từ khóa “tiếng Anh giao tiếp” và chủ đề cụ thể. Hashtag chỉ đặt trong mảng hashtags, không chèn vào nội dung caption; tối đa 5 hashtag liên quan.
+- Nếu nội dung là hội thoại nhiều người, có thể thêm `turns` theo đúng thứ tự đọc trong mỗi mục `dialogues`. Mỗi lượt gồm `speakerId`, `language` (`vi`/`en`), `text`; có thể thêm `voiceName` và `rate`. Dùng ID người nói ổn định xuyên suốt video; nếu không chỉ định `voiceName`, hệ thống dùng giọng mặc định đã lưu.
+- Không dùng nội dung xúc phạm, phân biệt đối xử, sáo rỗng, lan man hoặc sao chép.
 - Tránh lặp các câu gần đây sau đây: {{recent}}
 - Tạo hook tiếng Việt dễ hiểu, tiêu đề thumbnail ngắn và phù hợp với nội dung.
 

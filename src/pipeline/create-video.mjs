@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export async function createVideoJob(job) {
+  const settings = getSettings();
   let scriptId = job.payload.scriptId;
   let provider = job.payload.provider;
   let script;
@@ -31,10 +32,12 @@ export async function createVideoJob(job) {
   log('INFO', 'SCRIPT_READY', `Kịch bản ${script.topic} hợp lệ, provider ${provider}.`, job.id);
   try {
     const audio = await synthesizeScript(script, videoId, { onProgress: (progress, detail) => log('INFO', 'TTS_PROGRESS', JSON.stringify({ videoId, progress, ...detail }), job.id) });
-    log('INFO', 'TTS_READY', 'Đã tạo đủ 6 đoạn đọc và kiểm tra kích thước tệp.', job.id);
+    log('INFO', 'TTS_READY', `Đã tạo ${audio.length} đoạn đọc, thu WordBoundary và thử căn chỉnh local khi cần.`, job.id);
     const result = await renderVideo(script, videoId, audio, {
       onProgress: (progress) => log('INFO', 'RENDER_PROGRESS', JSON.stringify({ videoId, progress }), job.id),
-      onTimeline: (timeline) => log('INFO', 'RENDER_TIMELINE', JSON.stringify({ videoId, timeline }), job.id)
+      onTimeline: (timeline) => log('INFO', 'RENDER_TIMELINE', JSON.stringify({ videoId, timeline }), job.id),
+      onAlignmentWarning: (warning) => log('WARN', 'WORD_HIGHLIGHT_ALIGNMENT', JSON.stringify({ videoId, ...warning }), job.id),
+      highlightSettings: settings
     });
     const outputDir = path.dirname(result.videoPath);
     fs.writeFileSync(path.join(outputDir, 'script.json'), JSON.stringify(script, null, 2), 'utf8');
@@ -43,7 +46,6 @@ export async function createVideoJob(job) {
     fs.writeFileSync(path.join(outputDir, 'render-manifest.json'), JSON.stringify(result.renderManifest, null, 2), 'utf8');
     updateVideo(videoId, { status: 'ready', video_path: result.videoPath, thumbnail_path: result.thumbnailPath, duration_seconds: result.duration, last_error: null });
     log('INFO', 'VIDEO_READY', `Video ${result.width}x${result.height}, ${result.fps}, ${result.duration.toFixed(1)} giây.`, job.id);
-    const settings = getSettings();
     if (job.payload.autoSchedule || settings.autoPublishEnabled) {
       try {
         const schedule = createRandomSchedule(videoId, settings.timezone, settings.postsPerDay);

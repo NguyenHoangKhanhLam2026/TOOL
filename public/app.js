@@ -22,6 +22,12 @@ const EN_US_VOICES = [
   { id: 'en-US-RogerNeural', name: 'Roger', gender: 'Nam' },
   { id: 'en-US-SteffanNeural', name: 'Steffan', gender: 'Nam' }
 ];
+const HIGHLIGHT_PREVIEW_TEXT = {
+  vi: 'Xin chào, hôm nay mình cùng luyện nói tiếng Anh nhé.',
+  en: 'Hello, let us practice English together today.'
+};
+let highlightPreviewAudio = null;
+let highlightPreviewFrame = 0;
 
 async function api(url, options = {}) {
   const response = await fetch(url, { ...options, headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...options.headers } });
@@ -260,6 +266,13 @@ async function loadSettings() {
   $('#en-voice').value = settings.enVoice || 'en-US-JennyNeural';
   renderEnglishVoices();
   syncEnglishRateControls(settings.enRate);
+  $('#highlight-enabled').checked = settings.highlightEnabled !== false;
+  $('#highlight-mode').value = settings.highlightMode || 'word';
+  $('#highlight-color').value = settings.highlightColor || '#FF8066';
+  $('#highlight-padding').value = settings.highlightPadding ?? 6;
+  $('#highlight-radius').value = settings.highlightRadius ?? 8;
+  $('#highlight-transition').value = 'instant';
+  updateHighlightPreviewStyle();
   $('#posts-per-day').value = settings.postsPerDay;
   $('#prepare-days').value = settings.prepareAheadDays;
   $('#max-scripts').value = settings.maxScriptsPerDay;
@@ -282,16 +295,27 @@ async function loadSettings() {
   renderToolChecks(system.tools);
 }
 
+function setGenerateButtonBusy(busy) {
+  const button = $('#generate-button');
+  button.disabled = busy;
+  button.innerHTML = busy
+    ? '<span>&#9675;</span> Đang tạo video…'
+    : '<span>&#10033;</span> Tạo video mới <span class="button-arrow">&#8599;</span>';
+}
+
 async function generateVideo() {
   const button = $('#generate-button');
-  button.disabled = true; button.innerHTML = '<span>◌</span> Đang đưa vào hàng đợi…';
+  if (button.disabled) return;
+  setGenerateButtonBusy(true);
+  let jobQueued = false;
   try {
     const result = await api('/api/generate', { method: 'POST', body: JSON.stringify({ topicId: $('#topic-select').value || null, allowLocalTemplate: $('#local-template').checked }) });
+    jobQueued = true;
     toast('Đã thêm video vào hàng đợi', false, 'Worker sẽ xử lý kịch bản, giọng đọc và render.');
     watchJob(result.jobId);
     setView('overview');
   } catch (error) { toast('Không tạo được job', true, error.message); }
-  finally { button.disabled = false; button.innerHTML = '<span>✳</span> Tạo video mới <span class="button-arrow">↗</span>'; }
+  finally { if (!jobQueued) setGenerateButtonBusy(false); }
 }
 
 let watchedJobs = new Set();
@@ -299,7 +323,6 @@ let libraryProgressTimer;
 function refreshLibraryProgress() { if (state.view !== 'library') return; clearTimeout(libraryProgressTimer); libraryProgressTimer = setTimeout(() => loadVideos().catch(() => {}), 650); }
 function connectRealtime() {
   const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-  socket.addEventListener('open', () => $('#worker-pill').classList.remove('offline'));
   socket.addEventListener('message', (event) => {
     let message;
     try { message = JSON.parse(event.data); } catch { return; }
@@ -348,12 +371,17 @@ function watchJob(jobId) {
       if (job?.status === 'completed') {
         clearInterval(timer); watchedJobs.delete(jobId);
         toast('Job đã hoàn tất', false, job.type === 'create_video' ? 'Mở thư viện để xem trạng thái video.' : 'Kiểm tra nhật ký xuất bản.');
+        if (job.type === 'create_video') setGenerateButtonBusy(false);
         await refreshData();
       } else if (job?.status === 'failed') {
         clearInterval(timer); watchedJobs.delete(jobId);
         toast('Job gặp lỗi', true, job.last_error || 'Mở Nhật ký hoạt động để xem chi tiết.');
+        if (job.type === 'create_video') setGenerateButtonBusy(false);
         await refreshData();
-      } else if (checks > 360) { clearInterval(timer); watchedJobs.delete(jobId); }
+      } else if (checks > 360) {
+        clearInterval(timer); watchedJobs.delete(jobId);
+        if (job?.type === 'create_video') setGenerateButtonBusy(false);
+      }
     } catch { /* The next polling attempt will reconnect. */ }
   }, 2500);
 }
@@ -410,6 +438,12 @@ async function saveSettings() {
     const result = await api('/api/settings', { method: 'POST', body: JSON.stringify({
       ollamaBaseUrl: $('#ollama-url').value.trim(), ollamaModel: $('#ollama-model').value.trim(),
       viVoice: $('#vi-voice').value.trim(), enVoice: $('#en-voice').value.trim(), enRate: $('#en-rate').value.trim(),
+      highlightEnabled: $('#highlight-enabled').checked,
+      highlightMode: $('#highlight-mode').value,
+      highlightColor: $('#highlight-color').value,
+      highlightPadding: Number($('#highlight-padding').value),
+      highlightRadius: Number($('#highlight-radius').value),
+      highlightTransition: $('#highlight-transition').value,
       postsPerDay: Number($('#posts-per-day').value), prepareAheadDays: Number($('#prepare-days').value),
       maxScriptsPerDay: Number($('#max-scripts').value),
       facebookAdapter: $('#facebook-adapter').value, autoGenerationEnabled: $('#auto-generation').checked,
@@ -464,6 +498,72 @@ async function previewVoice(language, chosenVoice = '') {
   } catch (error) { toast('Không tạo được bản nghe thử', true, error.message); }
 }
 
+function updateHighlightPreviewStyle() {
+  const preview = $('#highlight-preview-words');
+  if (!preview) return;
+  preview.style.setProperty('--highlight-color', $('#highlight-color').value || '#FF8066');
+  preview.style.setProperty('--highlight-padding', `${Number($('#highlight-padding').value) || 0}px`);
+  preview.style.setProperty('--highlight-radius', `${Number($('#highlight-radius').value) || 0}px`);
+  preview.style.setProperty('--highlight-transition-duration', $('#highlight-transition').value === 'smooth' ? '100ms' : '0ms');
+}
+
+async function previewHighlight() {
+  const button = $('#highlight-preview-play');
+  const status = $('#highlight-preview-status');
+  button.disabled = true;
+  status.textContent = 'Đang tạo audio và lấy WordBoundary…';
+  try {
+    const language = $('#highlight-preview-language').value;
+    const text = $('#highlight-preview-source').value.trim();
+    const voice = language === 'vi' ? $('#vi-voice').value : $('#en-voice').value;
+    const result = await api('/api/tts/preview', { method: 'POST', body: JSON.stringify({ language, text, voice, withWordBoundaries: true, highlightMode: $('#highlight-mode').value }) });
+    const host = $('#highlight-preview-words');
+    host.replaceChildren();
+    let offset = 0;
+    const spans = new Map();
+    for (const token of result.tokens || []) {
+      if (token.start > offset) host.append(document.createTextNode(text.slice(offset, token.start)));
+      const span = document.createElement('span');
+      span.className = 'highlight-preview-word';
+      span.dataset.tokenId = token.id;
+      span.textContent = token.text;
+      host.append(span);
+      spans.set(token.id, span);
+      offset = token.end;
+    }
+    if (offset < text.length) host.append(document.createTextNode(text.slice(offset)));
+    updateHighlightPreviewStyle();
+    if (highlightPreviewAudio) {
+      highlightPreviewAudio.pause();
+      highlightPreviewAudio = null;
+    }
+    if (highlightPreviewFrame) cancelAnimationFrame(highlightPreviewFrame);
+    const audio = new Audio(result.url);
+    highlightPreviewAudio = audio;
+    const intervals = $('#highlight-enabled').checked ? result.highlightIntervals || [] : [];
+    const updateWord = () => {
+      const time = audio.currentTime;
+      const active = intervals.find((item) => time >= item.startSeconds && time < item.endSeconds);
+      const activeIds = new Set(active?.tokenIds || []);
+      for (const [tokenId, span] of spans) span.classList.toggle('is-active', activeIds.has(tokenId));
+    };
+    const syncPreview = () => {
+      updateWord();
+      if (!audio.paused && !audio.ended) highlightPreviewFrame = requestAnimationFrame(syncPreview);
+    };
+    audio.addEventListener('play', syncPreview);
+    audio.addEventListener('pause', () => { if (highlightPreviewFrame) cancelAnimationFrame(highlightPreviewFrame); });
+    audio.addEventListener('ended', () => { if (highlightPreviewFrame) cancelAnimationFrame(highlightPreviewFrame); for (const span of spans.values()) span.classList.remove('is-active'); });
+    await audio.play();
+    status.textContent = result.alignment?.reliable
+      ? `Đang nghe thử · ${result.voice}${result.alignmentSource === 'stable-ts-local' ? ' · căn chỉnh local' : ''}${result.wordTimings.length ? ` · ${result.wordTimings.length} mốc từ` : ''}`
+      : `Audio đã tạo, nhưng không có căn chỉnh đáng tin nên preview không tô từ.${result.warning ? ` ${result.warning}` : ''}`;
+  } catch (error) {
+    status.textContent = error.message;
+    toast('Không tạo được preview highlight', true, error.message);
+  } finally { button.disabled = false; }
+}
+
 async function addTopic() {
   const title = window.prompt('Tên chủ đề mới:');
   if (!title?.trim()) return;
@@ -506,6 +606,16 @@ function setupEvents() {
   $$('.filter-tab').forEach((button) => button.addEventListener('click', () => { state.filter = button.dataset.filter; $$('.filter-tab').forEach((tab) => tab.classList.toggle('active', tab === button)); renderLibrary(); }));
   $('#en-rate-slider').addEventListener('input', setEnglishRateFromSlider);
   $('#en-rate').addEventListener('input', () => syncEnglishRateControls());
+  $('#highlight-color').addEventListener('input', updateHighlightPreviewStyle);
+  $('#highlight-padding').addEventListener('input', updateHighlightPreviewStyle);
+  $('#highlight-radius').addEventListener('input', updateHighlightPreviewStyle);
+  $('#highlight-transition').addEventListener('change', updateHighlightPreviewStyle);
+  $('#highlight-preview-language').addEventListener('change', (event) => {
+    const input = $('#highlight-preview-source');
+    const oldSample = HIGHLIGHT_PREVIEW_TEXT[event.target.value === 'vi' ? 'en' : 'vi'];
+    if (input.value.trim() === oldSample) input.value = HIGHLIGHT_PREVIEW_TEXT[event.target.value];
+  });
+  $('#highlight-preview-play').addEventListener('click', previewHighlight);
   $('#clear-logs').addEventListener('click', async () => {
     if (!confirm('Xóa toàn bộ nhật ký hoạt động?')) return;
     const button = $('#clear-logs'); button.disabled = true;

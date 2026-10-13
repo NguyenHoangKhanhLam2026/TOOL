@@ -18,7 +18,6 @@ function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopic
     .replaceAll('{{topic}}', topic.title)
     .replaceAll('{{category}}', topic.category)
     .replaceAll('{{level}}', settings.level)
-    .replaceAll('{{maxLineChars}}', String(settings.maxLineChars))
     .replaceAll('{{recent}}', recent.join(' | ') || 'chưa có')
     .replaceAll('{{schema}}', JSON.stringify(schema, null, 2));
   if (!autoTopic) return prompt;
@@ -37,9 +36,15 @@ export async function createScript(topicId, { allowLocalTemplate = false } = {})
   const topic = topicId ? db.prepare('SELECT * FROM topics WHERE id=?').get(topicId) : pickTopic();
   if (!topic) throw new Error('Kh\u00f4ng c\u00f3 ch\u1ee7 \u0111\u1ec1 n\u00e0o \u0111\u1ec3 t\u1ea1o video.');
   const settings = getSettings();
-  const historyRows = db.prepare('SELECT topic,dialogues_json FROM scripts ORDER BY created_at DESC').all();
-  const history = historyRows.map((row) => JSON.parse(row.dialogues_json));
-  const recent = history.flatMap((dialogues) => dialogues.map((dialogue) => dialogue.english)).slice(0, 30);
+  const historyRows = db.prepare('SELECT topic,dialogues_json,speech_segments_json FROM scripts ORDER BY created_at DESC').all();
+  const history = historyRows.map((row) => ({
+    dialogues: JSON.parse(row.dialogues_json),
+    speechSegments: JSON.parse(row.speech_segments_json || '[]')
+  }));
+  const recent = history.flatMap((item) => [
+    ...item.dialogues.flatMap((dialogue) => [dialogue.english, ...(dialogue.turns || []).filter((turn) => /^(en|english)(?:-|$)/i.test(turn.language || '')).map((turn) => turn.text)]),
+    ...item.speechSegments.filter((segment) => /^(en|english)(?:-|$)/i.test(segment.language || '')).map((segment) => segment.text)
+  ]).filter(Boolean).slice(0, 30);
   const prompt = buildPrompt(topic, recent, settings, { autoTopic: !topicId, previousTopics: historyRows.map((row) => row.topic) });
   const providers = [];
   if (chatgptStatus().connected) providers.push(['chatgpt-plan', (value) => generateWithChatGPT(value)]);
@@ -52,7 +57,7 @@ export async function createScript(topicId, { allowLocalTemplate = false } = {})
     for (let attempt = 0; attempt < 3; attempt++) {
       let candidate;
       try {
-        candidate = validateScript(parseJSON(await call(repairPrompt)), { maxLineChars: settings.maxLineChars });
+        candidate = validateScript(parseJSON(await call(repairPrompt)));
         assertDistinctFromHistory(candidate, history);
         script = candidate;
         provider = name;
@@ -60,14 +65,17 @@ export async function createScript(topicId, { allowLocalTemplate = false } = {})
       } catch (error) {
         errors.push(`${name}: ${error.message}`);
         log('WARN', 'AI_PROVIDER_FAILED', `${name} l\u1ea7n ${attempt + 1} kh\u00f4ng t\u1ea1o \u0111\u01b0\u1ee3c k\u1ecbch b\u1ea3n h\u1ee3p l\u1ec7: ${error.message}`);
-        const rejected = candidate?.dialogues?.map((dialogue) => dialogue.english).join(' | ') || '';
-        repairPrompt = `${prompt}\n\nKh\u00f4ng l\u1eb7p l\u1ea1i c\u00e1c c\u00e2u ti\u1ebfng Anh b\u1ecb lo\u1ea1i: ${rejected}\nH\u00e3y kh\u1eafc ph\u1ee5c l\u1ed7i n\u00e0y: ${error.message}\nTr\u1ea3 v\u1ec1 m\u1ed9t JSON h\u1ee3p l\u1ec7 c\u00f3 \u0111\u00fang ba c\u1eb7p c\u00e2u song ng\u1eef.`;
+        const rejected = [
+          ...(candidate?.dialogues || []).flatMap((dialogue) => [dialogue.english, ...(dialogue.turns || []).map((turn) => turn.text)]),
+          ...(candidate?.speechSegments || candidate?.audioSegments || []).map((segment) => segment.text)
+        ].filter(Boolean).join(' | ');
+        repairPrompt = `${prompt}\n\nKh\u00f4ng l\u1eb7p l\u1ea1i c\u00e1c c\u00e2u ti\u1ebfng Anh b\u1ecb lo\u1ea1i: ${rejected}\nH\u00e3y kh\u1eafc ph\u1ee5c l\u1ed7i n\u00e0y: ${error.message}\nTr\u1ea3 v\u1ec1 JSON h\u1ee3p l\u1ec7, c\u00f3 \u0111\u1ed9 d\u00e0i m\u1ea3ng dialogues ph\u00f9 h\u1ee3p v\u1edbi m\u1ea1ch n\u1ed9i dung, kh\u00f4ng c\u1ea7n c\u1ed1 \u0111\u1ecbnh \u0111\u00fang ba c\u1eb7p.`;
       }
     }
     if (script) break;
   }
   if (!script && allowLocalTemplate) {
-    const candidate = validateScript(makeLocalScript(topic), { maxLineChars: settings.maxLineChars });
+    const candidate = validateScript(makeLocalScript(topic));
     script = assertDistinctFromHistory(candidate, history);
     provider = 'local-template';
   }

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TOPICS, makeLocalScript } from '../../src/topics.mjs';
 import { assertDistinctFromRecent, contentHash, normalizeText, sentenceSimilarity, validateScript } from '../../src/ai/validator.mjs';
+import { createSpeechSegments } from '../../packages/audio-highlight/highlight-engine.mjs';
 
 test('topic library contains one hundred distinct topics', () => {
   assert.equal(TOPICS.length, 100);
@@ -45,4 +46,30 @@ test('near duplicate English lines are detected locally', () => {
   assert.equal(similarity, 1);
   const script = validateScript(makeLocalScript(TOPICS[0]));
   assert.throws(() => assertDistinctFromRecent(script, [script.dialogues[0].english]), /quá giống/);
+});
+
+test('validator accepts flexible dialogue turns and long text for automatic speech segments', () => {
+  const script = validateScript({
+    topic: 'Long roleplay', category: 'Travel', level: 'B1', title: 'At the station', hook: 'Try this exchange.',
+    caption: 'Learn useful English.', hashtags: [], thumbnailTitle: 'At the station',
+    dialogues: Array.from({ length: 5 }, (_, index) => ({
+      id: `exchange-${index + 1}`,
+      turns: [
+        { speakerId: 'traveler', language: 'en', text: `${'Could you please help me '.repeat(12)}with the next train?` },
+        { speakerId: 'staff', language: 'vi', text: `Lượt trả lời ${index + 1}.` }
+      ]
+    }))
+  });
+  const segments = createSpeechSegments(script);
+  assert.equal(script.dialogues.length, 5);
+  assert.equal(segments.length, 10);
+  assert.ok(segments[0].text.length > 150);
+  assert.equal(segments[0].speakerId, 'traveler');
+  assert.equal(segments[1].language, 'vi');
+});
+
+test('an empty canonical speechSegments array falls back to audioSegments', () => {
+  const segments = createSpeechSegments({ speechSegments: [], audioSegments: [{ id: 'narrator', language: 'en', text: 'Welcome back.' }] });
+  assert.equal(segments.length, 1);
+  assert.equal(segments[0].segmentId, 'narrator');
 });

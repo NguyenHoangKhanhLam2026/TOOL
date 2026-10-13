@@ -10,6 +10,37 @@ if (fs.existsSync(envFile)) {
     if (match && process.env[match[1]] === undefined) process.env[match[1]] = match[2].replace(/^(["'])(.*)\1$/, '$2');
   }
 }
+function addWingetFfmpegToPath() {
+  if (process.platform !== 'win32' || !process.env.LOCALAPPDATA) return;
+  const currentPath = process.env.PATH || '';
+  const hasBothTools = currentPath.split(path.delimiter).some((directory) =>
+    fs.existsSync(path.join(directory, 'ffmpeg.exe')) && fs.existsSync(path.join(directory, 'ffprobe.exe'))
+  );
+  if (hasBothTools) return;
+
+  const packagesPath = path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Packages');
+  let packages;
+  try { packages = fs.readdirSync(packagesPath, { withFileTypes: true }); }
+  catch { return; }
+  for (const pkg of packages) {
+    if (!pkg.isDirectory() || !/^Gyan\.FFmpeg\.(Shared|Essentials|Full)_/i.test(pkg.name)) continue;
+    const packagePath = path.join(packagesPath, pkg.name);
+    let releases;
+    try { releases = fs.readdirSync(packagePath, { withFileTypes: true }); }
+    catch { continue; }
+    for (const release of releases) {
+      if (!release.isDirectory()) continue;
+      const binPath = path.join(packagePath, release.name, 'bin');
+      if (fs.existsSync(path.join(binPath, 'ffmpeg.exe')) && fs.existsSync(path.join(binPath, 'ffprobe.exe'))) {
+        process.env.PATH = `${binPath}${path.delimiter}${currentPath}`;
+        return;
+      }
+    }
+  }
+}
+
+addWingetFfmpegToPath();
+
 export const DATA = process.env.AERS_DATA_DIR || path.join(ROOT, 'data');
 export const PORT = Number(process.env.APP_PORT || 3001);
 export const HOST = process.env.APP_HOST || '127.0.0.1';
@@ -30,7 +61,12 @@ export const DEFAULTS = Object.freeze({
   viVoice: 'vi-VN-HoaiMyNeural',
   enVoice: 'en-US-AndrewNeural',
   enRate: '-8%',
-  maxLineChars: 150,
+  highlightEnabled: true,
+  highlightMode: 'word',
+  highlightColor: '#FF8066',
+  highlightPadding: 6,
+  highlightRadius: 8,
+  highlightTransition: 'instant',
   level: 'A2-B1',
   postTime: '19:30',
   postsPerDay: 3,

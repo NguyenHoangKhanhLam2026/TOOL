@@ -10,7 +10,7 @@
 
 Đã có mã nguồn cho dashboard, SQLite WAL, thư viện 100 chủ đề, xác thực kịch bản, ChatGPT plan OAuth, Ollama, Edge TTS, FFmpeg renderer, thư viện video, lịch địa phương, worker, Facebook Mock và adapter Meta Graph API. Visual Engine V2 bổ sung nhận diện “Sinh ra để nói tiếng Anh”, scene template dùng chung, preview/editor, asset manager, upload asset cục bộ và sự kiện tiến độ qua WebSocket loopback.
 
-Ứng dụng chỉ đánh dấu video sẵn sàng sau khi tạo đủ 6 file âm thanh, render MP4 và xác minh đầu ra bằng ffprobe. Mẫu V2 thật đã render từ 3 cặp hội thoại bằng Edge TTS: `data/outputs/visual-regression/final-test-video.mp4` (1080×1920, 30 FPS, H.264/AAC, khoảng 29.8 giây). Năm scene PNG, contact sheet và manifest có cùng thư mục. Facebook live tắt mặc định.
+Mỗi video tạo audio riêng cho từng đoạn đọc, thu WordBoundary theo giọng và căn highlight theo timeline trước khi render MP4. Số lượt hội thoại lấy từ kịch bản, không cố định ba cặp. Renderer vẫn xác minh 1080×1920, 30 FPS, H.264/AAC và thời lượng 4–60 giây bằng ffprobe. Facebook live tắt mặc định.
 
 **Kiến trúc hiện tại:** backend dùng HTTP, WebSocket loopback và SQLite tích hợp trong Node; giao diện dùng HTML/CSS/JavaScript thuần. Sharp được dùng để rasterize scene SVG, sinh logo PNG và metadata thumbnail. Dự án chưa dùng React, TypeScript, Vite, Express, Zod, Tailwind hoặc Luxon.
 
@@ -36,6 +36,8 @@
    ```
 
    `setup.ps1` tạo `.venv` riêng cho dự án và cài gói mã nguồn mở `edge-tts`. `npm run setup` kiểm tra Node, Python, Edge TTS, FFmpeg và ffprobe.
+
+   WordBoundary của Edge TTS là nguồn timestamp chính. Nếu mốc thiếu hoặc không khớp văn bản, ứng dụng thử forced alignment local bằng stable-ts nếu đã cài. Đây là phụ thuộc tùy chọn vì cần PyTorch và model tải về; cài bằng `python -m pip --python .venv\Scripts\python.exe install -r packages\tts-engine\python\requirements-alignment.txt`. Model mặc định là `base`; có thể đổi bằng `AERS_ALIGNMENT_MODEL`. Nếu không có model hoặc căn chỉnh không đáng tin, audio vẫn được giữ nguyên, highlight tắt riêng cho đoạn đó và ứng dụng ghi cảnh báo.
 
 Trong **Cài đặt → Giọng đọc & video**, chọn giọng nữ/nam tiếng Việt hoặc một trong các giọng tiếng Anh Mỹ. Mỗi giọng tiếng Anh có nút nghe thử riêng; chọn giọng rồi bấm **Lưu cài đặt** để dùng cho video tiếp theo. Mỗi thẻ hội thoại giữ đủ thông tin khoảng 5,5 giây rồi chuyển cảnh mờ về đen trong khoảng 0,3 giây.
 
@@ -84,7 +86,7 @@ Khi ChatGPT plan hết hạn mức hoặc không khả dụng, provider manager 
 
 1. Kết nối ChatGPT plan hoặc Ollama; có thể bật tùy chọn mẫu cục bộ nếu chỉ muốn thử các bước sau AI.
 2. Chọn chủ đề trong dashboard và tạo video.
-3. Worker xác thực 3 cặp câu, gọi Edge TTS cho từng câu Việt/Anh, đo thời lượng bằng ffprobe, dựng video 1080×1920/30 FPS và trích thumbnail PNG.
+3. Worker xác thực kịch bản có số lượt linh hoạt, gọi Edge TTS riêng theo giọng/ngôn ngữ của từng lượt, đo thời lượng bằng ffprobe, dựng video 1080×1920/30 FPS với highlight theo timeline và trích thumbnail PNG.
 4. Video hợp lệ xuất hiện trong Thư viện. Mở kịch bản để xem câu, từ khóa, giải thích và caption.
 5. Lên lịch trong tab Lịch đăng. Muốn tự đăng, kết nối Meta và bật rõ ràng tùy chọn tương ứng.
 
@@ -97,6 +99,13 @@ Renderer xác minh H.264/AAC, 1080×1920, 30 FPS và thời lượng 4–60 giâ
 - Template dùng chung nằm ở `assets/branding/visual-template.json`; bản gốc reset ở `visual-template-default.json`. Asset PNG là tài nguyên tái sử dụng, không tạo AI riêng cho từng video.
 - Be Vietnam Pro được lấy từ [Google Fonts](https://github.com/google/fonts/tree/main/ofl/bevietnampro) và phân phối theo SIL Open Font License 1.1; giấy phép đi cùng tại `assets/branding/fonts/OFL.txt`.
 - noVNC/VNC chưa bật và chưa cài. Lý do kỹ thuật được ghi ở [docs/vnc-assessment.md](docs/vnc-assessment.md).
+
+## Highlight đồng bộ giọng đọc
+
+- Trong Cài đặt, chọn bật/tắt, từng từ/từng cụm, màu, padding, bo góc và chuyển tức thời/trượt mượt; nút nghe thử dùng audio và WordBoundary trả về cho đúng câu preview.
+- Câu hiển thị được token hóa thành ID ổn định; renderer dùng cùng bộ ánh xạ timeline cho audio preview và MP4. Các câu dài được xuống dòng trước khi xác định hộp từ, nên highlight giữ đúng vị trí sau khi xuống dòng.
+- WordBoundary theo từng audio clip tự phản ánh giọng và tốc độ đọc. Nếu Edge thiếu mốc, stable-ts là phương án local miễn phí có thể cài tùy chọn. Nếu cả hai nguồn không căn chỉnh được đầy đủ, đoạn vẫn có tiếng nhưng không tô từ và có log cảnh báo.
+- Khi có nhiều lượt, renderer tự rút ngắn thời gian nghỉ xem từ vựng để giữ video trong giới hạn 60 giây nếu tổng audio còn vừa. Nếu riêng audio đọc đã dài hơn giới hạn, hệ thống báo rõ và không cắt mất câu.
 
 ## Lệnh dự án
 
@@ -138,6 +147,6 @@ Tắt server và worker trước khi sao lưu. Sao chép `data/database/studio.s
 
 ## Kiểm thử và giới hạn đã xác minh
 
-Đã xác minh trên máy này: `npm.cmd test`, `npm.cmd run build`, `npm.cmd run lint`, `npm.cmd run typecheck`, `npm.cmd run setup`; visual regression dựng đủ năm trạng thái PNG, contact sheet và video 3 cặp hội thoại. FFprobe xác nhận MP4 V2 H.264/AAC 1080×1920, 30 FPS, 29.84 giây. Publish history trước đó đã xác nhận trạng thái Mock.
+Các bài kiểm thử unit và integration bao gồm ánh xạ từ lặp, nhiều giọng, nhiều lượt, câu dài, tốc độ đọc khác nhau, khoảng nghỉ, tiếng Việt có dấu, câu đọc lại và template văn bản tùy chỉnh. Render MP4 đầy đủ cần FFmpeg/FFprobe có trong `PATH`; kiểm tra đầu ra vẫn chạy tự động sau mỗi lần render.
 
 Ollama chưa cài. ChatGPT plan OAuth đã kết nối trên máy này; thư viện có video tạo bởi provider này ở trạng thái sẵn sàng. Video mẫu đã publish qua Facebook Mock được tạo từ mẫu cục bộ. **LIVE FACEBOOK PUBLISH NOT YET VERIFIED** vì chưa có Page ID, token và quyền Meta thật.

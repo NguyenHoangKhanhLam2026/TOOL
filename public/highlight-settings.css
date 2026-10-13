@@ -1,0 +1,87 @@
+.highlight-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: end;
+}
+
+.highlight-settings-grid > label:not(.switch-row) {
+  display: grid;
+  gap: 7px;
+  color: #68736a;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.highlight-settings-grid input:not([type="checkbox"]),
+.highlight-settings-grid select,
+.highlight-settings-grid textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #e1e4dc;
+  border-radius: 8px;
+  background: #fffefa;
+  color: #344139;
+  padding: 7px 10px;
+}
+
+.highlight-settings-grid input[type="color"] {
+  padding: 3px 5px;
+}
+
+.highlight-enable,
+.highlight-preview-source,
+.highlight-preview-actions,
+.highlight-preview-text {
+  grid-column: 1 / -1;
+}
+
+.highlight-preview-source textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.highlight-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.highlight-preview-text {
+  min-height: 68px;
+  padding: 16px;
+  border: 1px solid #e9e7df;
+  border-radius: 12px;
+  background: #f8f7f3;
+  color: #344139;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.highlight-preview-word {
+  border-radius: var(--highlight-radius, 8px);
+  box-shadow: 0 0 0 0 transparent;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: color var(--highlight-transition-duration, 100ms) ease, box-shadow var(--highlight-transition-duration, 100ms) ease;
+}
+
+.highlight-preview-word.is-active {
+  box-shadow: 0 0 0 var(--highlight-padding, 6px) var(--highlight-color, #ff8066);
+  color: #fff;
+}
+
+@media (max-width: 760px) {
+  .highlight-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+  .highlight-settings-grid { grid-template-columns: 1fr; }
+  .highlight-enable,
+  .highlight-preview-source,
+  .highlight-preview-actions,
+  .highlight-preview-text { grid-column: auto; }
+  .highlight-preview-actions { align-items: flex-start; flex-direction: column; }
+}

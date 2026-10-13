@@ -131,7 +131,6 @@ async function processJob(job) {
 }
 
 async function tick() {
-  fs.writeFileSync(heartbeatPath, JSON.stringify({ workerId, lastSeen: new Date().toISOString() }), 'utf8');
   if (Date.now() - lastScheduleCheck > 30_000) {
     lastScheduleCheck = Date.now();
     await ensureAutoQueue();
@@ -153,10 +152,15 @@ async function main() {
   const recovered = recoverStaleJobs();
   if (recovered) log('WARN', 'JOBS_RECOVERED', `Đã khôi phục ${recovered} job bị gián đoạn.`);
   log('INFO', 'WORKER_STARTED', `Worker ${workerId} đã sẵn sàng.`);
+  const writeHeartbeat = () => fs.writeFileSync(heartbeatPath, JSON.stringify({ workerId, lastSeen: new Date().toISOString() }), 'utf8');
+  writeHeartbeat();
+  const heartbeatTimer = setInterval(writeHeartbeat, 5_000);
+  heartbeatTimer.unref();
   while (!stopping) {
     try { await tick(); } catch (error) { log('ERROR', 'WORKER_TICK_FAILED', error.message); }
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
+  clearInterval(heartbeatTimer);
   db.close();
 }
 

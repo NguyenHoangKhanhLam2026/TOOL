@@ -69,6 +69,11 @@ if (!db.prepare('PRAGMA table_info(videos)').all().some((column) => column.name 
   catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
 }
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(3,?)').run(new Date().toISOString());
+if (!db.prepare('PRAGMA table_info(scripts)').all().some((column) => column.name === 'speech_segments_json')) {
+  try { db.exec("ALTER TABLE scripts ADD COLUMN speech_segments_json TEXT NOT NULL DEFAULT '[]'"); }
+  catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
+}
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(4,?)').run(new Date().toISOString());
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)');
 const now = new Date().toISOString();
@@ -203,11 +208,14 @@ export function pickTopic(requestedId = null) {
 export function insertScript(script, topicId, provider) {
   script.hashtags = ensureBrandHashtag(script.hashtags);
   script.caption = formatCaption(script.caption, script.hashtags);
+  const speechSegments = Array.isArray(script.speechSegments) && script.speechSegments.length
+    ? script.speechSegments
+    : Array.isArray(script.audioSegments) ? script.audioSegments : [];
   const existing = db.prepare('SELECT id FROM scripts WHERE content_hash=?').get(script.contentHash);
   if (existing) throw new Error('Kịch bản trùng với nội dung đã lưu; hãy chọn chủ đề khác.');
-  db.prepare(`INSERT INTO scripts(id,topic_id,topic,category,level,title,hook,dialogues_json,caption,hashtags_json,thumbnail_title,provider,content_hash,created_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(script.id, topicId, script.topic, script.category, script.level, script.title, script.hook,
-    JSON.stringify(script.dialogues), script.caption, JSON.stringify(script.hashtags), script.thumbnailTitle, provider, script.contentHash, script.createdAt);
+  db.prepare(`INSERT INTO scripts(id,topic_id,topic,category,level,title,hook,dialogues_json,speech_segments_json,caption,hashtags_json,thumbnail_title,provider,content_hash,created_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(script.id, topicId, script.topic, script.category, script.level, script.title, script.hook,
+    JSON.stringify(script.dialogues || []), JSON.stringify(speechSegments), script.caption, JSON.stringify(script.hashtags), script.thumbnailTitle, provider, script.contentHash, script.createdAt);
   db.prepare('UPDATE topics SET used_at=? WHERE id=?').run(new Date().toISOString(), topicId);
   return script.id;
 }
@@ -223,7 +231,7 @@ export function getScript(scriptId) {
   const row = db.prepare('SELECT * FROM scripts WHERE id=?').get(scriptId);
   if (!row) return null;
   const hashtags = ensureBrandHashtag(JSON.parse(row.hashtags_json));
-  return { ...row, dialogues: JSON.parse(row.dialogues_json), hashtags, captionText: formatCaption(row.caption, hashtags), thumbnailTitle: row.thumbnail_title, createdAt: row.created_at, contentHash: row.content_hash };
+  return { ...row, dialogues: JSON.parse(row.dialogues_json), speechSegments: JSON.parse(row.speech_segments_json || '[]'), hashtags, captionText: formatCaption(row.caption, hashtags), thumbnailTitle: row.thumbnail_title, createdAt: row.created_at, contentHash: row.content_hash };
 }
 
 export function getVideo(videoId) {

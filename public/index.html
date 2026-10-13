@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/voice-picker.css" />
     <link rel="stylesheet" href="/navigation-links.css" />
+    <link rel="stylesheet" href="/highlight-settings.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -141,6 +142,21 @@
                   </section>
                 </div>
                 <div class="tool-checks" id="tool-checks"></div>
+              </article>
+
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Tô sáng từ đang được đọc bằng WordBoundary của Edge TTS.</p></div></div></div>
+                <div class="highlight-settings-grid">
+                  <label class="switch-row highlight-enable"><input type="checkbox" id="highlight-enabled" checked /><span class="switch"></span><span><strong>Bật highlight đồng bộ</strong><small>Áp dụng tự động cho video mới.</small></span></label>
+                  <label>Kiểu highlight<select id="highlight-mode"><option value="word">Từng từ</option><option value="phrase">Từng cụm từ</option></select></label>
+                  <label>Màu highlight<input id="highlight-color" type="color" value="#FF8066" /></label>
+                  <label>Padding (px)<input id="highlight-padding" type="number" min="0" max="24" step="1" value="6" /></label>
+                  <label>Bo góc (px)<input id="highlight-radius" type="number" min="0" max="32" step="1" value="8" /></label>
+                  <label>Chuyển giữa từ<select id="highlight-transition" disabled><option value="instant">Tức thời, theo mốc giọng đọc</option></select></label>
+                  <label>Ngôn ngữ nghe thử<select id="highlight-preview-language"><option value="vi">Tiếng Việt</option><option value="en">Tiếng Anh</option></select></label>
+                  <label class="highlight-preview-source">Câu nghe thử<textarea id="highlight-preview-source">Xin chào, hôm nay mình cùng luyện nói tiếng Anh nhé.</textarea></label>
+                  <div class="highlight-preview-actions"><button class="button button-outline button-small" id="highlight-preview-play" type="button">▶ Nghe thử Highlight</button><span class="muted-copy" id="highlight-preview-status" aria-live="polite">Mẫu thử sẽ dùng giọng đang chọn ở trên.</span></div>
+                  <div class="highlight-preview-text" id="highlight-preview-words" aria-label="Văn bản xem trước highlight"></div>
+                </div>
               </article>
 
               <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">◷</span><div><h2>Lịch và Full Auto</h2><p class="panel-caption">Máy tính phải bật và worker đang chạy tại giờ đăng.</p></div></div><span class="state-pill neutral" id="auto-state">Đang tắt</span></div>

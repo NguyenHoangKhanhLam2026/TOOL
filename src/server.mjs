@@ -13,7 +13,8 @@ import { beginChatGPTSignIn, completeChatGPTSignIn, chatgptStatus, disconnectCha
 import { facebookTokenSaved, saveFacebookToken, clearFacebookToken, MetaGraphAdapter } from '../packages/facebook-engine/meta-graph-adapter.mjs';
 import { MockFacebookAdapter } from '../packages/facebook-engine/mock-adapter.mjs';
 import { zonedLocalToDate } from './scheduler/time.mjs';
-import { synthesizeSpeech } from './tts/edge-tts.mjs';
+import { alignSpeechLocally, synthesizeSpeech } from './tts/edge-tts.mjs';
+import { buildHighlightIntervals, mapWordBoundariesToTokens, normalizeLanguage } from '../packages/audio-highlight/highlight-engine.mjs';
 import { BRANDING_DIR, buildSceneSvg, rasterizeScene, readVisualTemplate, saveVisualTemplate, getDesignPrompts } from '../packages/video-engine/visual-template-engine.mjs';
 import { deleteAsset, listAssets, resetBrandAssets, saveUploadedAsset, setDefaultAsset } from '../packages/video-engine/asset-manager.mjs';
 
@@ -300,7 +301,12 @@ async function handleApi(req, res, url) {
     if (!/^[\w.:-]{2,80}$/.test(String(next.ollamaModel))) return json(res, 400, { error: 'Tên model Ollama không hợp lệ.' });
     if (!/^[\w-]{2,100}$/.test(String(next.viVoice)) || !/^[\w-]{2,100}$/.test(String(next.enVoice))) return json(res, 400, { error: 'Tên giọng đọc không hợp lệ.' });
     if (!/^[+-]\d{1,3}%$/.test(String(next.enRate))) return json(res, 400, { error: 'Tốc độ giọng tiếng Anh phải có dạng -8% hoặc +0%.' });
-    if (!Number.isInteger(Number(next.maxLineChars)) || Number(next.maxLineChars) < 60 || Number(next.maxLineChars) > 180) return json(res, 400, { error: 'Độ dài câu phải từ 60 đến 180 ký tự.' });
+    if (typeof next.highlightEnabled !== 'boolean') return json(res, 400, { error: 'Trạng thái highlight không hợp lệ.' });
+    if (!['word', 'phrase'].includes(next.highlightMode)) return json(res, 400, { error: 'Kiểu highlight phải là từng từ hoặc từng cụm từ.' });
+    if (!/^#[0-9a-f]{6}$/i.test(String(next.highlightColor))) return json(res, 400, { error: 'Màu highlight phải là mã hex 6 ký tự.' });
+    if (!Number.isInteger(Number(next.highlightPadding)) || Number(next.highlightPadding) < 0 || Number(next.highlightPadding) > 24) return json(res, 400, { error: 'Padding highlight phải từ 0 đến 24 px.' });
+    if (!Number.isInteger(Number(next.highlightRadius)) || Number(next.highlightRadius) < 0 || Number(next.highlightRadius) > 32) return json(res, 400, { error: 'Bo góc highlight phải từ 0 đến 32 px.' });
+    if (body.highlightTransition !== undefined && body.highlightTransition !== 'instant') return json(res, 400, { error: 'Highlight chuyển tức thời để khớp thời điểm đọc.' });
     if (!['mock', 'meta'].includes(next.facebookAdapter)) return json(res, 400, { error: 'Facebook adapter phải là Mock hoặc Meta Graph API.' });
     if (body.autoGenerationEnabled === true && !(chatgptStatus().connected || (await systemStatus()).tools.ollama)) return json(res, 409, { error: 'Hãy kết nối ChatGPT hoặc khởi động Ollama trước khi bật tự tạo.' });
     const patch = { ...body };
@@ -411,18 +417,52 @@ async function handleApi(req, res, url) {
   if (route === 'POST /api/tts/preview') {
     const body = await readJson(req);
     const text = String(body.text || '').trim();
-    const language = body.language === 'en' ? 'en' : 'vi';
+    const language = normalizeLanguage(body.language === 'en' ? 'en' : 'vi');
     const settings = getSettings();
-    if (!text || text.length > 180) return json(res, 400, { error: 'Câu nghe thử phải có 1–180 ký tự.' });
+    if (!text || text.length > 2000) return json(res, 400, { error: 'Câu nghe thử phải có từ 1 đến 2000 ký tự.' });
+    if (body.highlightMode !== undefined && !['word', 'phrase'].includes(body.highlightMode)) return json(res, 400, { error: 'Kiểu highlight preview không hợp lệ.' });
     const configuredVoice = language === 'vi' ? settings.viVoice : settings.enVoice;
     const voice = String(body.voice || configuredVoice).trim();
-    const voicePattern = language === 'vi' ? /^vi-VN-[\w-]{2,100}$/ : /^en-US-[\w-]{2,100}$/;
-    if (!voicePattern.test(voice)) return json(res, 400, { error: language === 'vi' ? 'Hãy chọn giọng tiếng Việt.' : 'Hãy chọn giọng tiếng Anh (Mỹ).' });
+    if (!/^[a-z]{2,3}-[A-Z]{2,4}-[\w-]{2,100}$/.test(voice)) return json(res, 400, { error: 'Tên giọng Edge TTS không hợp lệ.' });
     const id = crypto.randomUUID();
     const output = path.join(PATHS.temporary, 'voice-previews', `${id}.mp3`);
+    const wordTimingsPath = body.withWordBoundaries === true ? `${output}.wordtimings.json` : null;
     try {
-      await synthesizeSpeech(text, voice, language === 'vi' ? '+0%' : settings.enRate, output);
-      return json(res, 200, { url: `/api/tts-preview/${id}`, language, voice });
+      await synthesizeSpeech(text, voice, language === 'vi' ? '+0%' : settings.enRate, output, { wordTimingsPath, language });
+      if (!wordTimingsPath) return json(res, 200, { url: `/api/tts-preview/${id}`, language, voice });
+      const timingData = JSON.parse(fs.readFileSync(wordTimingsPath, 'utf8'));
+      let mapped = mapWordBoundariesToTokens(text, timingData.wordBoundaries, `preview-${id}`);
+      let alignmentSource = timingData.wordBoundaries.length ? 'edge-word-boundary' : null;
+      let warning = timingData.warning || null;
+      if (!mapped.alignment.reliable) {
+        const local = await alignSpeechLocally(output, text, language);
+        if (local.wordBoundaries.length) {
+          const localMapped = mapWordBoundariesToTokens(text, local.wordBoundaries, `preview-${id}`);
+          if (localMapped.alignment.reliable) {
+            mapped = localMapped;
+            alignmentSource = local.source || 'stable-ts-local';
+            warning = null;
+          } else {
+            warning = `${local.warning || 'Local forced alignment không khớp đầy đủ với văn bản.'} Còn ${localMapped.alignment.unmatchedTokenCount} từ chưa căn chỉnh.`;
+          }
+        } else {
+          warning = [warning, local.warning].filter(Boolean).join(' ');
+        }
+      }
+      const highlightMode = body.highlightMode || settings.highlightMode;
+      const highlightIntervals = mapped.alignment.reliable
+        ? buildHighlightIntervals(mapped.wordTimings, highlightMode)
+        : [];
+      return json(res, 200, {
+        url: `/api/tts-preview/${id}`, language, voice,
+        tokens: mapped.tokens,
+        wordTimings: mapped.wordTimings,
+        highlightIntervals,
+        highlightMode,
+        alignment: mapped.alignment,
+        alignmentSource,
+        warning
+      });
     } catch (error) { return json(res, 503, { error: error.message }); }
   }
   if (route === 'POST /api/facebook/clear-token') {
@@ -432,6 +472,13 @@ async function handleApi(req, res, url) {
   if (route === 'POST /api/generate') {
     const body = await readJson(req);
     if (body.topicId && !db.prepare('SELECT id FROM topics WHERE id=?').get(body.topicId)) return json(res, 400, { error: 'Chủ đề không tồn tại.' });
+    const system = await systemStatus();
+    const blockers = [];
+    if (!system.worker) blockers.push('Worker nền đang ngoại tuyến. Hãy khởi động worker để xử lý video.');
+    if (!system.tools.ffmpeg || !system.tools.ffprobe) blockers.push('Máy chưa có FFmpeg và FFprobe trong PATH; chưa thể render video.');
+    if (blockers.length) return json(res, 503, { error: blockers.join(' ') });
+    const activeJob = db.prepare("SELECT id FROM jobs WHERE type='create_video' AND status IN ('pending','running') ORDER BY created_at DESC LIMIT 1").get();
+    if (activeJob) return json(res, 409, { error: `Đang có video chờ xử lý (${activeJob.id}); chờ job hiện tại xong rồi hãy tạo tiếp.` });
     const id = queueJob('create_video', { topicId: body.topicId || null, allowLocalTemplate: body.allowLocalTemplate === true });
     log('INFO', 'VIDEO_JOB_QUEUED', 'Đã thêm yêu cầu tạo video vào hàng đợi.', id);
     return json(res, 202, { jobId: id, status: 'pending' });

@@ -42,7 +42,11 @@ function topicTag(value) {
 }
 
 function tagsFor(script, supplied = []) {
-  const source = [script.topic, script.category, script.title, ...(script.dialogues || []).map((line) => line.term)].filter(Boolean);
+  const source = [
+    script.topic, script.category, script.title,
+    ...(script.dialogues || []).flatMap((line) => [line.term, ...(Array.isArray(line.turns) ? line.turns.map((turn) => turn.text) : [])]),
+    ...speechSegmentsFor(script).map((segment) => segment.text)
+  ].filter(Boolean);
   const topical = source.map(topicTag).filter(Boolean);
   const relevantWords = source.flatMap((value) => String(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').match(/[a-z0-9]+/g) || []).filter((word) => word.length > 2);
   const candidates = [...supplied.map(normalizeTag), ...topical];
@@ -87,7 +91,11 @@ function lessonData(script) {
     topic: script.topic,
     category: script.category,
     title: script.title,
-    dialogues: (script.dialogues || []).map(({ vietnamese, english, term, meaningVi, noteVi, grammarNote }) => ({ vietnamese, english, term, meaningVi, noteVi, grammarNote }))
+    dialogues: (script.dialogues || []).map(({ vietnamese, english, term, meaningVi, noteVi, grammarNote, turns }) => ({
+      vietnamese, english, term, meaningVi, noteVi, grammarNote,
+      ...(Array.isArray(turns) ? { turns: turns.map(({ speakerId, language, text }) => ({ speakerId, language, text })) } : {})
+    })),
+    speechSegments: speechSegmentsFor(script).map(({ speakerId, language, text }) => ({ speakerId, language, text }))
   };
 }
 
@@ -95,7 +103,7 @@ function makePrompt(script, length, style, repair = '') {
   return `Viết caption Facebook Reels bằng tiếng Việt tự nhiên cho nội dung học dưới đây.\n` +
     `Độ dài ${length.label}: ${length.min}-${length.max} từ, phong cách: ${style.label}.\n` +
     `Tối ưu SEO tự nhiên cho Facebook: câu mở đầu phải nêu chủ đề cụ thể và cụm từ khóa chính “tiếng Anh giao tiếp” hoặc “học tiếng Anh giao tiếp”; đưa từ khóa chủ đề vào đúng ngữ cảnh. Dùng cụm từ trong bài như từ khóa phụ khi phù hợp, không nhồi hoặc lặp từ khóa.\n` +
-    `Bố cục bắt buộc đúng 3 đoạn, ngăn nhau bằng một dòng trống: (1) Mở bài 1 câu thu hút, có từ khóa chính và chủ đề; (2) Thân bài giải thích ngắn gọn cách dùng/ngữ cảnh của cả ba cụm từ, chỉ phân biệt sắc thái hoặc lỗi thường gặp khi ghi chú nguồn có căn cứ; (3) Kết bài 1 câu chốt ý hoặc gợi ý luyện tập cụ thể, tự nhiên. Không ghi nhãn “Mở bài/Thân bài/Kết bài”. Giữ độ dài câu vừa phải, không viết cả caption thành một đoạn. Không chỉ tóm tắt, không bịa kiến thức ngữ pháp hay tình huống. Có thể xen câu tiếng Anh, câu hỏi, emoji vừa phải; tránh lời kêu gọi sáo rỗng.\n` +
+    `Bố cục bắt buộc đúng 3 đoạn, ngăn nhau bằng một dòng trống: (1) Mở bài 1 câu thu hút, có từ khóa chính và chủ đề; (2) Thân bài giải thích ngắn gọn cách dùng/ngữ cảnh của các cụm từ hoặc lượt hội thoại xuất hiện trong dữ liệu, chỉ phân biệt sắc thái hoặc lỗi thường gặp khi ghi chú nguồn có căn cứ; (3) Kết bài 1 câu chốt ý hoặc gợi ý luyện tập cụ thể, tự nhiên. Không ghi nhãn “Mở bài/Thân bài/Kết bài”. Giữ độ dài câu vừa phải, không viết cả caption thành một đoạn. Không chỉ tóm tắt, không bịa kiến thức ngữ pháp hay tình huống. Có thể xen câu tiếng Anh, câu hỏi, emoji vừa phải; tránh lời kêu gọi sáo rỗng.\n` +
     `Trả đúng JSON: {"caption":"caption không kèm hashtag","hashtags":["#hashtagliênquan"]}. Chọn hashtag đúng chủ đề, không lặp; không cần thêm hashtag thương hiệu vì hệ thống sẽ bổ sung.\n` +
     `${repair ? `Sửa bản trước: ${repair}\n` : ''}` +
     `Dữ liệu thật của bài học: ${JSON.stringify(lessonData(script))}`;
@@ -104,18 +112,23 @@ function makePrompt(script, length, style, repair = '') {
 function fallbackCaption(script, length, style) {
   const lines = script.dialogues || [];
   const topic = script.topic || 'giao tiếp tiếng Anh';
+  const termCount = lines.filter((line) => line.term).length;
+  const countPhrase = termCount ? `${termCount} cụm từ` : 'các lượt hội thoại';
   const openings = {
-    story: `Muốn nói về “${topic}” tự nhiên hơn? Học tiếng Anh giao tiếp qua ba cụm từ sau.`,
+    story: `Muốn nói về “${topic}” tự nhiên hơn? Học tiếng Anh giao tiếp qua ${countPhrase}.`,
     'real-life': `Học tiếng Anh giao tiếp chủ đề “${topic}” qua một tình huống quen thuộc.`,
-    vocabulary: `Ba cụm từ tiếng Anh giao tiếp về “${topic}” sẽ dễ nhớ hơn khi học trong câu.`,
-    'communication-tip': `Mẹo học tiếng Anh giao tiếp: dùng ba cụm từ về “${topic}” đúng ngữ cảnh.`,
-    question: `Bạn diễn đạt “${topic}” bằng tiếng Anh thế nào? Cùng học ba cụm từ giao tiếp hữu ích.`,
+    vocabulary: `${termCount || 'Các'} cụm từ tiếng Anh giao tiếp về “${topic}” sẽ dễ nhớ hơn khi học trong câu.`,
+    'communication-tip': `Mẹo học tiếng Anh giao tiếp: dùng ${countPhrase} về “${topic}” đúng ngữ cảnh.`,
+    question: `Bạn diễn đạt “${topic}” bằng tiếng Anh thế nào? Cùng học ${countPhrase} hữu ích.`,
     knowledge: `Học tiếng Anh giao tiếp theo ngữ cảnh giúp bạn nhớ cách nói về “${topic}”.`
   };
   let opening = openings[style.id];
-  const body = lines.map((line) => `“${line.term}” nghĩa là “${line.meaningVi}”.`);
+  const body = lines.flatMap((line) => line.term
+    ? [`“${line.term}” nghĩa là “${line.meaningVi}”.`]
+    : (line.turns || []).filter((turn) => /^(en|english)(-|$)/i.test(turn.language || '')).map((turn) => `Luyện câu “${turn.text}” để quen phản xạ theo ngữ cảnh.`));
+  if (!body.length) body.push(...speechSegmentsFor(script).slice(0, 3).map((segment) => `Luyện câu “${segment.text}” theo đúng tình huống.`));
   const keypointCount = body.length;
-  const details = lines.map((line, index) => `Câu ${index + 1}: “${line.english}”. ${[line.noteVi, line.grammarNote].filter(Boolean).join(' ')}`.trim());
+  const details = lines.filter((line) => line.english).map((line, index) => `Câu ${index + 1}: “${line.english}”. ${[line.noteVi, line.grammarNote].filter(Boolean).join(' ')}`.trim());
   const closing = ['Chọn một cụm từ và thử đặt câu về trải nghiệm của bạn.'];
   const fits = () => wordCount([opening, body.join(' '), closing.join(' ')].join(' ')) <= length.max;
 
@@ -130,11 +143,16 @@ function fallbackCaption(script, length, style) {
   }
   while (!fits() && body.length > keypointCount) body.pop();
   if (!fits()) {
-    opening = `Học tiếng Anh giao tiếp về “${topic}” qua ba cụm từ.`;
+    opening = `Học tiếng Anh giao tiếp về “${topic}” qua ${countPhrase}.`;
     closing.splice(1);
     closing[0] = 'Thử dùng một cụm từ trong câu của bạn.';
   }
   return [opening, body.join(' '), closing.join(' ')].join('\n\n');
+}
+
+function speechSegmentsFor(script) {
+  if (Array.isArray(script.speechSegments) && script.speechSegments.length) return script.speechSegments;
+  return Array.isArray(script.audioSegments) ? script.audioSegments : [];
 }
 export async function generateCaption(script) {
   const length = selectLength();
