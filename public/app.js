@@ -2,7 +2,8 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
-const state = { view: 'overview', topics: [], videos: [], schedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null };
+const state = { view: 'overview', topics: [], videos: [], schedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null, settingsDirty: false, settingsRevision: 0 };
+let previewAudio = null;
 const EN_US_VOICES = [
   { id: 'en-US-AvaNeural', name: 'Ava', gender: 'Nữ' },
   { id: 'en-US-AndrewNeural', name: 'Andrew', gender: 'Nam' },
@@ -127,7 +128,7 @@ function renderOverview() {
     ['SQLite', data.system.database, data.system.database ? 'Đang lưu dữ liệu local' : 'Chưa khởi tạo database'],
     ['Worker nền', data.system.worker, data.system.worker ? 'Đang lấy job từ hàng đợi' : 'Chạy npm run worker'],
     ['AI viết nội dung', data.system.aiReady, data.providers.chatgptPlan.connected ? 'ChatGPT plan đã kết nối' : (data.system.tools.ollama ? `Ollama · ${data.providers.ollama.model}` : 'Kết nối ChatGPT hoặc khởi động Ollama')],
-    ['Media engine', data.system.tools.ffmpeg && data.system.tools.ffprobe && data.system.tools.edgeTts, `${data.system.tools.edgeTts ? 'Edge TTS sẵn sàng' : 'Thiếu edge-tts'} · ${data.system.tools.ffmpeg ? 'FFmpeg' : 'Thiếu FFmpeg'}`],
+    ['Media engine', data.system.tools.ffmpeg && data.system.tools.ffprobe && (data.settings.ttsProvider === 'vieneu' ? data.system.tools.vieneuTts : data.system.tools.edgeTts), `${data.settings.ttsProvider === 'vieneu' ? (!Object.hasOwn(data.system, 'vieneu') && !Object.hasOwn(data.system.tools, 'vieneuTts') ? 'Cần khởi động lại app để kiểm tra VieNeu' : (data.system.tools.vieneuTts ? 'VieNeu local sẵn sàng' : 'Chưa cài VieNeu')) : (data.system.tools.edgeTts ? 'Microsoft Edge TTS sẵn sàng' : 'Thiếu edge-tts')} · ${data.system.tools.ffmpeg ? 'FFmpeg' : 'Thiếu FFmpeg'}`],
     ['Facebook', data.system.liveFacebookReady, data.settings.facebookAdapter === 'mock' ? 'Đang ở chế độ thử nghiệm Mock' : (data.system.liveFacebookReady ? `Page ${data.settings.pageId} đã kiểm tra` : 'Chưa kiểm tra Page và token')]
   ];
   $('#status-grid').innerHTML = rows.map(([name, ok, detail]) => `<div class="status-card">${ready(ok)}<div class="status-copy"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(detail)}</small></div></div>`).join('');
@@ -140,8 +141,12 @@ function renderOverview() {
 }
 
 function renderToolChecks(tools = {}) {
-  const labels = { python: 'Python', edgeTts: 'Edge TTS', ffmpeg: 'FFmpeg', ffprobe: 'FFprobe', ollama: 'Ollama' };
-  $('#tool-checks').innerHTML = Object.entries(labels).map(([key, name]) => `<span class="tool-chip"><span class="status-indicator ${tools[key] ? 'ok' : ''}"></span>${name} ${tools[key] ? 'sẵn sàng' : 'chưa có'}</span>`).join('');
+  const labels = { python: 'Python', edgeTts: 'Microsoft Edge TTS', vieneuTts: 'VieNeu local', kokoroTts: 'Kokoro local', ffmpeg: 'FFmpeg', ffprobe: 'FFprobe', ollama: 'Ollama' };
+  $('#tool-checks').innerHTML = Object.entries(labels).map(([key, name]) => {
+    const supported = !['vieneuTts', 'kokoroTts'].includes(key) || Object.hasOwn(tools, key);
+    const status = !supported ? 'cần khởi động lại app' : tools[key] ? 'sẵn sàng' : 'chưa có';
+    return `<span class="tool-chip"><span class="status-indicator ${supported && tools[key] ? 'ok' : ''}"></span>${name} ${status}</span>`;
+  }).join('');
 }
 
 function renderTopics() {
@@ -257,13 +262,79 @@ function setEnglishRateFromSlider() {
   $('#en-rate').value = `${percent > 0 ? '+' : ''}${percent}%`;
   $('#en-rate-label').textContent = `${(speed / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
 }
+
+function updateTtsProviderPanels() {
+  const vieneuSelected = $('#tts-provider').value === 'vieneu';
+  $('#edge-tts-settings').hidden = vieneuSelected;
+  $('#vieneu-tts-settings').hidden = !vieneuSelected;
+}
+
+function updateVieNeuSpeedLabel(language) {
+  const value = Number($(`#vieneu-${language}-speed`).value) || 1;
+  $(`#vieneu-${language}-speed-label`).textContent = `${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
+}
+
+function updateKokoroSpeedLabel() {
+  const value = Number($('#kokoro-en-speed').value) || 1;
+  $('#kokoro-en-speed-label').textContent = `${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
+}
+
+function markSettingsDirty(event) {
+  const target = event.target;
+  if (!target?.matches('input, select, textarea') || target.disabled) return;
+  state.settingsDirty = true;
+  state.settingsRevision += 1;
+}
+
 async function loadSettings() {
   const [settings, system] = await Promise.all([api('/api/settings'), api('/api/system')]);
   state.settings = settings; state.system = system;
+  // The eight-second live refresh also calls this function. Keep in-progress
+  // edits in the DOM until the user saves them; the server response is only a
+  // baseline and must not overwrite a selection or text field mid-edit.
+  if (state.settingsDirty) return;
   $('#ollama-url').value = settings.ollamaBaseUrl;
   $('#ollama-model').value = settings.ollamaModel;
+  $('#tts-provider').value = settings.ttsProvider || 'edge';
+  updateTtsProviderPanels();
   selectSavedVoice($('#vi-voice'), settings.viVoice);
   $('#en-voice').value = settings.enVoice || 'en-US-JennyNeural';
+  selectSavedVoice($('#vieneu-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
+  const kokoroVoices = system.kokoro?.voices;
+  if (Array.isArray(kokoroVoices) && kokoroVoices.length) {
+    const select = $('#kokoro-en-voice');
+    const savedVoice = settings.kokoroEnVoice || 'af_heart';
+    select.innerHTML = kokoroVoices.map((voice) => `<option value="${escapeHtml(voice.id)}">${escapeHtml(voice.label)}</option>`).join('');
+    select.value = savedVoice;
+    if (select.value !== savedVoice) select.value = 'af_heart';
+  }
+  $('#kokoro-en-voice').value = settings.kokoroEnVoice || 'af_heart';
+  $('#vieneu-vi-speed').value = settings.vieneuViSpeed ?? 1;
+  $('#kokoro-en-speed').value = settings.kokoroEnSpeed ?? 1;
+  $('#local-tts-min-free-ram').value = settings.localTtsMinFreeRamMb ?? 2560;
+  $('#local-tts-min-remaining-ram').value = settings.localTtsMinRemainingRamMb ?? 1024;
+  updateVieNeuSpeedLabel('vi');
+  updateKokoroSpeedLabel();
+  const vieneuStatus = system.vieneu || {};
+  const kokoroStatus = system.kokoro || {};
+  const vieneuStatusSupported = Object.hasOwn(system, 'vieneu') || Object.hasOwn(system.tools || {}, 'vieneuTts');
+  const alignerNotice = $('#tts-provider').value === 'vieneu' && settings.highlightEnabled && system.tools?.localWordAlignment === false
+    ? ' Chưa có stable-ts; highlight VieNeu cần bộ căn chỉnh local. Cài bằng npm run setup:alignment.'
+    : '';
+  const localManager = system.localTts || {};
+  const modelStatus = `VieNeu ${vieneuStatus.installed ? `đã cài · RAM trống ${vieneuStatus.freeRamMb ?? '?'} MB` : 'chưa sẵn sàng'} · Kokoro ${kokoroStatus.installed ? `đã cài · CPU ONNX · VRAM ${kokoroStatus.vramMb ?? 0} MB` : 'chưa sẵn sàng'}.`;
+  const ramAfter = localManager.memoryAfter?.systemRamAvailableMb ?? localManager.memoryAfter?.freeRamMb;
+  const workerRss = localManager.workerMemory?.processRssMb;
+  const progress = localManager.segmentCount ? ` · câu ${localManager.segmentIndex || 0}/${localManager.segmentCount}` : '';
+  const memory = `${workerRss ? ` · RAM worker ${workerRss} MB` : ''}${ramAfter ? ` · RAM trống sau worker ${ramAfter} MB` : ''}`;
+  const managerStatus = localManager.active
+    ? ` Đang dùng ${localManager.model}: ${localManager.phase}${progress}${localManager.workerPid ? ` · worker ${localManager.workerPid}` : ''}${memory}.`
+    : ` Model hiện đã unload${memory}.`;
+  const setupNotice = !kokoroStatus.installed ? ' Cài Kokoro bằng npm run setup:kokoro.' : '';
+  $('#local-tts-status').textContent = !vieneuStatusSupported
+    ? 'Server chưa báo trạng thái TTS local; hãy khởi động lại app để nạp phiên bản mới.'
+    : `${modelStatus}${managerStatus}${setupNotice}${alignerNotice} TTS local được nạp theo từng ngôn ngữ; worker phải thoát trước khi chuyển model.`;
+  $('#local-tts-status').classList.toggle('is-warning', !vieneuStatusSupported || !vieneuStatus.installed || !kokoroStatus.installed || Boolean(alignerNotice));
   renderEnglishVoices();
   syncEnglishRateControls(settings.enRate);
   $('#highlight-enabled').checked = settings.highlightEnabled !== false;
@@ -434,22 +505,38 @@ async function handleVideoAction(event) {
 
 async function saveSettings() {
   const button = $('#save-settings'); button.disabled = true;
+  const revisionAtSave = state.settingsRevision;
+  const payload = {
+    ollamaBaseUrl: $('#ollama-url').value.trim(), ollamaModel: $('#ollama-model').value.trim(),
+    ttsProvider: $('#tts-provider').value,
+    viVoice: $('#vi-voice').value.trim(), enVoice: $('#en-voice').value.trim(), enRate: $('#en-rate').value.trim(),
+    vieneuViVoice: $('#vieneu-vi-voice').value, kokoroEnVoice: $('#kokoro-en-voice').value,
+    vieneuViSpeed: Number($('#vieneu-vi-speed').value),
+    kokoroEnSpeed: Number($('#kokoro-en-speed').value),
+    localTtsMinFreeRamMb: Number($('#local-tts-min-free-ram').value),
+    localTtsMinRemainingRamMb: Number($('#local-tts-min-remaining-ram').value),
+    highlightEnabled: $('#highlight-enabled').checked,
+    highlightMode: $('#highlight-mode').value,
+    highlightColor: $('#highlight-color').value,
+    highlightPadding: Number($('#highlight-padding').value),
+    highlightRadius: Number($('#highlight-radius').value),
+    highlightTransition: $('#highlight-transition').value,
+    postsPerDay: Number($('#posts-per-day').value), prepareAheadDays: Number($('#prepare-days').value),
+    maxScriptsPerDay: Number($('#max-scripts').value),
+    facebookAdapter: $('#facebook-adapter').value, autoGenerationEnabled: $('#auto-generation').checked,
+    autoPublishEnabled: $('#auto-publish').checked
+  };
   try {
-    const result = await api('/api/settings', { method: 'POST', body: JSON.stringify({
-      ollamaBaseUrl: $('#ollama-url').value.trim(), ollamaModel: $('#ollama-model').value.trim(),
-      viVoice: $('#vi-voice').value.trim(), enVoice: $('#en-voice').value.trim(), enRate: $('#en-rate').value.trim(),
-      highlightEnabled: $('#highlight-enabled').checked,
-      highlightMode: $('#highlight-mode').value,
-      highlightColor: $('#highlight-color').value,
-      highlightPadding: Number($('#highlight-padding').value),
-      highlightRadius: Number($('#highlight-radius').value),
-      highlightTransition: $('#highlight-transition').value,
-      postsPerDay: Number($('#posts-per-day').value), prepareAheadDays: Number($('#prepare-days').value),
-      maxScriptsPerDay: Number($('#max-scripts').value),
-      facebookAdapter: $('#facebook-adapter').value, autoGenerationEnabled: $('#auto-generation').checked,
-      autoPublishEnabled: $('#auto-publish').checked
-    }) });
-    state.settings = result; toast('Đã lưu cài đặt'); await loadOverview(); await loadSettings();
+    const result = await api('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
+    if (result.ttsProvider !== payload.ttsProvider) {
+      throw new Error('Server không xác nhận nhà cung cấp giọng đọc đã chọn. App có thể đang chạy phiên bản cũ; hãy khởi động lại app rồi lưu lại.');
+    }
+    state.settings = result;
+    const editedWhileSaving = state.settingsRevision !== revisionAtSave;
+    state.settingsDirty = editedWhileSaving;
+    toast(editedWhileSaving ? 'Đã lưu bản cài đặt trước đó' : 'Đã lưu cài đặt', false, editedWhileSaving ? 'Bạn vừa thay đổi thêm cài đặt; hãy lưu lần nữa để lưu các thay đổi mới.' : '');
+    await loadOverview();
+    if (!editedWhileSaving) await loadSettings();
   } catch (error) { toast('Không lưu được cài đặt', true, error.message); }
   finally { button.disabled = false; }
 }
@@ -487,15 +574,24 @@ async function testOllama() {
   } catch (error) { $('#ollama-result').textContent = error.message; toast('Ollama chưa sẵn sàng', true, error.message); }
 }
 
-async function previewVoice(language, chosenVoice = '') {
+async function previewVoice(language, chosenVoice = '', button = null) {
   const text = language === 'vi' ? 'Xin chào, bạn có thể giúp mình được không?' : 'Could you help me with this?';
-  const voice = chosenVoice || (language === 'vi' ? $('#vi-voice').value : $('#en-voice').value);
+  const provider = $('#tts-provider').value;
+  const voice = chosenVoice || (provider === 'vieneu'
+    ? (language === 'vi' ? $('#vieneu-vi-voice').value : $('#kokoro-en-voice').value)
+    : (language === 'vi' ? $('#vi-voice').value : $('#en-voice').value));
+  const payload = { language, text, voice, ttsProvider: provider };
+  if (provider === 'vieneu') payload.speed = Number(language === 'vi' ? $('#vieneu-vi-speed').value : $('#kokoro-en-speed').value);
+  else payload.rate = language === 'vi' ? '+0%' : $('#en-rate').value.trim();
+  if (button) button.disabled = true;
   try {
-    const result = await api('/api/tts/preview', { method: 'POST', body: JSON.stringify({ language, text, voice }) });
-    const audio = new Audio(result.url);
-    await audio.play();
+    const result = await api('/api/tts/preview', { method: 'POST', body: JSON.stringify(payload) });
+    if (previewAudio) { previewAudio.pause(); previewAudio.currentTime = 0; }
+    previewAudio = new Audio(new URL(result.url, window.location.href).href);
+    await previewAudio.play();
     toast(`Đang phát giọng ${language === 'vi' ? 'tiếng Việt' : 'tiếng Anh'}`, false, result.voice);
   } catch (error) { toast('Không tạo được bản nghe thử', true, error.message); }
+  finally { if (button) button.disabled = false; }
 }
 
 function updateHighlightPreviewStyle() {
@@ -515,8 +611,14 @@ async function previewHighlight() {
   try {
     const language = $('#highlight-preview-language').value;
     const text = $('#highlight-preview-source').value.trim();
-    const voice = language === 'vi' ? $('#vi-voice').value : $('#en-voice').value;
-    const result = await api('/api/tts/preview', { method: 'POST', body: JSON.stringify({ language, text, voice, withWordBoundaries: true, highlightMode: $('#highlight-mode').value }) });
+    const provider = $('#tts-provider').value;
+    const voice = provider === 'vieneu'
+      ? (language === 'vi' ? $('#vieneu-vi-voice').value : $('#kokoro-en-voice').value)
+      : (language === 'vi' ? $('#vi-voice').value : $('#en-voice').value);
+    const previewSettings = provider === 'vieneu'
+      ? { speed: Number(language === 'vi' ? $('#vieneu-vi-speed').value : $('#kokoro-en-speed').value) }
+      : { rate: language === 'vi' ? '+0%' : $('#en-rate').value.trim() };
+    const result = await api('/api/tts/preview', { method: 'POST', body: JSON.stringify({ language, text, voice, ttsProvider: provider, ...previewSettings, withWordBoundaries: true, highlightMode: $('#highlight-mode').value }) });
     const host = $('#highlight-preview-words');
     host.replaceChildren();
     let offset = 0;
@@ -606,6 +708,11 @@ function setupEvents() {
   $$('.filter-tab').forEach((button) => button.addEventListener('click', () => { state.filter = button.dataset.filter; $$('.filter-tab').forEach((tab) => tab.classList.toggle('active', tab === button)); renderLibrary(); }));
   $('#en-rate-slider').addEventListener('input', setEnglishRateFromSlider);
   $('#en-rate').addEventListener('input', () => syncEnglishRateControls());
+  $('#tts-provider').addEventListener('change', updateTtsProviderPanels);
+  $('#vieneu-vi-speed').addEventListener('input', () => updateVieNeuSpeedLabel('vi'));
+  $('#preview-vieneu-vi').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
+  $('#preview-vieneu-en').addEventListener('click', (event) => previewVoice('en', '', event.currentTarget));
+  $('#kokoro-en-speed').addEventListener('input', updateKokoroSpeedLabel);
   $('#highlight-color').addEventListener('input', updateHighlightPreviewStyle);
   $('#highlight-padding').addEventListener('input', updateHighlightPreviewStyle);
   $('#highlight-radius').addEventListener('input', updateHighlightPreviewStyle);
@@ -624,15 +731,22 @@ function setupEvents() {
     finally { button.disabled = false; }
   });
   $('#save-settings').addEventListener('click', saveSettings);
+  $('#view-settings').addEventListener('input', markSettingsDirty);
+  $('#view-settings').addEventListener('change', markSettingsDirty);
   $('#save-facebook').addEventListener('click', saveFacebook);
   $('#test-facebook').addEventListener('click', testFacebook);
   $('#ollama-test').addEventListener('click', testOllama);
-  $('#preview-vi').addEventListener('click', () => previewVoice('vi'));
+  $('#preview-vi').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
   $('#en-voice-list').addEventListener('click', (event) => {
     const preview = event.target.closest('[data-preview-english-voice]');
-    if (preview) { previewVoice('en', preview.dataset.previewEnglishVoice); return; }
+    if (preview) { previewVoice('en', preview.dataset.previewEnglishVoice, preview); return; }
     const choose = event.target.closest('[data-select-english-voice]');
-    if (choose) { $('#en-voice').value = choose.dataset.selectEnglishVoice; renderEnglishVoices(); }
+    if (choose) {
+      $('#en-voice').value = choose.dataset.selectEnglishVoice;
+      state.settingsDirty = true;
+      state.settingsRevision += 1;
+      renderEnglishVoices();
+    }
   });
   $('#add-topic').addEventListener('click', addTopic);
   $('#schedule-form').addEventListener('submit', createSchedule);

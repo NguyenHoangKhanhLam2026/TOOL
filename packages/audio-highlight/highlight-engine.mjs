@@ -49,13 +49,83 @@ export function normalizeWord(value) {
     .trim();
 }
 
-export function mapWordBoundariesToTokens(value, boundaries, segmentId = 'segment') {
+const SMALL_NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const TENS_NUMBER_WORDS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+const NUMBER_SCALES = ['', 'thousand', 'million', 'billion', 'trillion', 'quadrillion'];
+
+function underThousandToWords(value) {
+  const words = [];
+  let rest = value;
+  if (rest >= 100) {
+    words.push(SMALL_NUMBER_WORDS[Math.floor(rest / 100)], 'hundred');
+    rest %= 100;
+  }
+  if (rest >= 20) {
+    words.push(TENS_NUMBER_WORDS[Math.floor(rest / 10)]);
+    if (rest % 10) words.push(SMALL_NUMBER_WORDS[rest % 10]);
+  } else if (rest > 0 || words.length === 0) words.push(SMALL_NUMBER_WORDS[rest]);
+  return words;
+}
+
+function integerToEnglishWords(digits) {
+  const normalized = String(digits).replace(/^\+/, '');
+  const negative = normalized.startsWith('-');
+  const unsigned = negative ? normalized.slice(1) : normalized;
+  if (/^0\d+/u.test(unsigned)) {
+    return [...(negative ? ['minus'] : []), ...[...unsigned].map((digit) => SMALL_NUMBER_WORDS[Number(digit)])];
+  }
+  let value;
+  try { value = BigInt(unsigned || '0'); } catch { return [...unsigned].map((digit) => SMALL_NUMBER_WORDS[Number(digit)]); }
+  if (value === 0n) return ['zero'];
+  const groups = [];
+  while (value > 0n && groups.length <= NUMBER_SCALES.length) {
+    groups.push(Number(value % 1000n));
+    value /= 1000n;
+  }
+  if (value > 0n) return [...unsigned].map((digit) => SMALL_NUMBER_WORDS[Number(digit)]);
+  const words = negative ? ['minus'] : [];
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    if (!groups[index]) continue;
+    words.push(...underThousandToWords(groups[index]));
+    if (NUMBER_SCALES[index]) words.push(NUMBER_SCALES[index]);
+  }
+  return words;
+}
+
+function numberTokenToEnglish(integerPart, decimalPart = '', percent = '') {
+  const integerDigits = integerPart.replaceAll(',', '');
+  const words = integerToEnglishWords(integerDigits);
+  if (decimalPart) words.push('point', ...[...decimalPart].map((digit) => SMALL_NUMBER_WORDS[Number(digit)]));
+  if (percent) words.push('percent');
+  return words.join(' ');
+}
+
+export function prepareSpeechText(value, language) {
+  const text = String(value ?? '');
+  if (normalizeLanguage(language) !== 'en') return text;
+  return text.replace(/(?<![\p{L}\p{N}])(-?\d{1,3}(?:,\d{3})+|-?\d+)(?:\.(\d+))?(%?)(?![\p{L}\p{N}])/gu,
+    (match, integerPart, decimalPart = '', percent = '', offset, source) => {
+      // In compounds such as “12-year-old”, the first hyphen is punctuation,
+      // not a negative sign. Keep it in the source and spell the positive number.
+      if (integerPart.startsWith('-') && /^-[\p{L}]/u.test(source.slice(offset + match.length))) integerPart = integerPart.slice(1);
+      return numberTokenToEnglish(integerPart, decimalPart, percent);
+    });
+}
+
+export function mapWordBoundariesToTokens(value, boundaries, segmentId = 'segment', { language = 'und' } = {}) {
   const tokens = tokenizeText(value, segmentId);
+  const mappingLanguage = normalizeLanguage(language);
+  const speechTokens = [];
+  for (const token of tokens) {
+    const expectedText = mappingLanguage === 'en' ? prepareSpeechText(token.text, mappingLanguage) : token.text;
+    for (const part of tokenizeBoundaryText(expectedText)) speechTokens.push({ normalized: part, token });
+  }
   const source = Array.isArray(boundaries) ? boundaries : [];
-  const mapped = [];
+  const mappedByToken = new Map();
   const unmatchedBoundaries = [];
   const unmatchedTokens = new Set(tokens.map((token) => token.id));
-  let tokenCursor = 0;
+  let speechCursor = 0;
+  const matchedBoundaryIndexes = new Set();
 
   for (const [boundaryIndex, boundary] of source.entries()) {
     const boundaryText = String(boundary?.text ?? '');
@@ -78,8 +148,8 @@ export function mapWordBoundariesToTokens(value, boundaries, segmentId = 'segmen
 
     for (const part of parts) {
       let matchIndex = -1;
-      for (let index = tokenCursor; index < Math.min(tokens.length, tokenCursor + 4); index += 1) {
-        if (tokens[index].normalized === part) { matchIndex = index; break; }
+      for (let index = speechCursor; index < Math.min(speechTokens.length, speechCursor + 12); index += 1) {
+        if (speechTokens[index].normalized === part) { matchIndex = index; break; }
       }
 
       if (matchIndex < 0) {
@@ -87,32 +157,42 @@ export function mapWordBoundariesToTokens(value, boundaries, segmentId = 'segmen
         continue;
       }
 
-      const token = tokens[matchIndex];
+      const token = speechTokens[matchIndex].token;
       unmatchedTokens.delete(token.id);
-      mapped.push({
-        segmentId: safeId(segmentId),
-        tokenId: token.id,
-        tokenIndex: token.index,
-        text: token.text,
-        boundaryText,
-        boundaryIndex,
-        startSeconds,
-        endSeconds,
-        offsetTicks: Number.isFinite(offsetTicks) ? offsetTicks : undefined,
-        durationTicks: Number.isFinite(durationTicks) ? durationTicks : undefined
-      });
-      tokenCursor = matchIndex + 1;
+      matchedBoundaryIndexes.add(boundaryIndex);
+      speechCursor = matchIndex + 1;
+      const existing = mappedByToken.get(token.id);
+      if (existing) {
+        existing.startSeconds = Math.min(existing.startSeconds, startSeconds);
+        existing.endSeconds = Math.max(existing.endSeconds, endSeconds);
+        existing.boundaryText = `${existing.boundaryText} ${boundaryText}`.trim();
+        existing.boundaryIndexes.push(boundaryIndex);
+      } else {
+        mappedByToken.set(token.id, {
+          segmentId: safeId(segmentId),
+          tokenId: token.id,
+          tokenIndex: token.index,
+          text: token.text,
+          boundaryText,
+          boundaryIndex,
+          boundaryIndexes: [boundaryIndex],
+          startSeconds,
+          endSeconds,
+          offsetTicks: Number.isFinite(offsetTicks) ? offsetTicks : undefined,
+          durationTicks: Number.isFinite(durationTicks) ? durationTicks : undefined
+        });
+      }
     }
   }
 
-  const ordered = mapped.sort((left, right) => left.startSeconds - right.startSeconds || left.boundaryIndex - right.boundaryIndex);
-  const mappedBoundaryCount = new Set(ordered.map((entry) => entry.boundaryIndex)).size;
+  const ordered = [...mappedByToken.values()].sort((left, right) => left.startSeconds - right.startSeconds || left.tokenIndex - right.tokenIndex);
+  const mappedBoundaryCount = matchedBoundaryIndexes.size;
   const alignment = {
     status: source.length === 0 ? 'unavailable' : unmatchedBoundaries.length || unmatchedTokens.size ? 'partial' : 'aligned',
     totalBoundaryCount: source.length,
     mappedBoundaryCount,
-    mappedTokenCount: new Set(ordered.map((entry) => entry.tokenId)).size,
-    unmatchedBoundaryCount: unmatchedBoundaries.length,
+    mappedTokenCount: ordered.length,
+    unmatchedBoundaryCount: source.length - matchedBoundaryIndexes.size,
     unmatchedTokenCount: unmatchedTokens.size,
     reliable: source.length > 0 && unmatchedBoundaries.length === 0 && unmatchedTokens.size === 0 && ordered.length > 0,
     unmatchedBoundaries,
@@ -208,6 +288,7 @@ export function createSpeechSegments(script, settings = {}) {
         language,
         rate: String(source.rate || rateForLanguage(settings, language)),
         text,
+        speechText: prepareSpeechText(text, language),
         order: segments.length,
         turnId: String(source.turnId || source.groupId || segmentId),
         state: source.state || (language === 'en' ? 'bilingual' : 'vietnamese'),
@@ -220,6 +301,7 @@ export function createSpeechSegments(script, settings = {}) {
         }
       });
     });
+    appendVocabularySpeech(script, settings, segments);
   } else {
     const dialogues = Array.isArray(script?.dialogues) ? script.dialogues : [];
     dialogues.forEach((dialogue, index) => {
@@ -238,6 +320,7 @@ export function createSpeechSegments(script, settings = {}) {
             language,
             rate: String(turn.rate || rateForLanguage(settings, language)),
             text,
+            speechText: prepareSpeechText(text, language),
             order: segments.length,
             turnId: String(turn.turnId || dialogue.id || `dialogue-${index + 1}`),
             state: turn.state || (language === 'en' ? 'bilingual' : 'vietnamese'),
@@ -250,6 +333,7 @@ export function createSpeechSegments(script, settings = {}) {
             }
           });
         });
+        appendVocabularySpeechForDialogue(dialogue, index, settings, segments);
         return;
       }
 
@@ -268,14 +352,18 @@ export function createSpeechSegments(script, settings = {}) {
           language: item.language,
           rate: String(item.rate || rateForLanguage(settings, item.language)),
           text,
+          speechText: prepareSpeechText(text, item.language),
           order: segments.length,
           turnId: String(dialogue?.id || `dialogue-${index + 1}`),
           state: item.language === 'en' ? 'bilingual' : 'vietnamese',
           target: { id: segmentId, layerId: item.layerId, dialogueIndex: index, text }
         });
       }
+      appendVocabularySpeechForDialogue(dialogue, index, settings, segments);
     });
   }
+
+  segments.forEach((segment, index) => { segment.order = index; });
 
   const ids = new Set();
   for (const segment of segments) {
@@ -284,6 +372,47 @@ export function createSpeechSegments(script, settings = {}) {
   }
   if (!segments.length) throw new Error('Kịch bản không có đoạn văn bản nào để đọc.');
   return segments;
+}
+
+function appendVocabularySpeech(script, settings, segments) {
+  const dialogues = Array.isArray(script?.dialogues) ? script.dialogues : [];
+  for (const [index, dialogue] of dialogues.entries()) {
+    const existing = segments.find((segment) => segment.target?.layerId === 'vocabulary'
+      && Number(segment.target?.dialogueIndex) === index);
+    if (existing) continue;
+    const vocabulary = makeVocabularySpeech(dialogue, index, settings);
+    if (!vocabulary) continue;
+    const lastSegmentIndex = segments.reduce((last, segment, segmentIndex) =>
+      Number(segment.target?.dialogueIndex) === index ? segmentIndex : last, -1);
+    segments.splice(lastSegmentIndex < 0 ? segments.length : lastSegmentIndex + 1, 0, vocabulary);
+  }
+}
+
+function appendVocabularySpeechForDialogue(dialogue, index, settings, segments) {
+  const vocabulary = makeVocabularySpeech(dialogue, index, settings);
+  if (vocabulary) segments.push(vocabulary);
+}
+
+function makeVocabularySpeech(dialogue, index, settings) {
+  const term = String(dialogue?.term ?? '').trim();
+  const meaningVi = String(dialogue?.meaningVi ?? '').trim();
+  if (!term || !meaningVi) return null;
+  const segmentId = `${defaultDialogueSegmentId(index, 'vi', dialogue)}-vocabulary`;
+  const speakerId = String(dialogue?.vietnameseSpeakerId || dialogue?.speakers?.vi || 'vi-default');
+  const text = `${term}. ${meaningVi}`;
+  return {
+    segmentId,
+    speakerId,
+    voiceName: String(dialogue?.vietnameseVoiceName || dialogue?.viVoiceName || settings.speakerVoices?.[speakerId] || voiceForLanguage(settings, 'vi')),
+    language: 'vi',
+    rate: String(dialogue?.vietnameseRate || rateForLanguage(settings, 'vi')),
+    text,
+    speechText: prepareSpeechText(text, 'vi'),
+    order: Number.MAX_SAFE_INTEGER,
+    turnId: String(dialogue?.id || `dialogue-${index + 1}`),
+    state: 'vocabulary',
+    target: { id: segmentId, layerId: 'vocabulary', dialogueIndex: index, text }
+  };
 }
 
 function tokenizeBoundaryText(value) {

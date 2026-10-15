@@ -11,7 +11,7 @@ const database = await import('../../src/database/db.mjs');
 
 test('SQLite starts in WAL mode and installs the schema migration', () => {
   assert.equal(database.db.prepare('PRAGMA journal_mode').get().journal_mode, 'wal');
-  assert.equal(Number(database.db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get().version), 4);
+  assert.equal(Number(database.db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get().version), 5);
   assert.ok(database.db.prepare('PRAGMA table_info(scripts)').all().some((column) => column.name === 'speech_segments_json'));
   assert.equal(database.listTopics().length, 100);
 });

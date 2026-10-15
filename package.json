@@ -9,6 +9,11 @@
   },
   "scripts": {
     "setup": "node scripts/setup-check.mjs",
+    "setup:vieneu": "node scripts/install-vieneu.mjs",
+    "setup:kokoro": "node scripts/setup-kokoro.mjs",
+    "setup:alignment": "node scripts/setup-alignment.mjs",
+    "smoke:vieneu-highlight": "node scripts/smoke-vieneu-highlight.mjs",
+    "smoke:local-ai-tts": "node scripts/smoke-local-ai-tts.mjs",
     "dev": "node src/server.mjs",
     "build": "node --experimental-vm-modules scripts/build-check.mjs",
     "start": "node src/server.mjs",

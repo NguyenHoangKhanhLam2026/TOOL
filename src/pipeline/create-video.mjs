@@ -2,6 +2,7 @@ import { insertVideo, updateVideo, log, createRandomSchedule, getSettings, getSc
 import { createScript } from '../ai/script-service.mjs';
 import { formatCaption } from '../ai/hashtag-utils.mjs';
 import { synthesizeScript } from '../tts/edge-tts.mjs';
+import { synthesizeLocalAiScript } from '../tts/local-ai-tts.mjs';
 import { renderVideo } from '../../packages/video-engine/render.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,7 +32,10 @@ export async function createVideoJob(job) {
   updateVideo(videoId, { status: 'processing', last_error: null });
   log('INFO', 'SCRIPT_READY', `Kịch bản ${script.topic} hợp lệ, provider ${provider}.`, job.id);
   try {
-    const audio = await synthesizeScript(script, videoId, { onProgress: (progress, detail) => log('INFO', 'TTS_PROGRESS', JSON.stringify({ videoId, progress, ...detail }), job.id) });
+    const onTtsProgress = (progress, detail) => log('INFO', 'TTS_PROGRESS', JSON.stringify({ videoId, progress, ...detail }), job.id);
+    const audio = settings.ttsProvider === 'vieneu'
+      ? await synthesizeLocalAiScript(script, videoId, { settings, onProgress: onTtsProgress })
+      : await synthesizeScript(script, videoId, { onProgress: onTtsProgress });
     log('INFO', 'TTS_READY', `Đã tạo ${audio.length} đoạn đọc, thu WordBoundary và thử căn chỉnh local khi cần.`, job.id);
     const result = await renderVideo(script, videoId, audio, {
       onProgress: (progress) => log('INFO', 'RENDER_PROGRESS', JSON.stringify({ videoId, progress }), job.id),
@@ -44,7 +48,7 @@ export async function createVideoJob(job) {
     fs.writeFileSync(path.join(outputDir, 'caption.txt'), formatCaption(script.caption, script.hashtags), 'utf8');
     fs.writeFileSync(path.join(outputDir, 'audio-manifest.json'), JSON.stringify(result.audioManifest, null, 2), 'utf8');
     fs.writeFileSync(path.join(outputDir, 'render-manifest.json'), JSON.stringify(result.renderManifest, null, 2), 'utf8');
-    updateVideo(videoId, { status: 'ready', video_path: result.videoPath, thumbnail_path: result.thumbnailPath, duration_seconds: result.duration, last_error: null });
+    updateVideo(videoId, { status: 'ready', video_path: result.videoPath, thumbnail_path: result.thumbnailPath || null, duration_seconds: result.duration, last_error: null });
     log('INFO', 'VIDEO_READY', `Video ${result.width}x${result.height}, ${result.fps}, ${result.duration.toFixed(1)} giây.`, job.id);
     if (job.payload.autoSchedule || settings.autoPublishEnabled) {
       try {

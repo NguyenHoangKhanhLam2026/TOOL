@@ -67,7 +67,7 @@ export function validateVisualTemplate(input) {
   const ids = new Set(layers.map((layer) => layer.id));
   if (brandedTemplate && (input.layers.length !== REQUIRED_LAYER_IDS.length || REQUIRED_LAYER_IDS.some((id) => !ids.has(id)))) throw new Error('Template Branded Dialogue V2 cần đủ 12 layer chuẩn.');
   if (!brandedTemplate && !layers.some((layer) => layer.kind === 'text' && layer.id !== 'title')) throw new Error('Template tổng quát cần một layer kind="text" dành cho nội dung để gắn lời đọc và highlight.');
-  const timing = { intro: 0.8, vocabularyHold: 0.7, transition: 0.2, transitionFade: 0.25, cta: 2.2, fade: 0.25, ...input.timing };
+  const timing = { intro: 0.8, vocabularyHold: 2.5, transition: 0.3, transitionFade: 0.25, cta: 2.2, fade: 0.25, ...input.timing };
   if (timing.transitionFade === undefined) timing.transitionFade = timing.fade;
   for (const key of ['intro', 'vocabularyHold', 'transition', 'transitionFade', 'cta', 'fade']) {
     const value = Number(timing[key]);
@@ -540,9 +540,6 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
     return false;
   });
   const width = template.canvas.width; const height = template.canvas.height;
-  if (state === 'transition') {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#000000"/></svg>`;
-  }
   const groups = [];
   for (const id of activeLayers) {
     const markup = await layerMarkup(id, context);

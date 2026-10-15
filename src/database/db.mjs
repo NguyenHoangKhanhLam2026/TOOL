@@ -77,6 +77,12 @@ db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(4
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)');
 const now = new Date().toISOString();
+// Move the former shared VieNeu speed to the Vietnamese control. English gets
+// the new slower default unless a separate English speed was already saved.
+const legacyVieNeuSpeed = db.prepare("SELECT value FROM settings WHERE key='vieneuSpeed'").get();
+if (legacyVieNeuSpeed) insertSetting.run('vieneuViSpeed', legacyVieNeuSpeed.value, now);
+db.prepare("DELETE FROM settings WHERE key='vieneuSpeed'").run();
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(5,?)').run(now);
 for (const [key, value] of Object.entries(DEFAULTS)) insertSetting.run(key, JSON.stringify(value), now);
 const insertTopic = db.prepare('INSERT OR IGNORE INTO topics(id,category,title,created_at) VALUES(?,?,?,?)');
 for (const topic of TOPICS) insertTopic.run(topic.id, topic.category, topic.title, now);
@@ -141,7 +147,9 @@ export function finishJob(jobId) {
 
 export function failJob(job, error) {
   const message = String(error?.message || error);
-  const retry = job.attempts < job.max_attempts;
+  const processCannotStart = error?.syscall === 'spawn' && ['EPERM', 'EACCES', 'ENOENT'].includes(error?.code);
+  const ttsServiceDenied = error?.code === 'EDGE_TTS_FORBIDDEN' || /WSServerHandshakeError:\s*403|403, message=['"]Invalid response status/i.test(message);
+  const retry = !processCannotStart && !ttsServiceDenied && job.attempts < job.max_attempts;
   const delay = Math.min(60 * 60_000, 10_000 * (2 ** Math.max(0, job.attempts - 1)));
   const status = retry ? 'pending' : 'failed';
   const when = retry ? new Date(Date.now() + delay).toISOString() : new Date().toISOString();

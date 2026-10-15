@@ -19,9 +19,9 @@
                   "fontFamily":  "Be Vietnam Pro"
               },
     "timing":  {
-                   "intro":  1.25,
-                   "vocabularyHold":  5.5,
-                   "transition":  0.06,
+                       "intro":  1.25,
+                   "vocabularyHold":  2.5,
+                   "transition":  0.3,
                    "transitionFade":  0.12,
                    "cta":  2.6,
                    "fade":  0.22

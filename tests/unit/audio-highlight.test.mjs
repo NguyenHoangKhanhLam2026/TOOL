@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildAudioTimeline, buildHighlightIntervals, createSpeechSegments, findActiveHighlight,
-  mapWordBoundariesToTokens, tokenizeText
+  mapWordBoundariesToTokens, prepareSpeechText, tokenizeText
 } from '../../packages/audio-highlight/highlight-engine.mjs';
 import { fitVocabularyHold, resolveSpeechTarget } from '../../packages/video-engine/render.mjs';
 
@@ -39,7 +39,21 @@ test('any number of dialogue pairs creates audio segments without a three-pair l
   const dialogues = Array.from({ length: 7 }, (_, index) => ({
     id: `d${index + 1}`, vietnamese: `Câu Việt ${index + 1}.`, english: `English line ${index + 1}.`, term: `line ${index + 1}`, meaningVi: `câu ${index + 1}`, noteVi: ''
   }));
-  assert.equal(createSpeechSegments({ dialogues }).length, 14);
+  assert.equal(createSpeechSegments({ dialogues }).length, 21);
+});
+
+test('Vietnamese phrase audio follows each bilingual dialogue and targets the vocabulary card', () => {
+  const segments = createSpeechSegments({ dialogues: [{
+    id: 'coffee', vietnamese: 'Bạn uống cà phê không?', english: 'Would you like coffee?',
+    term: 'would you like', meaningVi: 'bạn có muốn', noteVi: ''
+  }] }, { viVoice: 'vi-VN-HoaiMyNeural', enVoice: 'en-US-AvaNeural' });
+  assert.deepEqual(segments.map((segment) => segment.language), ['vi', 'en', 'vi']);
+  assert.equal(segments[2].state, 'vocabulary');
+  assert.equal(segments[2].text, 'would you like. bạn có muốn');
+  assert.equal(segments[2].voiceName, 'vi-VN-HoaiMyNeural');
+  assert.equal(segments[2].target.layerId, 'vocabulary');
+  assert.equal(segments[2].target.dialogueIndex, 0);
+  assert.equal(segments[2].turnId, segments[0].turnId);
 });
 
 test('repeated words map to their matching occurrence instead of the first text match', () => {
@@ -47,6 +61,42 @@ test('repeated words map to their matching occurrence instead of the first text 
   assert.equal(result.alignment.reliable, true);
   assert.equal(new Set(result.wordTimings.map((word) => word.tokenId)).size, 3);
   assert.deepEqual(result.wordTimings.map((word) => word.tokenIndex), [0, 1, 2]);
+});
+
+test('English digits are spoken as English number words while display text stays unchanged', () => {
+  const segments = createSpeechSegments({ dialogues: [{
+    vietnamese: 'Tôi cần 12 vé.', english: 'I need 12 tickets and 3 seats.'
+  }] });
+  const vietnamese = segments.find((segment) => segment.language === 'vi');
+  const english = segments.find((segment) => segment.language === 'en');
+  assert.equal(vietnamese.speechText, vietnamese.text);
+  assert.equal(english.text, 'I need 12 tickets and 3 seats.');
+  assert.equal(english.speechText, 'I need twelve tickets and three seats.');
+  assert.equal(prepareSpeechText('The price is 1,250.5 or 12%.', 'en'), 'The price is one thousand two hundred fifty point five or twelve percent.');
+  assert.equal(prepareSpeechText('A 12-year-old has -3 points.', 'en'), 'A twelve-year-old has minus three points.');
+});
+
+test('expanded number words share one accurate timing range with their displayed numeral', () => {
+  const mapped = mapWordBoundariesToTokens('I need 21 tickets.', [
+    { text: 'I', startSeconds: 0, endSeconds: 0.1 },
+    { text: 'need', startSeconds: 0.12, endSeconds: 0.3 },
+    { text: 'twenty', startSeconds: 0.31, endSeconds: 0.55 },
+    { text: 'one', startSeconds: 0.56, endSeconds: 0.68 },
+    { text: 'tickets.', startSeconds: 0.7, endSeconds: 1.1 }
+  ], 'number-21', { language: 'en' });
+  const numeral = mapped.wordTimings.find((word) => word.text === '21');
+  assert.equal(mapped.alignment.reliable, true);
+  assert.deepEqual([numeral.startSeconds, numeral.endSeconds, numeral.boundaryText], [0.31, 0.68, 'twenty one']);
+});
+
+test('partial real alignment keeps highlight cues for words with known timestamps', () => {
+  const mapped = mapWordBoundariesToTokens('Please call us.', [
+    { text: 'call', startSeconds: 0.4, endSeconds: 0.7 },
+    { text: 'us.', startSeconds: 0.72, endSeconds: 0.9 }
+  ], 'partial');
+  assert.equal(mapped.alignment.reliable, false);
+  assert.deepEqual(buildHighlightIntervals(mapped.wordTimings).map((item) => item.words[0]), ['call', 'us.']);
+  assert.deepEqual(mapped.tokens.filter((token) => mapped.alignment.unmatchedTokenIds.includes(token.id)).map((token) => token.text), ['Please']);
 });
 
 test('long text has no fixed sentence-character cap and retains every token ID', () => {
@@ -105,7 +155,7 @@ test('a generic template selects a compatible text layer when the default card i
   assert.equal(target.layerId, 'english-copy');
 });
 
-test('extra short dialogue groups shrink vocabulary holds before hitting the Reels duration cap', () => {
+test('post-phrase vocabulary pause is calculated against total speech and the Reels duration cap', () => {
   assert.equal(fitVocabularyHold({ configuredHold: 5.5, groupCount: 3, speechDuration: 24, intro: 1.25, cta: 2.6, transition: 0.06 }), 5.5);
   const hold = fitVocabularyHold({ configuredHold: 5.5, groupCount: 8, speechDuration: 43, intro: 1.25, cta: 2.6, transition: 0.06 });
   assert.ok(hold < 5.5);

@@ -9,6 +9,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/voice-picker.css" />
+    <link rel="stylesheet" href="/tts-provider.css" />
     <link rel="stylesheet" href="/navigation-links.css" />
     <link rel="stylesheet" href="/highlight-settings.css" />
     <script type="module" src="/app.js"></script>
@@ -126,7 +127,9 @@
                 <div class="button-row"><button class="button button-outline button-small" id="save-facebook">Lưu thông tin</button><button class="button button-quiet button-small" id="test-facebook">Kiểm tra Page</button></div><p id="facebook-result" class="inline-status"></p><button id="clear-facebook" class="danger-link" hidden>Xóa token đã lưu</button>
               </article>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-mint">♫</span><div><h2>Giọng đọc & video</h2><p class="panel-caption">Edge TTS, FFmpeg và ffprobe chạy qua máy local.</p></div></div></div>
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-mint">♫</span><div><h2>Giọng đọc & video</h2><p class="panel-caption">Chọn một nhà cung cấp TTS; cấu hình riêng theo từng chế độ.</p></div></div></div>
+                <label class="tts-provider-select">Nhà cung cấp giọng đọc<select id="tts-provider"><option value="edge">Microsoft Edge TTS · online</option><option value="vieneu">Local AI TTS · VieNeu tiếng Việt + Kokoro tiếng Anh</option></select></label>
+                <div id="edge-tts-settings" class="tts-provider-panel">
                 <div class="voice-settings-layout">
                   <section class="voice-side-settings" aria-label="Cài đặt giọng tiếng Việt">
                     <label>Giọng tiếng Việt<select id="vi-voice"><option value="vi-VN-HoaiMyNeural">Hoài My — Nữ</option><option value="vi-VN-NamMinhNeural">Nam Minh — Nam</option></select></label>
@@ -141,10 +144,27 @@
                     <div class="english-voice-scroll"><div class="english-voice-grid" id="en-voice-list"></div></div>
                   </section>
                 </div>
+                </div>
+                <div id="vieneu-tts-settings" class="tts-provider-panel vieneu-settings" hidden>
+                  <div class="vieneu-voice-grid">
+                    <label>Tiếng Việt · VieNeu-TTS v3 Turbo<select id="vieneu-vi-voice"><option>Hải Đăng</option><option>Trúc Ly</option><option>Thiện Minh</option><option>Mai Anh</option><option>Thùy Dung</option><option>Thiền Tâm Đức</option><option>Ngọc Huyền</option><option>Quang Sơn</option><option>Ngọc Trân</option><option>Adam bựa</option><option>Minh Đức</option><option>Phạm Tuyên</option><option>Xuân Vĩnh</option><option>Thanh Bình</option><option>Ngọc Linh</option><option>Đoan Trang</option><option>Quỳnh Anh</option><option>Quốc Tuấn</option><option>Adam</option><option>Thái Sơn</option><option>Thục Đoan</option><option>Minh Triết</option><option>Mỹ Duyên</option><option>Đức Trí</option><option>Kim Thanh</option></select></label>
+                    <label>Tiếng Anh · Kokoro<select id="kokoro-en-voice"><option value="af_heart">Heart · Nữ · Mỹ</option><option value="af_bella">Bella · Nữ · Mỹ</option><option value="am_michael">Michael · Nam · Mỹ</option></select></label>
+                  </div>
+                  <div class="vieneu-speed-grid">
+                    <div class="speed-control vieneu-speed-control"><label for="vieneu-vi-speed">Tốc độ giọng tiếng Việt <output id="vieneu-vi-speed-label">1x</output></label><input id="vieneu-vi-speed" type="range" min="0.75" max="1.25" step="0.05" value="1" /></div>
+                    <div class="speed-control vieneu-speed-control"><label for="kokoro-en-speed">Tốc độ giọng tiếng Anh <output id="kokoro-en-speed-label">1x</output></label><input id="kokoro-en-speed" type="range" min="0.5" max="1.25" step="0.05" value="1" /></div>
+                  </div>
+                  <div class="local-tts-memory-grid">
+                    <label>RAM trống tối thiểu trước khi nạp (MB)<input id="local-tts-min-free-ram" type="number" min="512" max="65536" step="256" value="2560" /></label>
+                    <label>RAM cần để lại sau khi nạp (MB)<input id="local-tts-min-remaining-ram" type="number" min="256" max="32768" step="256" value="1024" /></label>
+                  </div>
+                  <div class="button-row vieneu-preview-actions"><button class="button button-outline button-small" id="preview-vieneu-vi" type="button">▶ Nghe thử tiếng Việt</button><button class="button button-outline button-small" id="preview-vieneu-en" type="button">▶ Nghe thử tiếng Anh · Kokoro</button></div>
+                  <p class="vieneu-note" id="local-tts-status" aria-live="polite">Model chỉ nạp khi tạo giọng. VieNeu chạy tiếng Việt trước; Kokoro chạy tiếng Anh sau khi worker VieNeu thoát. Dùng CPU, không dùng VRAM.</p>
+                </div>
                 <div class="tool-checks" id="tool-checks"></div>
               </article>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Tô sáng từ đang được đọc bằng WordBoundary của Edge TTS.</p></div></div></div>
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Edge dùng WordBoundary; Local AI dùng căn chỉnh audio cục bộ khi cần.</p></div></div></div>
                 <div class="highlight-settings-grid">
                   <label class="switch-row highlight-enable"><input type="checkbox" id="highlight-enabled" checked /><span class="switch"></span><span><strong>Bật highlight đồng bộ</strong><small>Áp dụng tự động cho video mới.</small></span></label>
                   <label>Kiểu highlight<select id="highlight-mode"><option value="word">Từng từ</option><option value="phrase">Từng cụm từ</option></select></label>

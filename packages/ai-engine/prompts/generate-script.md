@@ -11,7 +11,7 @@ Yêu cầu nội dung:
 - Nếu nội dung là hội thoại nhiều người, có thể thêm `turns` theo đúng thứ tự đọc trong mỗi mục `dialogues`. Mỗi lượt gồm `speakerId`, `language` (`vi`/`en`), `text`; có thể thêm `voiceName` và `rate`. Dùng ID người nói ổn định xuyên suốt video; nếu không chỉ định `voiceName`, hệ thống dùng giọng mặc định đã lưu.
 - Không dùng nội dung xúc phạm, phân biệt đối xử, sáo rỗng, lan man hoặc sao chép.
 - Tránh lặp các câu gần đây sau đây: {{recent}}
-- Tạo hook tiếng Việt dễ hiểu, tiêu đề thumbnail ngắn và phù hợp với nội dung.
+- Tạo hook tiếng Việt dễ hiểu; `title` phải là tiêu đề ngắn gọn, tự nhiên, đúng nội dung video; không chép nguyên một câu hội thoại. Đặt `thumbnailTitle` giống `title` để giữ tương thích dữ liệu cũ.
 
 Schema JSON bắt buộc (các giá trị trong schema chỉ minh họa kiểu dữ liệu):
 {{schema}}

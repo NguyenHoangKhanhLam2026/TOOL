@@ -12,7 +12,7 @@
 
 Mỗi video tạo audio riêng cho từng đoạn đọc, thu WordBoundary theo giọng và căn highlight theo timeline trước khi render MP4. Số lượt hội thoại lấy từ kịch bản, không cố định ba cặp. Renderer vẫn xác minh 1080×1920, 30 FPS, H.264/AAC và thời lượng 4–60 giây bằng ffprobe. Facebook live tắt mặc định.
 
-**Kiến trúc hiện tại:** backend dùng HTTP, WebSocket loopback và SQLite tích hợp trong Node; giao diện dùng HTML/CSS/JavaScript thuần. Sharp được dùng để rasterize scene SVG, sinh logo PNG và metadata thumbnail. Dự án chưa dùng React, TypeScript, Vite, Express, Zod, Tailwind hoặc Luxon.
+**Kiến trúc hiện tại:** backend dùng HTTP, WebSocket loopback và SQLite tích hợp trong Node; giao diện dùng HTML/CSS/JavaScript thuần. Sharp được dùng để rasterize scene SVG, sinh logo PNG. Dự án chưa dùng React, TypeScript, Vite, Express, Zod, Tailwind hoặc Luxon.
 
 ## Yêu cầu
 
@@ -86,7 +86,7 @@ Khi ChatGPT plan hết hạn mức hoặc không khả dụng, provider manager 
 
 1. Kết nối ChatGPT plan hoặc Ollama; có thể bật tùy chọn mẫu cục bộ nếu chỉ muốn thử các bước sau AI.
 2. Chọn chủ đề trong dashboard và tạo video.
-3. Worker xác thực kịch bản có số lượt linh hoạt, gọi Edge TTS riêng theo giọng/ngôn ngữ của từng lượt, đo thời lượng bằng ffprobe, dựng video 1080×1920/30 FPS với highlight theo timeline và trích thumbnail PNG.
+3. Worker xác thực kịch bản có số lượt linh hoạt, gọi Edge TTS riêng theo giọng/ngôn ngữ của từng lượt, đo thời lượng bằng ffprobe và dựng video 1080×1920/30 FPS với highlight theo timeline.
 4. Video hợp lệ xuất hiện trong Thư viện. Mở kịch bản để xem câu, từ khóa, giải thích và caption.
 5. Lên lịch trong tab Lịch đăng. Muốn tự đăng, kết nối Meta và bật rõ ràng tùy chọn tương ứng.
 

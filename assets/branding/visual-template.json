@@ -20,8 +20,8 @@
   },
   "timing": {
     "intro": 1.25,
-    "vocabularyHold": 5.5,
-    "transition": 0.06,
+    "vocabularyHold": 2.5,
+    "transition": 0.3,
     "transitionFade": 0.12,
     "cta": 2.6,
     "fade": 0.22
@@ -190,8 +190,8 @@
       "kind": "image",
       "visible": true,
       "asset": "teacher-female.png",
-      "x": 614,
-      "y": 1311,
+      "x": 583,
+      "y": 1313,
       "width": 450,
       "height": 608,
       "opacity": 1

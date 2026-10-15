@@ -48,6 +48,21 @@ export const TIMEZONE = process.env.TIMEZONE || 'Asia/Ho_Chi_Minh';
 export const PRIVATE_DIR = process.env.AERS_PRIVATE_DIR || path.join(process.env.LOCALAPPDATA || path.join(ROOT, 'data'), 'AutoEnglishReelsStudio', 'private');
 const venvPython = process.platform === 'win32' ? path.join(ROOT, '.venv', 'Scripts', 'python.exe') : path.join(ROOT, '.venv', 'bin', 'python');
 export const PYTHON_BIN = process.env.PYTHON || (fs.existsSync(venvPython) ? venvPython : 'python');
+const vieneuVenvPython = process.platform === 'win32' ? path.join(ROOT, '.venv-vieneu', 'Scripts', 'python.exe') : path.join(ROOT, '.venv-vieneu', 'bin', 'python');
+export const VIENEU_PYTHON_BIN = process.env.VIENEU_PYTHON || vieneuVenvPython;
+export const VIENEU_MODEL_DIR = path.join(DATA, 'models', 'vieneu-v3-turbo');
+export const VIENEU_ONNX_DIR = path.join(VIENEU_MODEL_DIR, 'onnx_update');
+export const VIENEU_CODEC_DIR = path.join(VIENEU_MODEL_DIR, 'codec');
+export const VIENEU_HF_HOME = path.join(DATA, 'models', 'huggingface-cache');
+export const VIENEU_MODEL_MARKER = path.join(VIENEU_MODEL_DIR, 'install.json');
+const kokoroVenvPython = process.platform === 'win32' ? path.join(ROOT, '.venv-kokoro', 'Scripts', 'python.exe') : path.join(ROOT, '.venv-kokoro', 'bin', 'python');
+export const KOKORO_PYTHON_BIN = process.env.KOKORO_PYTHON || kokoroVenvPython;
+export const KOKORO_MODEL_DIR = path.join(DATA, 'models', 'kokoro-onnx');
+export const KOKORO_MODEL_PATH = path.join(KOKORO_MODEL_DIR, 'kokoro-v1.0.onnx');
+export const KOKORO_VOICES_PATH = path.join(KOKORO_MODEL_DIR, 'voices-v1.0.bin');
+export const KOKORO_MODEL_MARKER = path.join(KOKORO_MODEL_DIR, 'install.json');
+export const LOCAL_TTS_LOCK_DB = path.join(DATA, 'models', 'local-tts-manager.sqlite');
+export const LOCAL_TTS_STATUS_PATH = path.join(DATA, 'temporary', 'local-tts-model-status.json');
 export const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v26.0';
 export const DEFAULTS = Object.freeze({
   appName: 'Auto English Reels Studio',
@@ -61,6 +76,15 @@ export const DEFAULTS = Object.freeze({
   viVoice: 'vi-VN-HoaiMyNeural',
   enVoice: 'en-US-AndrewNeural',
   enRate: '-8%',
+  ttsProvider: 'edge',
+  vieneuViVoice: 'Hải Đăng',
+  vieneuEnVoice: 'Hải Đăng',
+  vieneuViSpeed: 1,
+  vieneuEnSpeed: 0.9,
+  kokoroEnVoice: 'af_heart',
+  kokoroEnSpeed: 1,
+  localTtsMinFreeRamMb: 2560,
+  localTtsMinRemainingRamMb: 1024,
   highlightEnabled: true,
   highlightMode: 'word',
   highlightColor: '#FF8066',
@@ -88,5 +112,6 @@ export const PATHS = Object.freeze({
   logs: path.join(DATA, 'logs'),
   private: PRIVATE_DIR,
   backups: path.join(DATA, 'backups'),
+  models: path.join(DATA, 'models'),
   public: path.join(ROOT, 'public')
 });

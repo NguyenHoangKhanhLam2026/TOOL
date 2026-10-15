@@ -14,7 +14,10 @@ import { facebookTokenSaved, saveFacebookToken, clearFacebookToken, MetaGraphAda
 import { MockFacebookAdapter } from '../packages/facebook-engine/mock-adapter.mjs';
 import { zonedLocalToDate } from './scheduler/time.mjs';
 import { alignSpeechLocally, synthesizeSpeech } from './tts/edge-tts.mjs';
-import { buildHighlightIntervals, mapWordBoundariesToTokens, normalizeLanguage } from '../packages/audio-highlight/highlight-engine.mjs';
+import { synthesizeVieNeuPreview, vieneuModelStatus, VIENEU_VOICES } from './tts/vieneu-tts.mjs';
+import { KOKORO_VOICES, kokoroModelStatus, synthesizeKokoroPreview } from './tts/kokoro-tts.mjs';
+import { getLocalTtsManagerStatus, withLocalTtsModel } from './tts/local-model-manager.mjs';
+import { buildHighlightIntervals, mapWordBoundariesToTokens, normalizeLanguage, prepareSpeechText } from '../packages/audio-highlight/highlight-engine.mjs';
 import { BRANDING_DIR, buildSceneSvg, rasterizeScene, readVisualTemplate, saveVisualTemplate, getDesignPrompts } from '../packages/video-engine/visual-template-engine.mjs';
 import { deleteAsset, listAssets, resetBrandAssets, saveUploadedAsset, setDefaultAsset } from '../packages/video-engine/asset-manager.mjs';
 
@@ -129,8 +132,13 @@ function executableExists(command) {
 
 async function systemStatus() {
   const settings = getSettings();
+  const vieneu = vieneuModelStatus(settings);
+  const kokoro = kokoroModelStatus(settings);
+  const localTts = getLocalTtsManagerStatus();
   let tts = false;
   const python = spawnSync(PYTHON_BIN, ['-c', 'import edge_tts'], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
+  const alignment = spawnSync(PYTHON_BIN, ['-c', "import importlib.util; print('yes' if importlib.util.find_spec('stable_whisper') else 'no')"], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
+  const localWordAlignment = alignment.status === 0 && alignment.stdout.trim() === 'yes';
   const venvPackage = path.join(ROOT, '.venv', process.platform === 'win32' ? 'Lib' : 'lib', 'site-packages', 'edge_tts');
   tts = python.status === 0 || (python.error?.code === 'EPERM' && executableExists(PYTHON_BIN) && fs.existsSync(venvPackage));
   let ollama = false;
@@ -148,7 +156,10 @@ async function systemStatus() {
     database: true,
     worker,
     workerLastSeen,
-    tools: { ffmpeg: checkTool('ffmpeg', ['-version']), ffprobe: checkTool('ffprobe', ['-version']), python: python.status === 0 || checkTool(PYTHON_BIN, ['--version']), edgeTts: tts, ollama },
+    tools: { ffmpeg: checkTool('ffmpeg', ['-version']), ffprobe: checkTool('ffprobe', ['-version']), python: python.status === 0 || checkTool(PYTHON_BIN, ['--version']), edgeTts: tts, vieneuTts: vieneu.ready, kokoroTts: kokoro.ready, localWordAlignment, ollama },
+    vieneu,
+    kokoro: { ...kokoro, voices: KOKORO_VOICES },
+    localTts,
     aiReady: chatgpt.connected || ollama,
     liveFacebookReady: Boolean(settings.facebookConnectionVerified && facebookTokenSaved() && settings.pageId)
   };
@@ -158,6 +169,7 @@ function serveFile(req, res, absolutePath) {
   if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) return json(res, 404, { error: 'Không tìm thấy tệp.' });
   const ext = path.extname(absolutePath).toLowerCase();
   const size = fs.statSync(absolutePath).size;
+  const isPublicAsset = path.resolve(absolutePath).startsWith(`${path.resolve(PATHS.public)}${path.sep}`);
   const range = req.headers.range;
   if (range && ext === '.mp4') {
     const match = range.match(/bytes=(\d*)-(\d*)/);
@@ -167,7 +179,7 @@ function serveFile(req, res, absolutePath) {
     res.writeHead(206, { 'content-type': 'video/mp4', 'content-length': end - start + 1, 'content-range': `bytes ${start}-${end}/${size}`, 'accept-ranges': 'bytes' });
     fs.createReadStream(absolutePath, { start, end }).pipe(res); return;
   }
-  res.writeHead(200, { 'content-type': mimeTypes[ext] || 'application/octet-stream', 'content-length': size, 'x-content-type-options': 'nosniff', 'accept-ranges': ext === '.mp4' ? 'bytes' : 'none' });
+  res.writeHead(200, { 'content-type': mimeTypes[ext] || 'application/octet-stream', 'content-length': size, 'x-content-type-options': 'nosniff', 'accept-ranges': ext === '.mp4' ? 'bytes' : 'none', ...(isPublicAsset ? { 'cache-control': 'no-store' } : {}) });
   fs.createReadStream(absolutePath).pipe(res);
 }
 
@@ -301,6 +313,14 @@ async function handleApi(req, res, url) {
     if (!/^[\w.:-]{2,80}$/.test(String(next.ollamaModel))) return json(res, 400, { error: 'Tên model Ollama không hợp lệ.' });
     if (!/^[\w-]{2,100}$/.test(String(next.viVoice)) || !/^[\w-]{2,100}$/.test(String(next.enVoice))) return json(res, 400, { error: 'Tên giọng đọc không hợp lệ.' });
     if (!/^[+-]\d{1,3}%$/.test(String(next.enRate))) return json(res, 400, { error: 'Tốc độ giọng tiếng Anh phải có dạng -8% hoặc +0%.' });
+    if (!['edge', 'vieneu'].includes(next.ttsProvider)) return json(res, 400, { error: 'Chế độ TTS phải là Microsoft Edge TTS hoặc Local AI TTS.' });
+    if (!VIENEU_VOICES.includes(String(next.vieneuViVoice)) || !VIENEU_VOICES.includes(String(next.vieneuEnVoice))) return json(res, 400, { error: 'Giọng VieNeu không nằm trong danh sách được hỗ trợ.' });
+    if (!Number.isFinite(Number(next.vieneuViSpeed)) || Number(next.vieneuViSpeed) < 0.75 || Number(next.vieneuViSpeed) > 1.25) return json(res, 400, { error: 'Tốc độ VieNeu tiếng Việt phải từ 0,75x đến 1,25x.' });
+    if (!Number.isFinite(Number(next.vieneuEnSpeed)) || Number(next.vieneuEnSpeed) < 0.5 || Number(next.vieneuEnSpeed) > 1.25) return json(res, 400, { error: 'Tốc độ VieNeu tiếng Anh phải từ 0,5x đến 1,25x.' });
+    if (!KOKORO_VOICES.some((voice) => voice.id === String(next.kokoroEnVoice))) return json(res, 400, { error: 'Giọng Kokoro tiếng Anh không nằm trong danh sách model.' });
+    if (!Number.isFinite(Number(next.kokoroEnSpeed)) || Number(next.kokoroEnSpeed) < 0.5 || Number(next.kokoroEnSpeed) > 1.25) return json(res, 400, { error: 'Tốc độ Kokoro tiếng Anh phải từ 0,5x đến 1,25x.' });
+    if (!Number.isInteger(Number(next.localTtsMinFreeRamMb)) || Number(next.localTtsMinFreeRamMb) < 512 || Number(next.localTtsMinFreeRamMb) > 65536) return json(res, 400, { error: 'Ngưỡng RAM trống trước khi nạp phải từ 512 đến 65536 MB.' });
+    if (!Number.isInteger(Number(next.localTtsMinRemainingRamMb)) || Number(next.localTtsMinRemainingRamMb) < 256 || Number(next.localTtsMinRemainingRamMb) > 32768) return json(res, 400, { error: 'Ngưỡng RAM dự trữ sau khi nạp phải từ 256 đến 32768 MB.' });
     if (typeof next.highlightEnabled !== 'boolean') return json(res, 400, { error: 'Trạng thái highlight không hợp lệ.' });
     if (!['word', 'phrase'].includes(next.highlightMode)) return json(res, 400, { error: 'Kiểu highlight phải là từng từ hoặc từng cụm từ.' });
     if (!/^#[0-9a-f]{6}$/i.test(String(next.highlightColor))) return json(res, 400, { error: 'Màu highlight phải là mã hex 6 ký tự.' });
@@ -421,27 +441,54 @@ async function handleApi(req, res, url) {
     const settings = getSettings();
     if (!text || text.length > 2000) return json(res, 400, { error: 'Câu nghe thử phải có từ 1 đến 2000 ký tự.' });
     if (body.highlightMode !== undefined && !['word', 'phrase'].includes(body.highlightMode)) return json(res, 400, { error: 'Kiểu highlight preview không hợp lệ.' });
-    const configuredVoice = language === 'vi' ? settings.viVoice : settings.enVoice;
+    const ttsProvider = body.ttsProvider || settings.ttsProvider;
+    if (!['edge', 'vieneu'].includes(ttsProvider)) return json(res, 400, { error: 'Chế độ TTS không hợp lệ.' });
+    const configuredVoice = ttsProvider === 'vieneu'
+      ? (language === 'vi' ? settings.vieneuViVoice : settings.kokoroEnVoice)
+      : (language === 'vi' ? settings.viVoice : settings.enVoice);
     const voice = String(body.voice || configuredVoice).trim();
-    if (!/^[a-z]{2,3}-[A-Z]{2,4}-[\w-]{2,100}$/.test(voice)) return json(res, 400, { error: 'Tên giọng Edge TTS không hợp lệ.' });
+    const localVoiceValid = language === 'vi' ? VIENEU_VOICES.includes(voice) : KOKORO_VOICES.some((item) => item.id === voice);
+    if (ttsProvider === 'vieneu' ? !localVoiceValid : !/^[a-z]{2,3}-[A-Z]{2,4}-[\w-]{2,100}$/.test(voice)) return json(res, 400, { error: ttsProvider === 'vieneu' ? `Giọng Local AI tiếng ${language === 'vi' ? 'Việt' : 'Anh'} không hợp lệ.` : 'Tên giọng Edge TTS không hợp lệ.' });
+    const speed = Number(body.speed ?? (language === 'vi' ? settings.vieneuViSpeed : settings.kokoroEnSpeed));
+    if (ttsProvider === 'vieneu' && (!Number.isFinite(speed) || speed < (language === 'vi' ? 0.75 : 0.5) || speed > 1.25)) return json(res, 400, { error: 'Tốc độ nghe thử nằm ngoài giới hạn model.' });
+    const rate = String(body.rate ?? (language === 'vi' ? '+0%' : settings.enRate));
+    if (ttsProvider === 'edge' && !/^[+-]\d{1,3}%$/.test(rate)) return json(res, 400, { error: 'Tốc độ Edge TTS phải có dạng -8% hoặc +0%.' });
     const id = crypto.randomUUID();
-    const output = path.join(PATHS.temporary, 'voice-previews', `${id}.mp3`);
+    const speechText = prepareSpeechText(text, language);
+    const output = path.join(PATHS.temporary, 'voice-previews', `${id}.${ttsProvider === 'vieneu' ? 'wav' : 'mp3'}`);
     const wordTimingsPath = body.withWordBoundaries === true ? `${output}.wordtimings.json` : null;
     try {
-      await synthesizeSpeech(text, voice, language === 'vi' ? '+0%' : settings.enRate, output, { wordTimingsPath, language });
+      if (ttsProvider === 'vieneu') {
+        const timingPath = `${output}.wordtimings.json`;
+        if (language === 'vi') {
+          await withLocalTtsModel('VieNeu-TTS v3 Turbo', (lease) => synthesizeVieNeuPreview({
+            text, language, voice, speed, outputPath: output, timingPath, settings,
+            onProgress: (kind, value = {}) => {
+              if (kind === 'VIENEU_WORKER') lease.update({ phase: 'vieneu-worker-started', workerPid: value.pid, workerExited: false });
+              else if (kind === 'VIENEU_WORKER_EXITED') lease.update({ phase: 'vieneu-worker-exited', workerPid: null, workerExited: true, memoryAfter: { systemRamAvailableMb: value.availableRamMb } });
+              else if (kind === 'VIENEU_MEMORY') lease.update({ phase: `vieneu-${value.phase}`, workerMemory: value });
+            }
+          }));
+        } else {
+          await withLocalTtsModel('Kokoro TTS', (lease) => synthesizeKokoroPreview({ text: speechText, language, voice, speed, outputPath: output, timingPath, settings, lease }));
+        }
+        if (!wordTimingsPath) fs.rmSync(`${output}.wordtimings.json`, { force: true });
+      } else {
+        await synthesizeSpeech(speechText, voice, rate, output, { wordTimingsPath, language });
+      }
       if (!wordTimingsPath) return json(res, 200, { url: `/api/tts-preview/${id}`, language, voice });
       const timingData = JSON.parse(fs.readFileSync(wordTimingsPath, 'utf8'));
-      let mapped = mapWordBoundariesToTokens(text, timingData.wordBoundaries, `preview-${id}`);
-      let alignmentSource = timingData.wordBoundaries.length ? 'edge-word-boundary' : null;
+      let mapped = mapWordBoundariesToTokens(text, timingData.wordBoundaries, `preview-${id}`, { language });
+      let alignmentSource = timingData.source || (timingData.wordBoundaries.length ? (ttsProvider === 'edge' ? 'edge-word-boundary' : language === 'en' ? 'kokoro-word-boundary' : 'vieneu-word-boundary') : null);
       let warning = timingData.warning || null;
       if (!mapped.alignment.reliable) {
-        const local = await alignSpeechLocally(output, text, language);
+        const local = await alignSpeechLocally(output, speechText, language);
         if (local.wordBoundaries.length) {
-          const localMapped = mapWordBoundariesToTokens(text, local.wordBoundaries, `preview-${id}`);
-          if (localMapped.alignment.reliable) {
+          const localMapped = mapWordBoundariesToTokens(text, local.wordBoundaries, `preview-${id}`, { language });
+          if (localMapped.alignment.mappedTokenCount > mapped.alignment.mappedTokenCount) {
             mapped = localMapped;
             alignmentSource = local.source || 'stable-ts-local';
-            warning = null;
+            warning = localMapped.alignment.reliable ? null : local.warning || `Còn ${localMapped.alignment.unmatchedTokenCount} từ chưa căn chỉnh.`;
           } else {
             warning = `${local.warning || 'Local forced alignment không khớp đầy đủ với văn bản.'} Còn ${localMapped.alignment.unmatchedTokenCount} từ chưa căn chỉnh.`;
           }
@@ -450,11 +497,9 @@ async function handleApi(req, res, url) {
         }
       }
       const highlightMode = body.highlightMode || settings.highlightMode;
-      const highlightIntervals = mapped.alignment.reliable
-        ? buildHighlightIntervals(mapped.wordTimings, highlightMode)
-        : [];
+      const highlightIntervals = buildHighlightIntervals(mapped.wordTimings, highlightMode);
       return json(res, 200, {
-        url: `/api/tts-preview/${id}`, language, voice,
+        url: `/api/tts-preview/${id}`, language, voice, provider: ttsProvider,
         tokens: mapped.tokens,
         wordTimings: mapped.wordTimings,
         highlightIntervals,
@@ -463,7 +508,11 @@ async function handleApi(req, res, url) {
         alignmentSource,
         warning
       });
-    } catch (error) { return json(res, 503, { error: error.message }); }
+    } catch (error) {
+      fs.rmSync(output, { force: true });
+      fs.rmSync(`${output}.wordtimings.json`, { force: true });
+      return json(res, 503, { error: error.message });
+    }
   }
   if (route === 'POST /api/facebook/clear-token') {
     clearFacebookToken(); saveSettings({ facebookConnectionVerified: false, autoPublishEnabled: false });
@@ -523,9 +572,12 @@ async function handleApi(req, res, url) {
   }
   const previewMatch = url.pathname.match(/^\/api\/tts-preview\/([\w-]+)$/);
   if (req.method === 'GET' && previewMatch) {
-    const filePath = path.join(PATHS.temporary, 'voice-previews', `${previewMatch[1]}.mp3`);
+    const previewDir = path.join(PATHS.temporary, 'voice-previews');
+    const mp3Path = path.join(previewDir, `${previewMatch[1]}.mp3`);
+    const wavPath = path.join(previewDir, `${previewMatch[1]}.wav`);
+    const filePath = fs.existsSync(mp3Path) ? mp3Path : wavPath;
     if (!fs.existsSync(filePath)) return json(res, 404, { error: 'Không tìm thấy bản thử giọng.' });
-    res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': fs.statSync(filePath).size, 'cache-control': 'no-store' });
+    res.writeHead(200, { 'content-type': filePath.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg', 'content-length': fs.statSync(filePath).size, 'cache-control': 'no-store' });
     fs.createReadStream(filePath).pipe(res); return;
   }
   const retryMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/retry$/);

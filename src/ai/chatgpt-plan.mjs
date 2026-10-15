@@ -16,10 +16,26 @@ function readCredential() {
 }
 
 function writeCredential(value) {
-  const temp = `${credentialPath}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 });
-  fs.renameSync(temp, credentialPath);
-  try { fs.chmodSync(credentialPath, 0o600); } catch { /* Windows ACLs govern this file. */ }
+  fs.mkdirSync(path.dirname(credentialPath), { recursive: true });
+  // A PID-only temp name can collide with a leftover file or another writer
+  // after the app is restarted. Create a fresh, exclusive file for every save.
+  const temp = `${credentialPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  let descriptor;
+  try {
+    descriptor = fs.openSync(temp, 'wx', 0o600);
+    fs.writeFileSync(descriptor, JSON.stringify(value, null, 2), 'utf8');
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.renameSync(temp, credentialPath);
+    try { fs.chmodSync(credentialPath, 0o600); } catch { /* Windows ACLs govern this file. */ }
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor); } catch { /* Preserve the original write error. */ }
+    }
+    try { fs.rmSync(temp, { force: true }); } catch { /* Preserve the original write error. */ }
+    throw error;
+  }
 }
 
 function hostId() {

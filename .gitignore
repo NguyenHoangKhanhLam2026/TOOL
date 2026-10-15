@@ -10,3 +10,6 @@ data/backups/*
 *.log
 __pycache__/
 .venv/
+.venv-vieneu/
+.venv-kokoro/
+data/models/
