@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { ROOT, PORT, HOST, PATHS, PYTHON_BIN } from './config.mjs';
+import { ROOT, PORT, HOST, PATHS, PYTHON_BIN, FFMPEG_BIN, FFPROBE_BIN } from './config.mjs';
 import {
   db, getSettings, saveSettings, getOverview, listTopics, listVideos, listJobs,
   listPublishHistory, listSchedules, queueJob, createSchedule, log, getScript, updateVideo, addTopic, deleteVideo
@@ -118,16 +118,7 @@ function publicSettings() {
 
 function checkTool(command, args = ['-version']) {
   const result = spawnSync(command, args, { windowsHide: true, encoding: 'utf8', timeout: 2500 });
-  if (result.error?.code === 'EPERM') return executableExists(command);
-  return result.status === 0;
-}
-
-function executableExists(command) {
-  const hasPath = path.isAbsolute(command) || command.includes(path.sep) || command.includes('/');
-  const extensions = process.platform === 'win32' && !path.extname(command) ? ['', '.exe', '.cmd', '.bat'] : [''];
-  const locations = hasPath ? [path.dirname(command)] : (process.env.PATH || '').split(path.delimiter);
-  const name = hasPath ? path.basename(command) : command;
-  return locations.some((directory) => extensions.some((extension) => fs.existsSync(path.join(directory, `${name}${extension}`))));
+  return { ready: !result.error && result.status === 0, errorCode: result.error?.code || (result.status === 0 ? null : 'EXIT') };
 }
 
 async function systemStatus() {
@@ -135,14 +126,14 @@ async function systemStatus() {
   const vieneu = vieneuModelStatus(settings);
   const kokoro = kokoroModelStatus(settings);
   const localTts = getLocalTtsManagerStatus();
-  let tts = false;
-  const python = spawnSync(PYTHON_BIN, ['-c', 'import edge_tts'], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
+  const python = spawnSync(PYTHON_BIN, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
+  const edgeTts = spawnSync(PYTHON_BIN, ['-c', 'import edge_tts'], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
   const alignment = spawnSync(PYTHON_BIN, ['-c', "import importlib.util; print('yes' if importlib.util.find_spec('stable_whisper') else 'no')"], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
+  const vieneuPython = vieneu.installed ? spawnSync(vieneu.python, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 6000 }) : null;
+  const kokoroPython = kokoro.installed ? spawnSync(kokoro.python, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 6000 }) : null;
   const localWordAlignment = alignment.status === 0 && alignment.stdout.trim() === 'yes';
-  const venvPackage = path.join(ROOT, '.venv', process.platform === 'win32' ? 'Lib' : 'lib', 'site-packages', 'edge_tts');
-  tts = python.status === 0 || (python.error?.code === 'EPERM' && executableExists(PYTHON_BIN) && fs.existsSync(venvPackage));
-  let ollama = false;
-  try { ollama = (await fetch(new URL('/api/tags', settings.ollamaBaseUrl), { signal: AbortSignal.timeout(900) })).ok; } catch { ollama = false; }
+  const ffmpeg = checkTool(FFMPEG_BIN, ['-version']);
+  const ffprobe = checkTool(FFPROBE_BIN, ['-version']);
   let worker = false;
   let workerLastSeen = null;
   try {
@@ -156,11 +147,27 @@ async function systemStatus() {
     database: true,
     worker,
     workerLastSeen,
-    tools: { ffmpeg: checkTool('ffmpeg', ['-version']), ffprobe: checkTool('ffprobe', ['-version']), python: python.status === 0 || checkTool(PYTHON_BIN, ['--version']), edgeTts: tts, vieneuTts: vieneu.ready, kokoroTts: kokoro.ready, localWordAlignment, ollama },
+    tools: {
+      ffmpeg: ffmpeg.ready,
+      ffprobe: ffprobe.ready,
+      python: python.status === 0,
+      edgeTts: edgeTts.status === 0,
+      vieneuTts: Boolean(vieneu.ready && vieneuPython && !vieneuPython.error && vieneuPython.status === 0),
+      kokoroTts: Boolean(kokoro.ready && kokoroPython && !kokoroPython.error && kokoroPython.status === 0),
+      localWordAlignment,
+      errors: {
+        python: python.error?.code || (python.status === 0 ? null : 'EXIT'),
+        edgeTts: edgeTts.error?.code || (edgeTts.status === 0 ? null : 'EXIT'),
+        ffmpeg: ffmpeg.errorCode,
+        ffprobe: ffprobe.errorCode,
+        vieneuTts: vieneuPython?.error?.code || (vieneuPython && vieneuPython.status !== 0 ? 'EXIT' : null),
+        kokoroTts: kokoroPython?.error?.code || (kokoroPython && kokoroPython.status !== 0 ? 'EXIT' : null)
+      }
+    },
     vieneu,
     kokoro: { ...kokoro, voices: KOKORO_VOICES },
     localTts,
-    aiReady: chatgpt.connected || ollama,
+    aiReady: chatgpt.connected,
     liveFacebookReady: Boolean(settings.facebookConnectionVerified && facebookTokenSaved() && settings.pageId)
   };
 }
@@ -306,11 +313,6 @@ async function handleApi(req, res, url) {
     if (!Number.isInteger(Number(next.prepareAheadDays)) || Number(next.prepareAheadDays) < 1 || Number(next.prepareAheadDays) > 30) return json(res, 400, { error: 'Số ngày dự phòng phải từ 1 đến 30.' });
     if (!Number.isInteger(Number(next.maxScriptsPerDay)) || Number(next.maxScriptsPerDay) < 1 || Number(next.maxScriptsPerDay) > 30) return json(res, 400, { error: 'Giới hạn kịch bản phải từ 1 đến 30 mỗi ngày.' });
     try { new Intl.DateTimeFormat('en-US', { timeZone: next.timezone }); } catch { return json(res, 400, { error: 'Múi giờ không hợp lệ.' }); }
-    try {
-      const ollama = new URL(next.ollamaBaseUrl);
-      if (!['http:', 'https:'].includes(ollama.protocol) || !['127.0.0.1', 'localhost', '::1'].includes(ollama.hostname)) throw new Error();
-    } catch { return json(res, 400, { error: 'Ollama phải chạy trên localhost hoặc 127.0.0.1.' }); }
-    if (!/^[\w.:-]{2,80}$/.test(String(next.ollamaModel))) return json(res, 400, { error: 'Tên model Ollama không hợp lệ.' });
     if (!/^[\w-]{2,100}$/.test(String(next.viVoice)) || !/^[\w-]{2,100}$/.test(String(next.enVoice))) return json(res, 400, { error: 'Tên giọng đọc không hợp lệ.' });
     if (!/^[+-]\d{1,3}%$/.test(String(next.enRate))) return json(res, 400, { error: 'Tốc độ giọng tiếng Anh phải có dạng -8% hoặc +0%.' });
     if (!['edge', 'vieneu'].includes(next.ttsProvider)) return json(res, 400, { error: 'Chế độ TTS phải là Microsoft Edge TTS hoặc Local AI TTS.' });
@@ -328,7 +330,7 @@ async function handleApi(req, res, url) {
     if (!Number.isInteger(Number(next.highlightRadius)) || Number(next.highlightRadius) < 0 || Number(next.highlightRadius) > 32) return json(res, 400, { error: 'Bo góc highlight phải từ 0 đến 32 px.' });
     if (body.highlightTransition !== undefined && body.highlightTransition !== 'instant') return json(res, 400, { error: 'Highlight chuyển tức thời để khớp thời điểm đọc.' });
     if (!['mock', 'meta'].includes(next.facebookAdapter)) return json(res, 400, { error: 'Facebook adapter phải là Mock hoặc Meta Graph API.' });
-    if (body.autoGenerationEnabled === true && !(chatgptStatus().connected || (await systemStatus()).tools.ollama)) return json(res, 409, { error: 'Hãy kết nối ChatGPT hoặc khởi động Ollama trước khi bật tự tạo.' });
+    if (body.autoGenerationEnabled === true && !chatgptStatus().connected) return json(res, 409, { error: 'Hãy kết nối ChatGPT Plan trước khi bật tự tạo.' });
     const patch = { ...body };
     const currentSettings = getSettings();
     const facebookModeChanged = body.facebookAdapter && body.facebookAdapter !== currentSettings.facebookAdapter;
@@ -422,18 +424,6 @@ async function handleApi(req, res, url) {
       return json(res, 400, { connected: false, error: error.message });
     }
   }
-  if (route === 'POST /api/ollama/test') {
-    const body = await readJson(req);
-    const settings = { ...getSettings(), ...body };
-    try {
-      const response = await fetch(new URL('/api/tags', settings.ollamaBaseUrl), { signal: AbortSignal.timeout(3000) });
-      if (!response.ok) return json(res, 400, { connected: false, error: `Ollama trả mã HTTP ${response.status}.` });
-      const data = await response.json();
-      const models = (data.models || []).map((item) => item.name);
-      const installed = models.some((name) => name === settings.ollamaModel || name.startsWith(`${settings.ollamaModel}:`));
-      return json(res, installed ? 200 : 409, { connected: true, installed, model: settings.ollamaModel, models, message: installed ? 'Ollama và model đã sẵn sàng.' : `Ollama đang chạy nhưng chưa có model ${settings.ollamaModel}.` });
-    } catch (error) { return json(res, 400, { connected: false, error: `Không kết nối được Ollama: ${error.message}` }); }
-  }
   if (route === 'POST /api/tts/preview') {
     const body = await readJson(req);
     const text = String(body.text || '').trim();
@@ -524,7 +514,13 @@ async function handleApi(req, res, url) {
     const system = await systemStatus();
     const blockers = [];
     if (!system.worker) blockers.push('Worker nền đang ngoại tuyến. Hãy khởi động worker để xử lý video.');
-    if (!system.tools.ffmpeg || !system.tools.ffprobe) blockers.push('Máy chưa có FFmpeg và FFprobe trong PATH; chưa thể render video.');
+    if (!system.tools.ffmpeg || !system.tools.ffprobe) {
+      const errors = system.tools.errors;
+      const spawnDenied = [errors.ffmpeg, errors.ffprobe].some((code) => code === 'EPERM' || code === 'EACCES');
+      blockers.push(spawnDenied
+        ? 'Windows hoặc môi trường chạy ứng dụng đang từ chối tạo tiến trình FFmpeg/FFprobe (EPERM); đây không phải lỗi thiếu PATH. Hãy khởi động ứng dụng từ start.bat trong phiên Windows thông thường.'
+        : 'Không tìm thấy hoặc không chạy được FFmpeg/FFprobe; hãy cài FFmpeg đầy đủ hoặc thêm thư mục chứa cả hai vào PATH.');
+    }
     if (blockers.length) return json(res, 503, { error: blockers.join(' ') });
     const activeJob = db.prepare("SELECT id FROM jobs WHERE type='create_video' AND status IN ('pending','running') ORDER BY created_at DESC LIMIT 1").get();
     if (activeJob) return json(res, 409, { error: `Đang có video chờ xử lý (${activeJob.id}); chờ job hiện tại xong rồi hãy tạo tiếp.` });

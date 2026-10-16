@@ -363,6 +363,8 @@ export function createSpeechSegments(script, settings = {}) {
     });
   }
 
+  if (!segments.length) throw new Error('Kịch bản không có đoạn văn bản nào để đọc.');
+  appendCtaSpeech(settings, segments);
   segments.forEach((segment, index) => { segment.order = index; });
 
   const ids = new Set();
@@ -374,6 +376,34 @@ export function createSpeechSegments(script, settings = {}) {
   return segments;
 }
 
+function appendCtaSpeech(settings, segments) {
+  const text = 'Follow kênh để luyện phản xạ tiếng Anh mỗi ngày!';
+  const existing = segments.find((segment) => segment.target?.layerId === 'cta' || segment.state === 'cta');
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    if (segments[index].target?.layerId === 'cta' || segments[index].state === 'cta') segments.splice(index, 1);
+  }
+  const speakerId = 'vi-default';
+  let segmentId = existing?.segmentId || 'video-cta-vi';
+  let duplicateIndex = 2;
+  while (segments.some((segment) => segment.segmentId === segmentId)) {
+    segmentId = `video-cta-vi-${duplicateIndex}`;
+    duplicateIndex += 1;
+  }
+  segments.push({
+    segmentId,
+    speakerId,
+    voiceName: String(settings.speakerVoices?.[speakerId] || voiceForLanguage(settings, 'vi')),
+    language: 'vi',
+    rate: String(rateForLanguage(settings, 'vi')),
+    text,
+    speechText: prepareSpeechText(text, 'vi'),
+    order: segments.length,
+    turnId: 'video-cta',
+    state: 'cta',
+    target: { id: segmentId, layerId: 'cta', dialogueIndex: 0, text }
+  });
+}
+
 function appendVocabularySpeech(script, settings, segments) {
   const dialogues = Array.isArray(script?.dialogues) ? script.dialogues : [];
   for (const [index, dialogue] of dialogues.entries()) {
@@ -381,38 +411,54 @@ function appendVocabularySpeech(script, settings, segments) {
       && Number(segment.target?.dialogueIndex) === index);
     if (existing) continue;
     const vocabulary = makeVocabularySpeech(dialogue, index, settings);
-    if (!vocabulary) continue;
+    if (!vocabulary.length) continue;
     const lastSegmentIndex = segments.reduce((last, segment, segmentIndex) =>
       Number(segment.target?.dialogueIndex) === index ? segmentIndex : last, -1);
-    segments.splice(lastSegmentIndex < 0 ? segments.length : lastSegmentIndex + 1, 0, vocabulary);
+    segments.splice(lastSegmentIndex < 0 ? segments.length : lastSegmentIndex + 1, 0, ...vocabulary);
   }
 }
 
 function appendVocabularySpeechForDialogue(dialogue, index, settings, segments) {
   const vocabulary = makeVocabularySpeech(dialogue, index, settings);
-  if (vocabulary) segments.push(vocabulary);
+  if (vocabulary.length) segments.push(...vocabulary);
 }
 
 function makeVocabularySpeech(dialogue, index, settings) {
   const term = String(dialogue?.term ?? '').trim();
   const meaningVi = String(dialogue?.meaningVi ?? '').trim();
-  if (!term || !meaningVi) return null;
-  const segmentId = `${defaultDialogueSegmentId(index, 'vi', dialogue)}-vocabulary`;
-  const speakerId = String(dialogue?.vietnameseSpeakerId || dialogue?.speakers?.vi || 'vi-default');
-  const text = `${term}. ${meaningVi}`;
-  return {
-    segmentId,
-    speakerId,
-    voiceName: String(dialogue?.vietnameseVoiceName || dialogue?.viVoiceName || settings.speakerVoices?.[speakerId] || voiceForLanguage(settings, 'vi')),
-    language: 'vi',
-    rate: String(dialogue?.vietnameseRate || rateForLanguage(settings, 'vi')),
-    text,
-    speechText: prepareSpeechText(text, 'vi'),
-    order: Number.MAX_SAFE_INTEGER,
-    turnId: String(dialogue?.id || `dialogue-${index + 1}`),
-    state: 'vocabulary',
-    target: { id: segmentId, layerId: 'vocabulary', dialogueIndex: index, text }
-  };
+  if (!term || !meaningVi) return [];
+  const baseSegmentId = `${defaultDialogueSegmentId(index, 'vi', dialogue)}-vocabulary`;
+  const englishSpeakerId = String(dialogue?.englishSpeakerId || dialogue?.speakers?.en || 'en-default');
+  const vietnameseSpeakerId = String(dialogue?.vietnameseSpeakerId || dialogue?.speakers?.vi || 'vi-default');
+  const turnId = String(dialogue?.id || `dialogue-${index + 1}`);
+  return [
+    {
+      segmentId: `${baseSegmentId}-term`,
+      speakerId: englishSpeakerId,
+      voiceName: String(dialogue?.englishVoiceName || dialogue?.enVoiceName || settings.speakerVoices?.[englishSpeakerId] || voiceForLanguage(settings, 'en')),
+      language: 'en',
+      rate: String(dialogue?.englishRate || rateForLanguage(settings, 'en')),
+      text: term,
+      speechText: prepareSpeechText(term, 'en'),
+      order: Number.MAX_SAFE_INTEGER,
+      turnId,
+      state: 'vocabulary',
+      target: { id: `${baseSegmentId}-term`, layerId: 'vocabulary', dialogueIndex: index, text: term }
+    },
+    {
+      segmentId: `${baseSegmentId}-meaning`,
+      speakerId: vietnameseSpeakerId,
+      voiceName: String(dialogue?.vietnameseVoiceName || dialogue?.viVoiceName || settings.speakerVoices?.[vietnameseSpeakerId] || voiceForLanguage(settings, 'vi')),
+      language: 'vi',
+      rate: String(dialogue?.vietnameseRate || rateForLanguage(settings, 'vi')),
+      text: meaningVi,
+      speechText: prepareSpeechText(meaningVi, 'vi'),
+      order: Number.MAX_SAFE_INTEGER,
+      turnId,
+      state: 'vocabulary',
+      target: { id: `${baseSegmentId}-meaning`, layerId: 'vocabulary', dialogueIndex: index, text: meaningVi }
+    }
+  ];
 }
 
 function tokenizeBoundaryText(value) {

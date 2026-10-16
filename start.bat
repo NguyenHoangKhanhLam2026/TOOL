@@ -15,6 +15,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\start-spawn-eperm-bot.ps1"
 start "Auto English Reels Studio - Server" /min cmd /c "cd /d ""%~dp0"" && node src\server.mjs"
 start "Auto English Reels Studio - Worker" /min cmd /c "cd /d ""%~dp0"" && node src\workers\worker.mjs"
 timeout /t 2 /nobreak >nul

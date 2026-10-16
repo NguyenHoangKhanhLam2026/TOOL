@@ -1,6 +1,4 @@
-import { getSettings } from '../database/db.mjs';
 import { chatgptStatus, generateWithChatGPT } from './chatgpt-plan.mjs';
-import { generateWithOllama } from './ollama.mjs';
 import { BRAND_HASHTAG, ensureBrandHashtag } from './hashtag-utils.mjs';
 
 const LENGTHS = [
@@ -157,14 +155,12 @@ function speechSegmentsFor(script) {
 export async function generateCaption(script) {
   const length = selectLength();
   const style = randomItem(STYLES);
-  const settings = getSettings();
   const providers = [];
   if (chatgptStatus().connected) providers.push(['chatgpt-plan', generateWithChatGPT]);
-  providers.push(['ollama', (prompt) => generateWithOllama(prompt, settings)]);
   let caption = '';
   let suppliedTags = [];
   let feedback = '';
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; providers.length && attempt < 3; attempt++) {
     const [name, provider] = providers[attempt % providers.length];
     try {
       const result = parseResponse(await provider(makePrompt(script, length, style, feedback)));

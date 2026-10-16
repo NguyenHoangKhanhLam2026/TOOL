@@ -29,14 +29,14 @@ export const TOPICS = Object.entries(groups).flatMap(([category, titles]) => tit
 
 const phraseSets = [
   {
-    vi: ['Mình đang xử lý việc này và sẽ cập nhật cho bạn sớm.', 'Bạn có thể giúp mình kiểm tra phần còn lại không?', 'Cảm ơn bạn đã chờ, mình sẽ gửi bản hoàn chỉnh trước cuối ngày.'],
+    vi: ['Mình đang xử lý việc này, sẽ cập nhật sớm.', 'Bạn giúp mình kiểm tra phần còn lại được không?', 'Cảm ơn bạn đã chờ, sẽ gửi bản cuối sớm.'],
     en: ['I’m working on this and will keep you posted soon.', 'Could you help me look over the remaining part?', 'Thanks for waiting. I’ll send the final version by the end of the day.'],
     terms: ['keep you posted', 'look over', 'by the end of the day'],
     meanings: ['cập nhật tình hình cho bạn', 'xem lại, kiểm tra', 'trước khi hết ngày hôm nay'],
     notes: ['Cụm thường dùng khi báo tiến độ.', 'Dùng khi nhờ ai rà soát công việc.', 'Cụm chỉ mốc thời gian hoàn tất.']
   },
   {
-    vi: ['Mình rất mong được tìm hiểu thêm về cơ hội này.', 'Kinh nghiệm của mình khá phù hợp với yêu cầu đó.', 'Bạn có thể cho mình biết bước tiếp theo là gì không?'],
+    vi: ['Mình mong được tìm hiểu thêm về cơ hội này.', 'Kinh nghiệm của mình phù hợp với yêu cầu đó.', 'Bạn cho mình biết bước tiếp theo là gì nhé?'],
     en: ['I’m excited to learn more about this opportunity.', 'My experience is a good fit for those requirements.', 'Could you tell me what the next step looks like?'],
     terms: ['learn more about', 'a good fit', 'the next step'],
     meanings: ['tìm hiểu thêm về', 'phù hợp', 'bước tiếp theo'],
@@ -57,7 +57,7 @@ const phraseSets = [
     notes: ['Cụm dùng khi tìm thông tin đặt chỗ.', 'Cách đề nghị lịch sự với Would it be possible.', 'Hold ở đây có nghĩa là giữ tạm.']
   },
   {
-    vi: ['Gần đây mình hơi áp lực vì có quá nhiều việc.', 'Mình sẽ nghỉ một chút rồi quay lại với tinh thần tốt hơn.', 'Bạn không cần phải giải quyết mọi thứ ngay hôm nay.'],
+    vi: ['Gần đây mình áp lực vì có quá nhiều việc.', 'Mình nghỉ một chút rồi quay lại tỉnh táo hơn.', 'Bạn không cần giải quyết mọi thứ ngay hôm nay.'],
     en: ['I’ve been feeling a little overwhelmed lately.', 'I’ll take a short break and come back with a clearer mind.', 'You don’t have to figure everything out today.'],
     terms: ['overwhelmed', 'take a short break', 'figure everything out'],
     meanings: ['quá tải, choáng ngợp', 'nghỉ giải lao một chút', 'tìm cách giải quyết mọi thứ'],
@@ -75,7 +75,7 @@ const localTemplateByCategory = new Map([
 
 export function makeLocalScript(topic, now = new Date()) {
   const setIndex = localTemplateByCategory.get(topic.category);
-  if (setIndex === undefined) throw new Error(`Chủ đề “${topic.title}” chưa có mẫu nội dung cục bộ phù hợp; hãy kết nối ChatGPT hoặc Ollama.`);
+  if (setIndex === undefined) throw new Error(`Chủ đề “${topic.title}” chưa có mẫu nội dung cục bộ phù hợp; hãy kết nối ChatGPT Plan.`);
   const phrases = phraseSets[setIndex];
   const title = `Tiếng Anh giao tiếp: ${topic.title}`;
   const dialogues = phrases.en.map((english, i) => ({

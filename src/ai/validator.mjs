@@ -70,7 +70,12 @@ export function validateScript(raw) {
   if ((!Array.isArray(script.dialogues) || script.dialogues.length === 0) && !hasExplicitSpeech) errors.push('Kịch bản cần ít nhất một đoạn hội thoại hoặc một mảng speechSegments.');
   for (const key of ['speechSegments', 'audioSegments']) if (script[key] !== undefined && !Array.isArray(script[key])) errors.push(`${key} phải là một mảng.`);
   if (!Array.isArray(script.dialogues)) script.dialogues = [];
+  if (script.dialogues.length !== 3) errors.push('Mỗi video phải có đúng 3 nội dung (3/3).');
   for (const [i, d] of script.dialogues.entries()) {
+    for (const text of vietnameseTexts(d)) {
+      const count = wordCount(text);
+      if (count && (count < 7 || count > 10)) errors.push(`Câu tiếng Việt ${i + 1} cần từ 7 đến 10 từ (hiện có ${count}).`);
+    }
     if (d?.turns !== undefined && !Array.isArray(d.turns)) errors.push(`Lượt hội thoại ${i + 1}: turns phải là một mảng.`);
     if (Array.isArray(d?.turns) && d.turns.length) {
       for (const [turnIndex, turn] of d.turns.entries()) {
@@ -93,6 +98,10 @@ export function validateScript(raw) {
       if (typeof segment?.text !== 'string' || !segment.text.trim()) errors.push(`Đoạn đọc ${i + 1}: thiếu text.`);
       if (typeof segment?.language !== 'string' || !segment.language.trim()) errors.push(`Đoạn đọc ${i + 1}: thiếu language.`);
       if (segment?.voiceName !== undefined && (typeof segment.voiceName !== 'string' || !segment.voiceName.trim())) errors.push(`Đoạn đọc ${i + 1}: voiceName không hợp lệ.`);
+      if (/^(vi|vietnamese)(-|$)/i.test(String(segment?.language || segment?.locale || '')) && typeof segment?.text === 'string' && segment.text.trim()) {
+        const count = wordCount(segment.text);
+        if (count < 7 || count > 10) errors.push(`Đoạn đọc tiếng Việt ${i + 1} cần từ 7 đến 10 từ (hiện có ${count}).`);
+      }
     }
   }
   const englishLines = script.dialogues.filter((d) => !Array.isArray(d?.turns)).map((d) => normalizeText(d?.english)).filter(Boolean);
@@ -109,6 +118,7 @@ export function validateScript(raw) {
 }
 
 function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function wordCount(value) { return String(value || '').trim().split(/\s+/u).filter(Boolean).length; }
 function englishTexts(dialogue) {
   if (/^(en|english)(-|$)/i.test(String(dialogue?.language || dialogue?.locale || '')) && dialogue?.text) return [dialogue.text];
   if (Array.isArray(dialogue?.turns) && dialogue.turns.length) return dialogue.turns.filter((turn) => /^(en|english)(-|$)/i.test(String(turn?.language || turn?.locale || ''))).map((turn) => turn.text).filter(Boolean);

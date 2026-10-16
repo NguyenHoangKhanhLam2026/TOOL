@@ -114,10 +114,8 @@
           <section class="view" id="view-settings">
             <div class="page-title-row"><div><div class="eyebrow">THIẾT LẬP BAN ĐẦU</div><h1>Kết nối & cài đặt</h1><p class="lead">Kết nối AI, công cụ media và Facebook Page của bạn.</p></div></div>
             <div class="settings-grid">
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-lilac">✳</span><div><h2>AI viết kịch bản</h2><p class="panel-caption">Chỉ dùng ChatGPT plan hoặc Ollama local. Không có paid API.</p></div></div><span id="ai-status-pill" class="state-pill neutral">Chưa kết nối</span></div>
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-lilac">✳</span><div><h2>AI viết kịch bản</h2><p class="panel-caption">Dùng ChatGPT Plan đã đăng nhập. Không dùng API trả phí.</p></div></div><span id="ai-status-pill" class="state-pill neutral">Chưa kết nối</span></div>
                 <div class="provider-row"><div class="provider-logo openai-logo">✳</div><div class="provider-copy"><strong>ChatGPT plan</strong><small id="chatgpt-detail">Đăng nhập theo OAuth chính thức. Không nhập API key.</small></div><a class="button button-outline button-small" id="chatgpt-connect" href="/api/chatgpt/connect">Continue with ChatGPT <span>↗</span></a><button class="button button-quiet button-small" id="chatgpt-disconnect" hidden>Ngắt kết nối</button></div>
-                <div class="divider-label"><span>HOẶC DÙNG MÔ HÌNH LOCAL</span></div>
-                <div class="inline-fields"><label>Địa chỉ Ollama<input id="ollama-url" type="url" value="http://127.0.0.1:11434" /></label><label>Tên model<input id="ollama-model" value="qwen2.5:7b" placeholder="qwen2.5:7b" /></label><button class="button button-outline button-small" id="ollama-test">Kiểm tra</button></div><p id="ollama-result" class="inline-status"></p>
               </article>
 
               <article class="panel settings-panel"><div class="panel-heading"><div><span class="panel-icon icon-yellow">◉</span><div><h2>Facebook Page</h2><p class="panel-caption">Token chỉ lưu trên máy này và không hiển thị lại.</p></div></div><span id="facebook-status-pill" class="state-pill neutral">Mock</span></div>

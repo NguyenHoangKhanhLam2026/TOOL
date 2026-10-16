@@ -8,7 +8,7 @@
 
 ## Tình trạng hiện tại
 
-Đã có mã nguồn cho dashboard, SQLite WAL, thư viện 100 chủ đề, xác thực kịch bản, ChatGPT plan OAuth, Ollama, Edge TTS, FFmpeg renderer, thư viện video, lịch địa phương, worker, Facebook Mock và adapter Meta Graph API. Visual Engine V2 bổ sung nhận diện “Sinh ra để nói tiếng Anh”, scene template dùng chung, preview/editor, asset manager, upload asset cục bộ và sự kiện tiến độ qua WebSocket loopback.
+Đã có mã nguồn cho dashboard, SQLite WAL, thư viện 100 chủ đề, xác thực kịch bản, ChatGPT plan OAuth, Edge TTS, FFmpeg renderer, thư viện video, lịch địa phương, worker, Facebook Mock và adapter Meta Graph API. Visual Engine V2 bổ sung nhận diện “Sinh ra để nói tiếng Anh”, scene template dùng chung, preview/editor, asset manager, upload asset cục bộ và sự kiện tiến độ qua WebSocket loopback.
 
 Mỗi video tạo audio riêng cho từng đoạn đọc, thu WordBoundary theo giọng và căn highlight theo timeline trước khi render MP4. Số lượt hội thoại lấy từ kịch bản, không cố định ba cặp. Renderer vẫn xác minh 1080×1920, 30 FPS, H.264/AAC và thời lượng 4–60 giây bằng ffprobe. Facebook live tắt mặc định.
 
@@ -20,7 +20,6 @@ Mỗi video tạo audio riêng cho từng đoạn đọc, thu WordBoundary theo 
 - Node.js 22.13 trở lên (SQLite được tích hợp trong Node).
 - Python 3.10 trở lên để chạy Edge TTS.
 - FFmpeg và FFprobe có trong `PATH`.
-- Ollama chỉ cần nếu muốn dùng mô hình AI local.
 
 ## Cài đặt lần đầu
 
@@ -62,15 +61,7 @@ Chạy hai lệnh trong hai terminal riêng. `npm run start` chạy server; `sta
 
 Trong Cài đặt, chọn **Continue with ChatGPT**. Ứng dụng dùng Sign in with ChatGPT dành cho open-source client, OAuth Authorization Code + PKCE, callback loopback, kiểm tra ID token, refresh token và Responses API. Không dùng cookie ChatGPT, API nội bộ của trang ChatGPT hay OpenAI API key tính phí.
 
-Tài khoản phải được OpenAI cho phép dùng ChatGPT plan trong ứng dụng này và người dùng phải chấp thuận scope `chatgpt.tokens.use.direct`. Luồng này có giới hạn preview và phụ thuộc quyền của tài khoản/workspace; nếu không được cấp quyền, dùng Ollama local. Tham khảo [OpenAI Docs: Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source), [đăng ký và đăng nhập](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), và [Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
-
-### Ollama
-
-1. Cài Ollama và tải một model, ví dụ `ollama pull qwen2.5:7b`.
-2. Giữ Ollama chạy local tại `http://127.0.0.1:11434`.
-3. Nhập URL và tên model trong Cài đặt rồi bấm **Kiểm tra**.
-
-Khi ChatGPT plan hết hạn mức hoặc không khả dụng, provider manager thử Ollama. Nếu không có provider, job báo lỗi và giữ lại kịch bản/video đã hoàn thành.
+Tài khoản phải được OpenAI cho phép dùng ChatGPT plan trong ứng dụng này và người dùng phải chấp thuận scope `chatgpt.tokens.use.direct`. Luồng này có giới hạn preview và phụ thuộc quyền của tài khoản/workspace. Tham khảo [OpenAI Docs: Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source), [đăng ký và đăng nhập](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), và [Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
 
 ## Facebook Page
 
@@ -84,7 +75,7 @@ Khi ChatGPT plan hết hạn mức hoặc không khả dụng, provider manager 
 
 ## Tạo và đăng video
 
-1. Kết nối ChatGPT plan hoặc Ollama; có thể bật tùy chọn mẫu cục bộ nếu chỉ muốn thử các bước sau AI.
+1. Kết nối ChatGPT plan; có thể bật tùy chọn mẫu cục bộ nếu chỉ muốn thử các bước sau AI.
 2. Chọn chủ đề trong dashboard và tạo video.
 3. Worker xác thực kịch bản có số lượt linh hoạt, gọi Edge TTS riêng theo giọng/ngôn ngữ của từng lượt, đo thời lượng bằng ffprobe và dựng video 1080×1920/30 FPS với highlight theo timeline.
 4. Video hợp lệ xuất hiện trong Thư viện. Mở kịch bản để xem câu, từ khóa, giải thích và caption.
@@ -124,7 +115,7 @@ Renderer xác minh H.264/AAC, 1080×1920, 30 FPS và thời lượng 4–60 giâ
 
 ```text
 src/
-  ai/                 ChatGPT plan, Ollama, validator
+  ai/                 ChatGPT plan, validator
   database/           SQLite schema, migration, queue
   pipeline/           pipeline tạo video
   scheduler/          timezone và lịch local
@@ -149,4 +140,4 @@ Tắt server và worker trước khi sao lưu. Sao chép `data/database/studio.s
 
 Các bài kiểm thử unit và integration bao gồm ánh xạ từ lặp, nhiều giọng, nhiều lượt, câu dài, tốc độ đọc khác nhau, khoảng nghỉ, tiếng Việt có dấu, câu đọc lại và template văn bản tùy chỉnh. Render MP4 đầy đủ cần FFmpeg/FFprobe có trong `PATH`; kiểm tra đầu ra vẫn chạy tự động sau mỗi lần render.
 
-Ollama chưa cài. ChatGPT plan OAuth đã kết nối trên máy này; thư viện có video tạo bởi provider này ở trạng thái sẵn sàng. Video mẫu đã publish qua Facebook Mock được tạo từ mẫu cục bộ. **LIVE FACEBOOK PUBLISH NOT YET VERIFIED** vì chưa có Page ID, token và quyền Meta thật.
+ChatGPT plan OAuth đã kết nối trên máy này; thư viện có video tạo bởi provider này ở trạng thái sẵn sàng. Video mẫu đã publish qua Facebook Mock được tạo từ mẫu cục bộ. **LIVE FACEBOOK PUBLISH NOT YET VERIFIED** vì chưa có Page ID, token và quyền Meta thật.

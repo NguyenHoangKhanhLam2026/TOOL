@@ -312,7 +312,7 @@ export async function synthesizeVieNeuScript(script, videoId, { settings, onProg
     file.alignment = mapped.alignment;
     file.alignmentSource = metadata.source;
     file.alignmentWarning = metadata.warning || (mapped.alignment.reliable ? null : 'VieNeu chưa trả WordBoundary; đang thử forced alignment local.');
-    if (!mapped.alignment.reliable) alignmentQueue.push({
+    if (file.state !== 'cta' && !mapped.alignment.reliable) alignmentQueue.push({
       segmentId: file.segmentId,
       audioPath: file.path,
       text: file.speechText,

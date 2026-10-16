@@ -6,41 +6,68 @@ import { log } from '../database/db.mjs';
 
 const issuer = 'https://auth.openai.com';
 const resource = 'https://api.openai.com/v1';
-const credentialPath = path.join(PATHS.private, 'chatgpt-plan.json');
-const hostIdPath = path.join(PATHS.private, 'chatgpt-host-id.txt');
+const privateDirectories = [...new Set([PATHS.private, path.resolve(path.dirname(PATHS.database), '..', 'private')])];
+const credentialPaths = privateDirectories.map((directory) => path.join(directory, 'chatgpt-plan.json'));
+const hostIdPaths = privateDirectories.map((directory) => path.join(directory, 'chatgpt-host-id.txt'));
 const pending = new Map();
 let refreshPromise;
 
 function readCredential() {
-  try { return JSON.parse(fs.readFileSync(credentialPath, 'utf8')); } catch { return null; }
+  const records = credentialPaths.flatMap((file) => {
+    try {
+      const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return record?.access_token ? [{ record, savedAt: Date.parse(record.saved_at) || 0 }] : [];
+    } catch { return []; }
+  });
+  return records.sort((left, right) => right.savedAt - left.savedAt)[0]?.record || null;
 }
 
 function writeCredential(value) {
-  fs.mkdirSync(path.dirname(credentialPath), { recursive: true });
-  // A PID-only temp name can collide with a leftover file or another writer
-  // after the app is restarted. Create a fresh, exclusive file for every save.
-  const temp = `${credentialPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  let descriptor;
-  try {
-    descriptor = fs.openSync(temp, 'wx', 0o600);
-    fs.writeFileSync(descriptor, JSON.stringify(value, null, 2), 'utf8');
-    fs.fsyncSync(descriptor);
-    fs.closeSync(descriptor);
-    descriptor = undefined;
-    fs.renameSync(temp, credentialPath);
-    try { fs.chmodSync(credentialPath, 0o600); } catch { /* Windows ACLs govern this file. */ }
-  } catch (error) {
-    if (descriptor !== undefined) {
-      try { fs.closeSync(descriptor); } catch { /* Preserve the original write error. */ }
+  const errors = [];
+  for (const credentialPath of credentialPaths) {
+    const temp = `${credentialPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    let descriptor;
+    try {
+      fs.mkdirSync(path.dirname(credentialPath), { recursive: true });
+      descriptor = fs.openSync(temp, 'wx', 0o600);
+      fs.writeFileSync(descriptor, JSON.stringify(value, null, 2), 'utf8');
+      fs.fsyncSync(descriptor);
+      fs.closeSync(descriptor);
+      descriptor = undefined;
+      fs.renameSync(temp, credentialPath);
+      try { fs.chmodSync(credentialPath, 0o600); } catch { }
+      return credentialPath;
+    } catch (error) {
+      if (descriptor !== undefined) {
+        try { fs.closeSync(descriptor); } catch { }
+      }
+      try { fs.rmSync(temp, { force: true }); } catch { }
+      errors.push(`${credentialPath}: ${error.message}`);
     }
-    try { fs.rmSync(temp, { force: true }); } catch { /* Preserve the original write error. */ }
-    throw error;
   }
+  throw new Error(`Không lưu được phiên ChatGPT trong các thư mục dữ liệu riêng. ${errors.join(' | ')}`);
 }
 
 function hostId() {
-  if (!fs.existsSync(hostIdPath)) fs.writeFileSync(hostIdPath, `urn:uuid:${crypto.randomUUID()}`, { mode: 0o600 });
-  return fs.readFileSync(hostIdPath, 'utf8').trim();
+  for (const file of hostIdPaths) {
+    try {
+      const value = fs.readFileSync(file, 'utf8').trim();
+      if (value) return value;
+    } catch { }
+  }
+  const value = `urn:uuid:${crypto.randomUUID()}`;
+  const errors = [];
+  for (const file of hostIdPaths) {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, value, { flag: 'wx', mode: 0o600 });
+      return value;
+    } catch (error) {
+      if (error.code === 'EEXIST') return fs.readFileSync(file, 'utf8').trim();
+      errors.push(`${file}: ${error.message}`);
+    }
+  }
+  throw new Error(`Không lưu được mã định danh ChatGPT. ${errors.join(' | ')}`);
 }
 
 export function chatgptStatus() {
@@ -224,6 +251,8 @@ export async function disconnectChatGPT() {
   } catch (error) {
     log('WARN', 'CHATGPT_REVOCATION_UNCONFIRMED', `Không xác nhận được thu hồi phiên ChatGPT: ${error.message}`);
   }
-  fs.rmSync(credentialPath, { force: true });
+  for (const file of credentialPaths) {
+    try { fs.rmSync(file, { force: true }); } catch (error) { log('WARN', 'CHATGPT_CREDENTIAL_CLEANUP_FAILED', `Không xóa được credential ở ${file}: ${error.message}`); }
+  }
   return { disconnected: true, revocationConfirmed };
 }

@@ -7,9 +7,13 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const startApp = process.argv.includes('--start');
+const watchMode = process.argv.includes('--watch');
 const showHelp = process.argv.includes('--help') || process.argv.includes('-h');
 const localEnv = readProjectEnv();
 const DATA_DIR = process.env.AERS_DATA_DIR || localEnv.AERS_DATA_DIR || path.join(ROOT, 'data');
+const BOT_STATE_PATH = path.join(DATA_DIR, 'logs', 'spawn-eperm-bot-state.json');
+const BOT_LOCK_PATH = path.join(DATA_DIR, 'logs', 'spawn-eperm-bot.lock');
+const BOT_LOG_PATH = path.join(DATA_DIR, 'logs', 'spawn-eperm-bot.log');
 const checks = [];
 
 function readProjectEnv() {
@@ -173,6 +177,15 @@ function checkPython() {
   return false;
 }
 
+function checkLocalModelPython(label, envName, relativePath) {
+  const command = process.env[envName] || localEnv[envName] || path.join(ROOT, relativePath);
+  if (!fs.existsSync(command)) {
+    console.log(`[INFO] ${label} chưa cài; bỏ qua kiểm tra executable.`);
+    return true;
+  }
+  return runProbe(label, command, ['--version']);
+}
+
 function checkPortAvailable(port) {
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -186,11 +199,35 @@ function latestJobFailure() {
   if (!fs.existsSync(databasePath)) return null;
   const database = new DatabaseSync(databasePath, { readOnly: true });
   try {
-    const failure = database.prepare("SELECT job_id,message,created_at FROM logs WHERE code='JOB_FAILED' AND job_id IS NOT NULL ORDER BY id DESC LIMIT 1").get();
+    const failures = database.prepare(`SELECT j.id,j.type,j.status,j.attempts,j.last_error,j.updated_at AS created_at,
+      (SELECT message FROM logs WHERE code='JOB_FAILED' AND job_id=j.id ORDER BY id DESC LIMIT 1) AS failure_message
+      FROM jobs j WHERE j.status='failed' AND (j.last_error IS NOT NULL OR EXISTS(SELECT 1 FROM logs WHERE code='JOB_FAILED' AND job_id=j.id))
+      ORDER BY j.updated_at DESC LIMIT 200`).all();
+    const failure = failures.find((row) => isSpawnFailure(row.last_error) || isSpawnFailure(row.failure_message));
     if (!failure) return null;
-    const job = database.prepare('SELECT id,type,status,attempts,last_error FROM jobs WHERE id=?').get(failure.job_id);
+    const message = [failure.last_error, failure.failure_message].find((value) => isSpawnFailure(value) && failingExecutable(value))
+      || [failure.last_error, failure.failure_message].find(isSpawnFailure);
     const running = Number(database.prepare("SELECT COUNT(*) AS count FROM jobs WHERE status='running'").get().count);
-    return { ...failure, job, running };
+    const job = { id: failure.id, type: failure.type, status: failure.status, attempts: failure.attempts, last_error: failure.last_error };
+    return { job_id: failure.id, message, created_at: failure.created_at, job, running };
+  } finally { database.close(); }
+}
+
+function isSpawnFailure(message) {
+  const value = String(message || '');
+  return /(?:^|\r?\n)\s*(?:Error:\s*)?spawn\s+(?:EPERM|EACCES|ENOENT)\b/i.test(value)
+    || /Lệnh:\s*.+?\s+\(spawn\s+(?:EPERM|EACCES|ENOENT)\)/iu.test(value);
+}
+
+function listFailedSpawnJobIds() {
+  const databasePath = path.join(DATA_DIR, 'database', 'studio.sqlite');
+  if (!fs.existsSync(databasePath)) return [];
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    const failures = database.prepare(`SELECT j.id,j.last_error,
+      (SELECT message FROM logs WHERE code='JOB_FAILED' AND job_id=j.id ORDER BY id DESC LIMIT 1) AS failure_message
+      FROM jobs j WHERE j.status='failed' AND (j.last_error IS NOT NULL OR EXISTS(SELECT 1 FROM logs WHERE code='JOB_FAILED' AND job_id=j.id))`).all();
+    return failures.filter((row) => isSpawnFailure(row.last_error) || isSpawnFailure(row.failure_message)).map((row) => row.id);
   } finally { database.close(); }
 }
 
@@ -208,6 +245,53 @@ function processIsAlive(pid) {
 }
 
 function wait(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
+
+function appendBotLog(message) {
+  fs.mkdirSync(path.dirname(BOT_LOG_PATH), { recursive: true });
+  fs.appendFileSync(BOT_LOG_PATH, `${new Date().toISOString()} ${message}\n`, 'utf8');
+}
+
+function readBotState() {
+  try { return JSON.parse(fs.readFileSync(BOT_STATE_PATH, 'utf8')); }
+  catch { return { attemptedJobIds: [] }; }
+}
+
+function writeBotState(state) {
+  fs.mkdirSync(path.dirname(BOT_STATE_PATH), { recursive: true });
+  const temporary = `${BOT_STATE_PATH}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(state), { flag: 'w' });
+    fs.renameSync(temporary, BOT_STATE_PATH);
+  } finally {
+    try { fs.rmSync(temporary, { force: true }); } catch { }
+  }
+}
+
+function acquireWatchLock() {
+  fs.mkdirSync(path.dirname(BOT_LOCK_PATH), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const descriptor = fs.openSync(BOT_LOCK_PATH, 'wx');
+      fs.writeFileSync(descriptor, String(process.pid), 'utf8');
+      return () => {
+        try { fs.closeSync(descriptor); } catch { }
+        try { fs.rmSync(BOT_LOCK_PATH, { force: true }); } catch { }
+      };
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      let pid = 0;
+      try { pid = Number(fs.readFileSync(BOT_LOCK_PATH, 'utf8').trim()); } catch { }
+      if (processIsAlive(pid)) return null;
+      try { fs.rmSync(BOT_LOCK_PATH, { force: true }); } catch { return null; }
+    }
+  }
+  return null;
+}
+
+function failingExecutable(message) {
+  const match = String(message).match(/Lệnh:\s*(.+?)\s+\(spawn\s+(?:EPERM|EACCES|ENOENT)\)/iu);
+  return match?.[1]?.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/u, (_, doubleQuoted, singleQuoted) => doubleQuoted ?? singleQuoted) || null;
+}
 
 async function stopWorker(pid) {
   if (!Number.isInteger(pid) || pid < 1 || pid === process.pid) throw new Error('PID worker không hợp lệ; bot không dừng tiến trình.');
@@ -261,23 +345,39 @@ async function retryFailedJob(jobId) {
   } finally { database.close(); }
 }
 
-async function repairRecentSpawnFailure() {
+async function repairRecentSpawnFailure(expectedJobId = null) {
   const latest = latestJobFailure();
   const message = String(latest?.message || latest?.job?.last_error || '');
-  if (!latest) return false;
-  if (!/spawn\s+(?:EPERM|EACCES|ENOENT)/i.test(message)) {
+  if (!latest) return 'none';
+  if (expectedJobId && latest.job?.id !== expectedJobId) return 'none';
+  if (!isSpawnFailure(message)) {
     if (/WSServerHandshakeError:\s*403|403, message=['"]Invalid response status/i.test(message)) {
       console.log('[INFO] Lỗi gần nhất là Edge TTS HTTP 403; đây là phản hồi từ dịch vụ TTS, bot không khởi động lại worker cho lỗi này.');
     }
-    return false;
+    return 'none';
   }
   if (!latest.job || !['failed', 'pending'].includes(latest.job.status)) {
     console.log('[INFO] Job ghi lỗi spawn đã đổi trạng thái; bot không chạy lại job cũ.');
-    return false;
+    return 'none';
   }
   if (latest.running > 0) {
     console.log(`[DỪNG] Còn ${latest.running} job đang chạy; bot không dừng worker để tránh ngắt tác vụ.`);
-    return true;
+    return 'deferred';
+  }
+
+  const executable = failingExecutable(message);
+  if (!executable) {
+    const detail = `Không lấy được executable bị lỗi từ job ${latest.job.id}; không tự retry để tránh lặp lỗi.`;
+    console.log(`[DỪNG] ${detail}`);
+    appendBotLog(`[DỪNG] ${detail}`);
+    return 'blocked';
+  }
+  console.log(`[KIỂM TRA] Thử khởi chạy đúng executable đã lỗi: ${executable}`);
+  if (!runProbe('Executable gây lỗi spawn', executable, ['--version'])) {
+    const detail = `Executable vẫn bị từ chối khởi chạy: ${executable}; giữ nguyên job lỗi và không retry.`;
+    console.log(`[DỪNG] ${detail}`);
+    appendBotLog(`[DỪNG] job=${latest.job.id} ${detail}`);
+    return 'blocked';
   }
 
   const heartbeat = readWorkerHeartbeat();
@@ -295,15 +395,54 @@ async function repairRecentSpawnFailure() {
   } else {
     console.log(`[SỬA] Worker PID ${pid} đã chạy lại và sẽ tiếp tục job đang chờ.`);
   }
-  return true;
+  appendBotLog(`[SỬA] job=${latest.job.id} worker=${pid} retry=${latest.job.status === 'failed'}`);
+  return 'recovered';
+}
+
+async function watchFailures() {
+  const release = acquireWatchLock();
+  if (!release) {
+    console.log('[INFO] Bot giám sát đã chạy.');
+    return;
+  }
+  const state = readBotState();
+  const attempted = new Set(Array.isArray(state.attemptedJobIds) ? state.attemptedJobIds : []);
+  if (!state.baselineCapturedAt) {
+    const historical = listFailedSpawnJobIds();
+    for (const jobId of historical) attempted.add(jobId);
+    writeBotState({ ...state, attemptedJobIds: [...attempted].slice(-200), baselineCapturedAt: new Date().toISOString() });
+    if (historical.length) appendBotLog(`[BASELINE] Bỏ qua ${historical.length} job lỗi spawn cũ; chỉ tự xử lý lỗi phát sinh sau khi bot chạy.`);
+  }
+  appendBotLog(`[START] PID ${process.pid} đang giám sát lỗi spawn.`);
+  console.log(`[BOT] Đang giám sát lỗi spawn; log: ${BOT_LOG_PATH}`);
+  try {
+    while (true) {
+      const latest = latestJobFailure();
+      const message = String(latest?.message || latest?.job?.last_error || '');
+      const jobId = latest?.job?.id;
+      if (jobId && latest.job.status === 'failed' && isSpawnFailure(message) && !attempted.has(jobId)) {
+        const result = await repairRecentSpawnFailure(jobId);
+        if (result !== 'deferred') {
+          attempted.add(jobId);
+          writeBotState({ attemptedJobIds: [...attempted].slice(-200), updatedAt: new Date().toISOString() });
+        }
+      }
+      await wait(5_000);
+    }
+  } finally {
+    appendBotLog(`[STOP] PID ${process.pid} đã dừng giám sát.`);
+    release();
+  }
 }
 
 async function main() {
   if (showHelp) {
     console.log('Dùng: node tools/spawn-eperm-bot.mjs [--start]');
-    console.log('  Mặc định: kiểm tra spawn và quyền ghi; --start: nếu log mới nhất là spawn EPERM, khởi động lại worker và chạy lại đúng job một lần; nếu tool đã chạy thì không mở trùng.');
+    console.log('  Mặc định: kiểm tra spawn và quyền ghi; --start: sửa một job spawn lỗi sau khi kiểm tra đúng executable; --watch: giám sát lỗi mới và thử sửa an toàn một lần.');
     return;
   }
+
+  if (watchMode) return watchFailures();
 
   console.log('Spawn EPERM Bot — kiểm tra và chuẩn hóa PATH/PYTHON cho phiên khởi chạy; không thể vượt quyền chặn tiến trình của Windows.\n');
 
@@ -329,6 +468,8 @@ async function main() {
     console.log('[LỖI] FFprobe — không tìm thấy trong PATH hoặc WinGet');
   }
   checkPython();
+  checkLocalModelPython('VieNeu Python', 'VIENEU_PYTHON', path.join('.venv-vieneu', 'Scripts', 'python.exe'));
+  checkLocalModelPython('Kokoro Python', 'KOKORO_PYTHON', path.join('.venv-kokoro', 'Scripts', 'python.exe'));
 
   await runAsyncProbe('Node.js (spawn bất đồng bộ như ứng dụng)', process.execPath, ['--version']);
   if (ffmpeg) await runAsyncProbe('FFmpeg (spawn bất đồng bộ)', ffmpeg, ['-version']);
@@ -336,13 +477,22 @@ async function main() {
   if (process.env.PYTHON) {
     await runAsyncProbe('Python + Edge TTS (spawn bất đồng bộ)', process.env.PYTHON, ['-c', 'import edge_tts']);
   }
+  for (const [label, envName, relativePath] of [
+    ['VieNeu Python (spawn bất đồng bộ)', 'VIENEU_PYTHON', path.join('.venv-vieneu', 'Scripts', 'python.exe')],
+    ['Kokoro Python (spawn bất đồng bộ)', 'KOKORO_PYTHON', path.join('.venv-kokoro', 'Scripts', 'python.exe')]
+  ]) {
+    const command = process.env[envName] || localEnv[envName] || path.join(ROOT, relativePath);
+    if (fs.existsSync(command)) await runAsyncProbe(label, command, ['--version']);
+  }
 
   checkWritable('data/temporary', path.join(DATA_DIR, 'temporary'));
   checkWritable('data/outputs', path.join(DATA_DIR, 'outputs'));
 
   if (startApp) {
     try {
-      if (await repairRecentSpawnFailure()) return;
+      const result = await repairRecentSpawnFailure();
+      if (result === 'blocked') process.exitCode = 2;
+      if (result !== 'none') return;
     } catch (error) {
       console.error(`[LỖI BOT] Không tự khởi động lại worker: ${error.message}`);
       process.exitCode = 2;

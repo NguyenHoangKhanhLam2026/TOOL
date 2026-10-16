@@ -1,7 +1,6 @@
 import { TOPICS, makeLocalScript } from '../topics.mjs';
 import { db, getSettings, pickTopic, insertScript, log } from '../database/db.mjs';
 import { chatgptStatus, generateWithChatGPT } from './chatgpt-plan.mjs';
-import { generateWithOllama } from './ollama.mjs';
 import { assertDistinctFromHistory, validateScript } from './validator.mjs';
 import { generateCaption } from './caption-service.mjs';
 import fs from 'node:fs';
@@ -11,7 +10,7 @@ const SCRIPT_PROMPT = fs.readFileSync(new URL('../../packages/ai-engine/prompts/
 function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopics = [] } = {}) {
   const schema = {
     topic: autoTopic ? 'New, specific situation within the selected theme (Vietnamese)' : topic.title, category: topic.category, level: settings.level, title: 'Tiêu đề tiếng Việt ngắn',
-    hook: 'Một câu mở đầu tiếng Việt', dialogues: [{ index: 1, vietnamese: '', english: '', term: '', meaningVi: '', noteVi: '', grammarNote: '' }],
+    hook: 'Một câu mở đầu tiếng Việt', dialogues: [1, 2, 3].map((index) => ({ index, vietnamese: '', english: '', term: '', meaningVi: '', noteVi: '', grammarNote: '' })),
     caption: '', hashtags: ['#HocTiengAnh'], thumbnailTitle: ''
   };
   const prompt = SCRIPT_PROMPT
@@ -48,7 +47,6 @@ export async function createScript(topicId, { allowLocalTemplate = false } = {})
   const prompt = buildPrompt(topic, recent, settings, { autoTopic: !topicId, previousTopics: historyRows.map((row) => row.topic) });
   const providers = [];
   if (chatgptStatus().connected) providers.push(['chatgpt-plan', (value) => generateWithChatGPT(value)]);
-  providers.push(['ollama', (value) => generateWithOllama(value, settings)]);
   let script;
   let provider;
   const errors = [];
@@ -69,7 +67,7 @@ export async function createScript(topicId, { allowLocalTemplate = false } = {})
           ...(candidate?.dialogues || []).flatMap((dialogue) => [dialogue.english, ...(dialogue.turns || []).map((turn) => turn.text)]),
           ...(candidate?.speechSegments || candidate?.audioSegments || []).map((segment) => segment.text)
         ].filter(Boolean).join(' | ');
-        repairPrompt = `${prompt}\n\nKh\u00f4ng l\u1eb7p l\u1ea1i c\u00e1c c\u00e2u ti\u1ebfng Anh b\u1ecb lo\u1ea1i: ${rejected}\nH\u00e3y kh\u1eafc ph\u1ee5c l\u1ed7i n\u00e0y: ${error.message}\nTr\u1ea3 v\u1ec1 JSON h\u1ee3p l\u1ec7, c\u00f3 \u0111\u1ed9 d\u00e0i m\u1ea3ng dialogues ph\u00f9 h\u1ee3p v\u1edbi m\u1ea1ch n\u1ed9i dung, kh\u00f4ng c\u1ea7n c\u1ed1 \u0111\u1ecbnh \u0111\u00fang ba c\u1eb7p.`;
+        repairPrompt = `${prompt}\n\nDo not repeat rejected English lines: ${rejected}\nFix this validation error: ${error.message}\nReturn valid JSON with exactly three items in dialogues, indexed 1, 2, 3. Never add a fourth item.`;
       }
     }
     if (script) break;
@@ -79,7 +77,7 @@ export async function createScript(topicId, { allowLocalTemplate = false } = {})
     script = assertDistinctFromHistory(candidate, history);
     provider = 'local-template';
   }
-  if (!script) throw new Error(`Kh\u00f4ng t\u1ea1o \u0111\u01b0\u1ee3c k\u1ecbch b\u1ea3n m\u1edbi kh\u00f4ng tr\u00f9ng. H\u00e3y ki\u1ec3m tra k\u1ebft n\u1ed1i ChatGPT/Ollama r\u1ed3i th\u1eed l\u1ea1i. ${errors.join(' | ')}`);
+  if (!script) throw new Error(`Kh\u00f4ng t\u1ea1o \u0111\u01b0\u1ee3c k\u1ecbch b\u1ea3n m\u1edbi kh\u00f4ng tr\u00f9ng. H\u00e3y ki\u1ec3m tra k\u1ebft n\u1ed1i ChatGPT Plan r\u1ed3i th\u1eed l\u1ea1i. ${errors.join(' | ')}`);
   try {
     const caption = await generateCaption(script);
     script.caption = caption.caption;
@@ -93,7 +91,6 @@ export async function createScript(topicId, { allowLocalTemplate = false } = {})
 export function providerStatus() {
   return {
     chatgptPlan: chatgptStatus(),
-    ollama: { baseUrl: getSettings().ollamaBaseUrl, model: getSettings().ollamaModel, connected: null },
     topics: TOPICS.length,
     paidApiEnabled: false
   };

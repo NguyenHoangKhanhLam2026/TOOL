@@ -89,7 +89,7 @@ export async function synthesizeScript(script, videoId, { onProgress = () => {} 
       alignmentSource,
       alignmentWarning: alignmentWarning || (mapped.alignment.reliable ? null : `Không căn chỉnh được WordBoundary cho đoạn ${segment.segmentId}.`)
     });
-    if (!mapped.alignment.reliable && !localAlignmentUnavailable) {
+    if (segment.state !== 'cta' && !mapped.alignment.reliable && !localAlignmentUnavailable) {
       localAlignmentQueue.push({
         segmentId: segment.segmentId,
         audioPath: target,

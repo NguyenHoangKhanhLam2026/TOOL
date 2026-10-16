@@ -20,18 +20,10 @@ const heartbeatPath = path.join(PATHS.logs, 'worker-heartbeat.json');
 let stopping = false;
 let lastScheduleCheck = 0;
 
-async function ollamaAvailable(settings) {
-  try {
-    const response = await fetch(new URL('/api/tags', settings.ollamaBaseUrl), { signal: AbortSignal.timeout(1200) });
-    return response.ok;
-  } catch { return false; }
-}
-
 async function ensureAutoQueue() {
   const settings = getSettings();
   if (!settings.autoGenerationEnabled) return;
-  const aiReady = chatgptStatus().connected || await ollamaAvailable(settings);
-  if (!aiReady) return;
+  if (!chatgptStatus().connected) return;
   const target = Math.max(1, Number(settings.postsPerDay) * Number(settings.prepareAheadDays));
   const dayStart = startOfLocalDay(new Date(), settings.timezone).toISOString();
   db.exec('BEGIN IMMEDIATE');
@@ -145,7 +137,9 @@ async function tick() {
     if (result?.deferred) return;
     finishJob(job.id); log('INFO', 'JOB_COMPLETED', `Hoàn tất ${job.type}.`, job.id);
   }
-  catch (error) { failJob(job, error); }
+  catch (error) {
+    failJob(job, error);
+  }
 }
 
 async function main() {

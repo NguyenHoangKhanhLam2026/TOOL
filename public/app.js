@@ -124,11 +124,16 @@ function renderOverview() {
   const historyWarning = historyBytes >= 100 * 1024 * 1024 ? ' C\u1ea3nh b\u00e1o: l\u1ecbch s\u1eed \u0111\u00e3 v\u01b0\u1ee3t 100 MB.' : '';
   $('#content-history-note').textContent = `\u0110\u1ec3 tr\u1ed1ng ch\u1ee7 \u0111\u1ec1, AI t\u1ef1 ch\u1ecdn. \u0110ang gi\u1eef ${history.count} k\u1ecbch b\u1ea3n ch\u1ed1ng tr\u00f9ng (${historySize} v\u0103n b\u1ea3n); x\u00f3a MP4 kh\u00f4ng x\u00f3a l\u1ecbch s\u1eed.${historyWarning}`;
   const ready = (ok) => `<span class="status-indicator ${ok ? 'ok' : ''}"></span>`;
+  const ttsKey = data.settings.ttsProvider === 'vieneu' ? 'vieneuTts' : 'edgeTts';
+  const ttsError = data.system.tools.errors?.[ttsKey];
+  const ffmpegError = data.system.tools.errors?.ffmpeg;
+  const ttsStatus = ttsError ? `Không khởi chạy được (${ttsError})` : (data.settings.ttsProvider === 'vieneu' ? (data.system.tools.vieneuTts ? 'VieNeu local sẵn sàng' : 'Chưa cài VieNeu') : (data.system.tools.edgeTts ? 'Microsoft Edge TTS sẵn sàng' : 'Thiếu edge-tts'));
+  const ffmpegStatus = ffmpegError ? `FFmpeg không khởi chạy được (${ffmpegError})` : (data.system.tools.ffmpeg ? 'FFmpeg' : 'Thiếu FFmpeg');
   const rows = [
     ['SQLite', data.system.database, data.system.database ? 'Đang lưu dữ liệu local' : 'Chưa khởi tạo database'],
     ['Worker nền', data.system.worker, data.system.worker ? 'Đang lấy job từ hàng đợi' : 'Chạy npm run worker'],
-    ['AI viết nội dung', data.system.aiReady, data.providers.chatgptPlan.connected ? 'ChatGPT plan đã kết nối' : (data.system.tools.ollama ? `Ollama · ${data.providers.ollama.model}` : 'Kết nối ChatGPT hoặc khởi động Ollama')],
-    ['Media engine', data.system.tools.ffmpeg && data.system.tools.ffprobe && (data.settings.ttsProvider === 'vieneu' ? data.system.tools.vieneuTts : data.system.tools.edgeTts), `${data.settings.ttsProvider === 'vieneu' ? (!Object.hasOwn(data.system, 'vieneu') && !Object.hasOwn(data.system.tools, 'vieneuTts') ? 'Cần khởi động lại app để kiểm tra VieNeu' : (data.system.tools.vieneuTts ? 'VieNeu local sẵn sàng' : 'Chưa cài VieNeu')) : (data.system.tools.edgeTts ? 'Microsoft Edge TTS sẵn sàng' : 'Thiếu edge-tts')} · ${data.system.tools.ffmpeg ? 'FFmpeg' : 'Thiếu FFmpeg'}`],
+    ['AI viết nội dung', data.system.aiReady, data.providers.chatgptPlan.connected ? 'ChatGPT plan đã kết nối' : 'Kết nối ChatGPT Plan để tạo nội dung'],
+    ['Media engine', data.system.tools.ffmpeg && data.system.tools.ffprobe && data.system.tools[ttsKey], `${ttsStatus} · ${ffmpegStatus}`],
     ['Facebook', data.system.liveFacebookReady, data.settings.facebookAdapter === 'mock' ? 'Đang ở chế độ thử nghiệm Mock' : (data.system.liveFacebookReady ? `Page ${data.settings.pageId} đã kiểm tra` : 'Chưa kiểm tra Page và token')]
   ];
   $('#status-grid').innerHTML = rows.map(([name, ok, detail]) => `<div class="status-card">${ready(ok)}<div class="status-copy"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(detail)}</small></div></div>`).join('');
@@ -141,10 +146,11 @@ function renderOverview() {
 }
 
 function renderToolChecks(tools = {}) {
-  const labels = { python: 'Python', edgeTts: 'Microsoft Edge TTS', vieneuTts: 'VieNeu local', kokoroTts: 'Kokoro local', ffmpeg: 'FFmpeg', ffprobe: 'FFprobe', ollama: 'Ollama' };
+  const labels = { python: 'Python', edgeTts: 'Microsoft Edge TTS', vieneuTts: 'VieNeu local', kokoroTts: 'Kokoro local', ffmpeg: 'FFmpeg', ffprobe: 'FFprobe' };
   $('#tool-checks').innerHTML = Object.entries(labels).map(([key, name]) => {
     const supported = !['vieneuTts', 'kokoroTts'].includes(key) || Object.hasOwn(tools, key);
-    const status = !supported ? 'cần khởi động lại app' : tools[key] ? 'sẵn sàng' : 'chưa có';
+    const error = tools.errors?.[key];
+    const status = !supported ? 'cần khởi động lại app' : tools[key] ? 'sẵn sàng' : error ? `không khởi chạy được (${error})` : 'chưa có';
     return `<span class="tool-chip"><span class="status-indicator ${supported && tools[key] ? 'ok' : ''}"></span>${name} ${status}</span>`;
   }).join('');
 }
@@ -293,8 +299,6 @@ async function loadSettings() {
   // edits in the DOM until the user saves them; the server response is only a
   // baseline and must not overwrite a selection or text field mid-edit.
   if (state.settingsDirty) return;
-  $('#ollama-url').value = settings.ollamaBaseUrl;
-  $('#ollama-model').value = settings.ollamaModel;
   $('#tts-provider').value = settings.ttsProvider || 'edge';
   updateTtsProviderPanels();
   selectSavedVoice($('#vi-voice'), settings.viVoice);
@@ -507,7 +511,6 @@ async function saveSettings() {
   const button = $('#save-settings'); button.disabled = true;
   const revisionAtSave = state.settingsRevision;
   const payload = {
-    ollamaBaseUrl: $('#ollama-url').value.trim(), ollamaModel: $('#ollama-model').value.trim(),
     ttsProvider: $('#tts-provider').value,
     viVoice: $('#vi-voice').value.trim(), enVoice: $('#en-voice').value.trim(), enRate: $('#en-rate').value.trim(),
     vieneuViVoice: $('#vieneu-vi-voice').value, kokoroEnVoice: $('#kokoro-en-voice').value,
@@ -563,15 +566,6 @@ async function testFacebook() {
     toast('Kết nối Facebook thành công', false, result.pageName);
     await loadSettings(); await loadOverview();
   } catch (error) { resultEl.textContent = error.message; toast('Kiểm tra Facebook thất bại', true, error.message); }
-}
-
-async function testOllama() {
-  $('#ollama-result').textContent = 'Đang kiểm tra…';
-  try {
-    const result = await api('/api/ollama/test', { method: 'POST', body: JSON.stringify({ ollamaBaseUrl: $('#ollama-url').value.trim(), ollamaModel: $('#ollama-model').value.trim() }) });
-    $('#ollama-result').textContent = result.message;
-    toast(result.message, !result.installed);
-  } catch (error) { $('#ollama-result').textContent = error.message; toast('Ollama chưa sẵn sàng', true, error.message); }
 }
 
 async function previewVoice(language, chosenVoice = '', button = null) {
@@ -735,7 +729,6 @@ function setupEvents() {
   $('#view-settings').addEventListener('change', markSettingsDirty);
   $('#save-facebook').addEventListener('click', saveFacebook);
   $('#test-facebook').addEventListener('click', testFacebook);
-  $('#ollama-test').addEventListener('click', testOllama);
   $('#preview-vi').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
   $('#en-voice-list').addEventListener('click', (event) => {
     const preview = event.target.closest('[data-preview-english-voice]');

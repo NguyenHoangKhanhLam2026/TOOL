@@ -84,6 +84,8 @@ if (legacyVieNeuSpeed) insertSetting.run('vieneuViSpeed', legacyVieNeuSpeed.valu
 db.prepare("DELETE FROM settings WHERE key='vieneuSpeed'").run();
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(5,?)').run(now);
 for (const [key, value] of Object.entries(DEFAULTS)) insertSetting.run(key, JSON.stringify(value), now);
+db.prepare('DELETE FROM settings WHERE key IN (?,?)').run('ollamaBaseUrl', 'ollamaModel');
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(8,?)').run(now);
 const insertTopic = db.prepare('INSERT OR IGNORE INTO topics(id,category,title,created_at) VALUES(?,?,?,?)');
 for (const topic of TOPICS) insertTopic.run(topic.id, topic.category, topic.title, now);
 

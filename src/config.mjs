@@ -10,18 +10,18 @@ if (fs.existsSync(envFile)) {
     if (match && process.env[match[1]] === undefined) process.env[match[1]] = match[2].replace(/^(["'])(.*)\1$/, '$2');
   }
 }
-function addWingetFfmpegToPath() {
-  if (process.platform !== 'win32' || !process.env.LOCALAPPDATA) return;
+function findFfmpegBin() {
+  if (process.platform !== 'win32' || !process.env.LOCALAPPDATA) return null;
   const currentPath = process.env.PATH || '';
-  const hasBothTools = currentPath.split(path.delimiter).some((directory) =>
+  const pathBin = currentPath.split(path.delimiter).find((directory) =>
     fs.existsSync(path.join(directory, 'ffmpeg.exe')) && fs.existsSync(path.join(directory, 'ffprobe.exe'))
   );
-  if (hasBothTools) return;
+  if (pathBin) return pathBin;
 
   const packagesPath = path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Packages');
   let packages;
   try { packages = fs.readdirSync(packagesPath, { withFileTypes: true }); }
-  catch { return; }
+  catch { return null; }
   for (const pkg of packages) {
     if (!pkg.isDirectory() || !/^Gyan\.FFmpeg\.(Shared|Essentials|Full)_/i.test(pkg.name)) continue;
     const packagePath = path.join(packagesPath, pkg.name);
@@ -32,14 +32,19 @@ function addWingetFfmpegToPath() {
       if (!release.isDirectory()) continue;
       const binPath = path.join(packagePath, release.name, 'bin');
       if (fs.existsSync(path.join(binPath, 'ffmpeg.exe')) && fs.existsSync(path.join(binPath, 'ffprobe.exe'))) {
-        process.env.PATH = `${binPath}${path.delimiter}${currentPath}`;
-        return;
+        return binPath;
       }
     }
   }
+  return null;
 }
 
-addWingetFfmpegToPath();
+const ffmpegBin = findFfmpegBin();
+if (ffmpegBin && !(process.env.PATH || '').split(path.delimiter).includes(ffmpegBin)) {
+  process.env.PATH = `${ffmpegBin}${path.delimiter}${process.env.PATH || ''}`;
+}
+export const FFMPEG_BIN = ffmpegBin ? path.join(ffmpegBin, 'ffmpeg.exe') : 'ffmpeg';
+export const FFPROBE_BIN = ffmpegBin ? path.join(ffmpegBin, 'ffprobe.exe') : 'ffprobe';
 
 export const DATA = process.env.AERS_DATA_DIR || path.join(ROOT, 'data');
 export const PORT = Number(process.env.APP_PORT || 3001);
@@ -100,8 +105,6 @@ export const DEFAULTS = Object.freeze({
   autoPublishEnabled: false,
   facebookAdapter: 'mock',
   facebookConnectionVerified: false,
-  ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
-  ollamaModel: process.env.OLLAMA_MODEL || 'qwen2.5:7b',
   allowPaidAiApi: false
 });
 

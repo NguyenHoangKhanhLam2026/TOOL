@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, PATHS } from '../../src/config.mjs';
+import { FFMPEG_BIN, FFPROBE_BIN, ROOT, PATHS } from '../../src/config.mjs';
 import { describeSpawnError } from '../../src/utils/process-errors.mjs';
 import {
   getTemplateAssetVersions, rasterizeScene, readVisualTemplate
@@ -87,11 +87,11 @@ function majorVersion(command) {
 
 export async function probeMedia(file) {
   const result = await new Promise((resolve, reject) => {
-    const child = launch('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height,r_frame_rate,pix_fmt,duration', '-of', 'json', file]);
+    const child = launch(FFPROBE_BIN, ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height,r_frame_rate,pix_fmt,duration', '-of', 'json', file]);
     let stdout = ''; let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('error', (error) => reject(describeSpawnError('ffprobe', error)));
+    child.on('error', (error) => reject(describeSpawnError(FFPROBE_BIN, error)));
     child.on('close', (code) => code === 0 ? resolve(stdout) : reject(new Error(stderr || `ffprobe lỗi ${code}`)));
   });
   const data = JSON.parse(result);
@@ -101,7 +101,7 @@ export async function probeMedia(file) {
 export async function renderStillPreviewVideo(imagePath, outputPath, seconds = 5, { onProgress = () => {} } = {}) {
   const duration = Math.max(1, Math.min(5, Number(seconds) || 5));
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  await run('ffmpeg', [
+  await run(FFMPEG_BIN, [
     '-y', '-loop', '1', '-framerate', '30', '-i', imagePath,
     '-f', 'lavfi', '-t', String(duration), '-i', 'anullsrc=r=44100:cl=stereo',
     '-t', String(duration), '-vf', 'scale=1080:1920:flags=lanczos,fps=30,format=yuv420p',
@@ -119,11 +119,11 @@ export async function renderStillPreviewVideo(imagePath, outputPath, seconds = 5
 
 async function probeAudio(file) {
   const result = await new Promise((resolve, reject) => {
-    const child = launch('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file]);
+    const child = launch(FFPROBE_BIN, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file]);
     let stdout = ''; let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('error', (error) => reject(describeSpawnError('ffprobe', error)));
+    child.on('error', (error) => reject(describeSpawnError(FFPROBE_BIN, error)));
     child.on('close', (code) => code === 0 ? resolve(Number(stdout.trim())) : reject(new Error(stderr || `ffprobe lỗi ${code}`)));
   });
   if (!Number.isFinite(result) || result <= 0) throw new Error(`Không đọc được thời lượng âm thanh: ${file}`);
@@ -149,8 +149,10 @@ export async function renderVideo(script, videoId, audioFiles, {
     durations.push({ ...item, target: resolveSpeechTarget(template, item), duration });
   }
 
+  const ctaItems = durations.filter((item) => item.state === 'cta' || item.target?.layerId === 'cta');
+  const dialogueDurations = durations.filter((item) => item.state !== 'cta' && item.target?.layerId !== 'cta');
   const groups = [];
-  for (const item of durations) {
+  for (const item of dialogueDurations) {
     const turnId = String(item.turnId || item.segmentId || item.index);
     let group = groups.at(-1);
     if (!group || group.turnId !== turnId) {
@@ -166,7 +168,10 @@ export async function renderVideo(script, videoId, audioFiles, {
     ? Math.max(1, Math.round(configuredTransition * OUTPUT_FRAME_RATE))
     : 0;
   timing.transition = transitionFrames / OUTPUT_FRAME_RATE;
-  const speechDuration = durations.reduce((sum, item) => sum + item.duration, 0);
+  const ctaSpeechDuration = ctaItems.reduce((sum, item) => sum + item.duration, 0);
+  const ctaDuration = Math.max(0, Number(timing.cta) || 0, ctaSpeechDuration);
+  timing.cta = ctaDuration;
+  const speechDuration = dialogueDurations.reduce((sum, item) => sum + item.duration, 0);
   const configuredVocabularyHold = Math.max(0, Number(timing.vocabularyHold) || 0);
   const vocabularyHold = fitVocabularyHold({
     configuredHold: configuredVocabularyHold,
@@ -229,7 +234,18 @@ export async function renderVideo(script, videoId, audioFiles, {
       sequenceCursor += transitionFrames / OUTPUT_FRAME_RATE;
     }
   });
-  sequence.push({ type: 'silence', state: 'cta', index: Math.max(0, totalCount - 1), duration: Number(timing.cta) });
+  const ctaIndex = Math.max(0, totalCount - 1);
+  for (const item of ctaItems) {
+    sequence.push({
+      ...item,
+      type: 'speech',
+      state: 'cta',
+      index: ctaIndex,
+      target: { ...(item.target || {}), dialogueIndex: ctaIndex },
+      duration: item.duration
+    });
+  }
+  sequence.push({ type: 'silence', state: 'cta', index: ctaIndex, duration: Math.max(0, ctaDuration - ctaSpeechDuration) });
 
   const audioTimeline = buildAudioTimeline(sequence);
   const total = audioTimeline.duration;
@@ -248,6 +264,10 @@ export async function renderVideo(script, videoId, audioFiles, {
       continue;
     }
 
+    if (entry.state === 'cta') {
+      addVisual(entry, entry.duration);
+      continue;
+    }
     const enabled = settings.highlightEnabled !== false;
     if (!enabled) {
       addVisual(entry, entry.duration);
@@ -422,9 +442,9 @@ export async function renderVideo(script, videoId, audioFiles, {
   const filterFile = path.join(tempDir, 'render-highlight.filter');
   fs.writeFileSync(filterFile, filters.join(';\n'), 'utf8');
   const output = path.join(outDir, 'final.mp4');
-  const filterOption = await majorVersion('ffmpeg') >= 7 ? '-/filter_complex' : '-filter_complex_script';
+  const filterOption = await majorVersion(FFMPEG_BIN) >= 7 ? '-/filter_complex' : '-filter_complex_script';
   const ffmpegArgs = ['-y', ...inputs, filterOption, filterFile, '-map', '[vout]', '-map', '[aout]', '-t', total.toFixed(3), '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage', '-crf', '22', '-threads', '4', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output];
-  await run('ffmpeg', ffmpegArgs, { onProgress: (progress) => onProgress(0.2 + 0.8 * progress), totalSeconds: total });
+  await run(FFMPEG_BIN, ffmpegArgs, { onProgress: (progress) => onProgress(0.2 + 0.8 * progress), totalSeconds: total });
   const check = await probeMedia(output);
   const videoStream = check.streams.find((stream) => stream.codec_type === 'video');
   const audioStream = check.streams.find((stream) => stream.codec_type === 'audio');
@@ -449,7 +469,7 @@ export async function renderVideo(script, videoId, audioFiles, {
     canvas: template.canvas,
     timeline,
     highlightSettings: settings,
-    effectiveTiming: { ...timing, vocabularyHold },
+    effectiveTiming: { ...timing, vocabularyHold, cta: ctaDuration },
     highlightTimeline,
     synchronization: { audioDuration, videoDuration, driftSeconds: syncDriftSeconds, checked: true },
     durationSeconds: check.duration,
@@ -491,7 +511,7 @@ function concatFileLine(file) {
 export function resolveSpeechTarget(template, item) {
   const target = item.target && typeof item.target === 'object' ? item.target : {};
   const requestedLayer = template.layers.find((layer) => layer.id === target.layerId);
-  const requestedIsText = requestedLayer?.kind === 'text' || ['vietnamese-card', 'english-card', 'vocabulary'].includes(requestedLayer?.id);
+  const requestedIsText = requestedLayer?.kind === 'text' || requestedLayer?.kind === 'cta' || ['vietnamese-card', 'english-card', 'vocabulary'].includes(requestedLayer?.id);
   if (requestedLayer && requestedLayer.visible !== false && requestedIsText) return target;
 
   const language = normalizeLanguage(item.language);
