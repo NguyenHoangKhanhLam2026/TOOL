@@ -98,7 +98,7 @@ function lessonData(script) {
 }
 
 function makePrompt(script, length, style, repair = '') {
-  return `Viết caption Facebook Reels bằng tiếng Việt tự nhiên cho nội dung học dưới đây.\n` +
+  return `Viết caption Facebook bằng tiếng Việt tự nhiên cho video bài đăng dưới đây.\n` +
     `Độ dài ${length.label}: ${length.min}-${length.max} từ, phong cách: ${style.label}.\n` +
     `Tối ưu SEO tự nhiên cho Facebook: câu mở đầu phải nêu chủ đề cụ thể và cụm từ khóa chính “tiếng Anh giao tiếp” hoặc “học tiếng Anh giao tiếp”; đưa từ khóa chủ đề vào đúng ngữ cảnh. Dùng cụm từ trong bài như từ khóa phụ khi phù hợp, không nhồi hoặc lặp từ khóa.\n` +
     `Bố cục bắt buộc đúng 3 đoạn, ngăn nhau bằng một dòng trống: (1) Mở bài 1 câu thu hút, có từ khóa chính và chủ đề; (2) Thân bài giải thích ngắn gọn cách dùng/ngữ cảnh của các cụm từ hoặc lượt hội thoại xuất hiện trong dữ liệu, chỉ phân biệt sắc thái hoặc lỗi thường gặp khi ghi chú nguồn có căn cứ; (3) Kết bài 1 câu chốt ý hoặc gợi ý luyện tập cụ thể, tự nhiên. Không ghi nhãn “Mở bài/Thân bài/Kết bài”. Giữ độ dài câu vừa phải, không viết cả caption thành một đoạn. Không chỉ tóm tắt, không bịa kiến thức ngữ pháp hay tình huống. Có thể xen câu tiếng Anh, câu hỏi, emoji vừa phải; tránh lời kêu gọi sáo rỗng.\n` +

@@ -89,7 +89,7 @@ async function publishVideo(job) {
     updateVideo(videoId, { status: 'published', published_id: result.facebookId, published_url: result.url || null, last_error: null });
     const savedSchedule = scheduleId || db.prepare("SELECT id FROM scheduled_posts WHERE video_id=? AND status IN ('scheduled','publishing')").get(videoId)?.id;
     if (savedSchedule) markSchedule(savedSchedule, 'published');
-    log('INFO', 'PUBLISH_VERIFIED', `Đã xác minh Reel ${result.facebookId} qua ${adapterName}.`, job.id);
+    log('INFO', 'PUBLISH_VERIFIED', `Đã xác minh video bài đăng Facebook ${result.facebookId} qua ${adapterName}.`, job.id);
     if (adapterName === 'meta' && archivePublishedVideo(videoId)) log('INFO', 'VIDEO_ARCHIVED', `Đã ẩn video ${videoId} khỏi thư viện sau khi đăng Facebook thành công.`, job.id);
   } catch (error) {
     const definitePagePermissionFailure = adapterName === 'meta' && /\(#200\).*pages_manage_posts permission/i.test(String(error.message || ''));

@@ -68,7 +68,8 @@ Tài khoản phải được OpenAI cho phép dùng ChatGPT plan trong ứng d�
 - `facebookAdapter` mặc định là **Mock**. Mock không tạo bài viết Facebook thật.
 - Để đăng thật, chọn Meta Graph API, nhập Page ID và Page Access Token, rồi bấm **Kiểm tra Page**.
 - Chỉ bật **Tự đăng theo lịch** sau khi Page đã được xác minh. Lệnh đăng đơn lẻ từ giao diện cũng yêu cầu xác nhận rõ ràng.
-- Cần quyền Page phù hợp và quyền Meta App; Meta có thể yêu cầu app review. Adapter dùng Graph API Reels upload phases (start, binary upload, finish, status).
+- Cần quyền Page phù hợp và quyền Meta App; Meta có thể yêu cầu app review. Adapter dùng Graph API Page Videos resumable upload (start, transfer chunks, finish, status), tạo video bài đăng thông thường thay vì gọi endpoint Reels.
+- Facebook có thể hiển thị video đăng lên dưới dạng Reel theo thay đổi giao diện của Meta; endpoint bài đăng video không thể ép cách Facebook phân loại hoặc trình bày nội dung.
 - Lịch đăng chạy cục bộ trên máy này. Khi máy tắt hoặc worker không chạy, bài không thể được đăng.
 
 **LIVE FACEBOOK PUBLISH NOT YET VERIFIED** — chưa có Page ID/token thật để kiểm tra trong môi trường xây dựng.

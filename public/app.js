@@ -94,12 +94,13 @@ function videoProgressMarkup(video) {
 function videoCard(video, compact = false) {
   const thumb = video.thumbnail_path ? `<img src="/api/videos/${encodeURIComponent(video.id)}/thumbnail" alt="Thumbnail ${escapeHtml(video.topic)}" loading="lazy" />` : `<span class="video-placeholder">${escapeHtml(video.topic || 'Video mới')}<small>${video.status === 'processing' ? 'Đang tạo các đoạn đọc và render…' : video.last_error ? escapeHtml(video.last_error) : 'Chưa có bản render'}</small></span>`;
   const cardClass = compact ? 'video-card' : 'library-row';
-  const retryPublish = video.status === 'publish_failed' && /\(#200\).*pages_manage_posts permission/i.test(video.last_error || '');
+  const retryPublish = video.status === 'publish_failed';
+  const retryMayDuplicate = retryPublish && !/\(#200\).*pages_manage_posts permission/i.test(video.last_error || '');
   const actions = [
     `<button class="mini-action" data-script-id="${escapeHtml(video.script_id)}">Kịch bản</button>`,
     video.status === 'failed' ? `<button class="mini-action" data-retry-video-id="${escapeHtml(video.id)}">Thử lại</button>` : '',
     video.status === 'ready' ? `<button class="mini-action" data-schedule-id="${escapeHtml(video.id)}">Lên lịch</button>` : '',
-    ['ready', 'scheduled'].includes(video.status) ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}">Đăng ngay</button>` : retryPublish ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}">Đăng lại</button>` : '',
+    ['ready', 'scheduled'].includes(video.status) || retryPublish ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}" ${retryPublish ? `data-retry-publish="true" data-retry-may-duplicate="${retryMayDuplicate}"` : ''}>Đăng ngay</button>` : '',
     video.video_path ? `<a class="mini-action" href="/api/videos/${encodeURIComponent(video.id)}/file" download>MP4 ↓</a>` : '',
     !compact ? `<button class="mini-action danger-action" data-delete-video-id="${escapeHtml(video.id)}" ${['processing', 'script_ready', 'publishing'].includes(video.status) ? 'disabled title="Không thể xóa khi video đang được tạo hoặc đăng"' : ''}>Xóa</button>` : ''
   ].filter(Boolean).join('');
@@ -531,12 +532,16 @@ async function handleVideoAction(event) {
     return;
   }
   if (button.dataset.publishId) {
+    const retryPublish = button.dataset.retryPublish === 'true';
+    const retryMayDuplicate = button.dataset.retryMayDuplicate === 'true';
     const live = state.settings?.facebookAdapter === 'meta';
-    const confirmLive = live && window.confirm('Bạn sắp đăng video thật lên Facebook Page đã kết nối. Tiếp tục?');
+    const confirmation = ['Bạn sắp đăng video thật lên Facebook Page đã kết nối. Tiếp tục?'];
+    if (retryMayDuplicate) confirmation.push('Meta chưa xác nhận kết quả lần đăng trước. Nếu Meta đã nhận video, đăng lại có thể tạo bài trùng.');
+    const confirmLive = live && window.confirm(confirmation.join('\n\n'));
     if (live && !confirmLive) return;
     button.disabled = true;
     try {
-      const result = await api(`/api/videos/${encodeURIComponent(button.dataset.publishId)}/publish`, { method: 'POST', body: JSON.stringify({ confirmLive }) });
+      const result = await api(`/api/videos/${encodeURIComponent(button.dataset.publishId)}/publish`, { method: 'POST', body: JSON.stringify({ confirmLive, confirmRetryUncertain: retryPublish && retryMayDuplicate && confirmLive }) });
       toast('Đã thêm yêu cầu đăng vào hàng đợi', false, live ? 'Đăng thật lên Facebook đang được xử lý.' : 'Đang dùng adapter Mock, không có bài viết thật được tạo.');
       watchJob(result.jobId);
     } catch (error) { toast('Không đăng được video', true, error.message); }

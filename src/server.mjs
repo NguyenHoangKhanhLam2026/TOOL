@@ -610,9 +610,19 @@ async function handleApi(req, res, url) {
     const settings = getSettings();
     if (settings.facebookAdapter === 'meta' && (!body.confirmLive || !settings.facebookConnectionVerified)) return json(res, 409, { error: 'Đăng live cần xác nhận rõ ràng và kiểm tra Page thành công.' });
     const video = db.prepare('SELECT id,status,last_error FROM videos WHERE id=?').get(publishMatch[1]);
+    const retryFailedPublish = video?.status === 'publish_failed';
     const retryablePermissionFailure = video?.status === 'publish_failed' && isDefinitePagePermissionFailure(video.last_error);
-    if (!video || (!['ready', 'scheduled'].includes(video.status) && !retryablePermissionFailure)) return json(res, 409, { error: 'Video chưa sẵn sàng để đăng lại.' });
+    if (!video || (!['ready', 'scheduled'].includes(video.status) && !retryFailedPublish)) return json(res, 409, { error: 'Video chưa sẵn sàng để đăng.' });
+    const activePublishJob = db.prepare("SELECT payload_json FROM jobs WHERE type='publish_video' AND status IN ('pending','running')")
+      .all().some(({ payload_json }) => {
+        try { return JSON.parse(payload_json).videoId === video.id; } catch { return false; }
+      });
+    if (activePublishJob) return json(res, 409, { error: 'Yêu cầu đăng video này đang chờ hoặc đang được xử lý.' });
+    const lastPublishAttempt = retryFailedPublish ? db.prepare('SELECT status,error FROM publish_history WHERE video_id=? ORDER BY created_at DESC LIMIT 1').get(video.id) : null;
+    const uncertainPublish = retryFailedPublish && lastPublishAttempt?.status === 'uncertain' && !isDefinitePagePermissionFailure(lastPublishAttempt.error);
+    if (uncertainPublish && body.confirmRetryUncertain !== true) return json(res, 409, { error: 'Lần đăng trước chưa xác minh được kết quả. Hãy xác nhận có thể tạo bài trùng trước khi đăng lại.' });
     if (retryablePermissionFailure) releaseDefinitePagePermissionFailure(video.id);
+    else if (uncertainPublish) db.prepare("UPDATE publish_history SET status='failed' WHERE video_id=? AND status='uncertain'").run(video.id);
     if (settings.facebookAdapter === 'meta' && !settings.autoPublishEnabled) {
       // A direct user action permits this single live publish without enabling future auto-publishing.
     }

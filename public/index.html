@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f4f1e9" />
-    <meta name="description" content="Phòng sản xuất video học tiếng Anh song ngữ và lên lịch Facebook Reels chạy local." />
+    <meta name="description" content="Phòng sản xuất video học tiếng Anh song ngữ và lên lịch bài đăng video Facebook chạy local." />
     <title>Auto English Reels Studio</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
@@ -55,7 +55,7 @@
               <div>
                 <div class="eyebrow"><span class="eyebrow-line"></span>HỌC MỘT CÂU MỖI NGÀY</div>
                 <h1>Hôm nay mình <em>nói tiếng Anh nhé.</em></h1>
-                <p class="lead">Tạo video song ngữ, nghe phát âm và sắp lịch đăng Reels từ một nơi.</p>
+                <p class="lead">Tạo video song ngữ, nghe phát âm và sắp lịch bài đăng video Facebook từ một nơi.</p>
               </div>
               <div class="welcome-date" id="today-date"></div>
             </div>
@@ -64,7 +64,7 @@
               <div class="hero-copy">
                 <div class="hero-kicker"><span class="tiny-star">✳</span> STUDIO SẴN SÀNG</div>
                 <h2>Biến một chủ đề<br />thành <span>video học nhanh.</span></h2>
-                <p>Ba câu giao tiếp thật. Giọng đọc Việt – Anh. Một Reel dọc sẵn sàng cho lịch của bạn.</p>
+                <p>Ba câu giao tiếp thật. Giọng đọc Việt – Anh. Một video dọc sẵn sàng đăng lên Facebook.</p>
                 <div class="hero-controls">
                   <label class="select-wrap"><span class="sr-only">Chọn chủ đề</span><select id="topic-select"><option value="">AI t&#7921; ch&#7885;n ch&#7911; &#273;&#7873;</option></select><span class="select-chevron">⌄</span></label>
                   <button class="button button-outline" id="add-topic">+ Thêm chủ đề</button>
@@ -100,13 +100,13 @@
           </section>
 
           <section class="view" id="view-library">
-            <div class="page-title-row"><div><div class="eyebrow">TUS VIDEO CỦA BẠN</div><h1>Thư viện video</h1><p class="lead">Kịch bản, thumbnail, caption và trạng thái của từng Reel.</p></div><button class="button button-dark" data-generate><span>✳</span> Tạo video mới</button></div>
+            <div class="page-title-row"><div><div class="eyebrow">TUS VIDEO CỦA BẠN</div><h1>Thư viện video</h1><p class="lead">Kịch bản, thumbnail, caption và trạng thái của từng video Facebook.</p></div><button class="button button-dark" data-generate><span>✳</span> Tạo video mới</button></div>
             <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
             <div class="library-list" id="library-list"></div>
           </section>
 
           <section class="view" id="view-schedule">
-            <div class="page-title-row"><div><div class="eyebrow">LỊCH NỘI DUNG</div><h1>Lịch đăng Reels</h1><p class="lead">Worker tự chọn video sẵn sàng cũ nhất và đặt lịch theo múi giờ Việt Nam.</p></div></div>
+            <div class="page-title-row"><div><div class="eyebrow">LỊCH NỘI DUNG</div><h1>Lịch đăng video Facebook</h1><p class="lead">Worker tự chọn video sẵn sàng cũ nhất và đặt lịch theo múi giờ Việt Nam.</p></div></div>
             <div class="schedule-layout"><div class="panel schedule-form-panel"><div class="panel-heading"><div><span class="panel-icon icon-peach">▦</span><h2>Thêm lịch đăng thủ công</h2></div><span class="panel-caption">Chỉ video đã sẵn sàng</span></div><form id="schedule-form" class="form-stack"><label>Video<select id="schedule-video" required><option value="">Chọn video</option></select></label><label>Ngày và giờ<input type="datetime-local" id="schedule-time" required /></label><button class="button button-dark" type="submit">Thêm vào lịch <span class="button-arrow">↗</span></button></form></div><div class="panel schedule-info"><div class="eyebrow">TỰ ĐỘNG HÓA</div><h2>Chọn video cũ,<br /><em>ngẫu nhiên 5–8 giờ.</em></h2><p>Bật “Tự đăng theo lịch”. Video tiếp theo cách lịch gần nhất một khoảng ngẫu nhiên 5–8 giờ khi ngày đó còn suất. Khi đủ giới hạn bài/ngày, lịch chuyển sang ngày kế tiếp; giờ trong ngày và múi giờ Việt Nam vẫn được giữ.</p><button class="text-button" data-go="settings">Thiết lập tự đăng <span>↗</span></button></div></div>
             <div class="section-heading schedule-list-heading"><div><div class="eyebrow">LỊCH VÀ KẾT QUẢ</div><h2>Lịch đăng và lỗi</h2></div><span class="timezone-badge">◷ Asia / Ho Chi Minh</span></div><div class="schedule-list" id="schedule-list"></div>
           </section>
