@@ -2,7 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
-const state = { view: 'overview', topics: [], videos: [], schedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null, backgroundEffectSpeed: 58, settingsDirty: false, settingsRevision: 0 };
+const state = { view: 'overview', topics: [], videos: [], schedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0 };
 let previewAudio = null;
 const EN_US_VOICES = [
   { id: 'en-US-AvaNeural', name: 'Ava', gender: 'Nữ' },
@@ -94,11 +94,12 @@ function videoProgressMarkup(video) {
 function videoCard(video, compact = false) {
   const thumb = video.thumbnail_path ? `<img src="/api/videos/${encodeURIComponent(video.id)}/thumbnail" alt="Thumbnail ${escapeHtml(video.topic)}" loading="lazy" />` : `<span class="video-placeholder">${escapeHtml(video.topic || 'Video mới')}<small>${video.status === 'processing' ? 'Đang tạo các đoạn đọc và render…' : video.last_error ? escapeHtml(video.last_error) : 'Chưa có bản render'}</small></span>`;
   const cardClass = compact ? 'video-card' : 'library-row';
+  const retryPublish = video.status === 'publish_failed' && /\(#200\).*pages_manage_posts permission/i.test(video.last_error || '');
   const actions = [
     `<button class="mini-action" data-script-id="${escapeHtml(video.script_id)}">Kịch bản</button>`,
     video.status === 'failed' ? `<button class="mini-action" data-retry-video-id="${escapeHtml(video.id)}">Thử lại</button>` : '',
     video.status === 'ready' ? `<button class="mini-action" data-schedule-id="${escapeHtml(video.id)}">Lên lịch</button>` : '',
-    ['ready', 'scheduled'].includes(video.status) ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}">Đăng ngay</button>` : '',
+    ['ready', 'scheduled'].includes(video.status) ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}">Đăng ngay</button>` : retryPublish ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}">Đăng lại</button>` : '',
     video.video_path ? `<a class="mini-action" href="/api/videos/${encodeURIComponent(video.id)}/file" download>MP4 ↓</a>` : '',
     !compact ? `<button class="mini-action danger-action" data-delete-video-id="${escapeHtml(video.id)}" ${['processing', 'script_ready', 'publishing'].includes(video.status) ? 'disabled title="Không thể xóa khi video đang được tạo hoặc đăng"' : ''}>Xóa</button>` : ''
   ].filter(Boolean).join('');
@@ -297,7 +298,7 @@ function syncBackgroundEffectPreview() {
   const frame = $('#background-effect-preview-frame');
   const effectId = $('#background-effect').value;
   if (!frame?.contentWindow || !effectId) return;
-  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId, speed: state.backgroundEffectSpeed }, location.origin);
+  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId, speed: state.backgroundEffectSpeed, opacity: state.backgroundEffectOpacity }, location.origin);
 }
 
 async function loadSettings() {
@@ -313,6 +314,7 @@ async function loadSettings() {
   // baseline and must not overwrite a selection or text field mid-edit.
   if (state.settingsDirty) return;
   state.backgroundEffectSpeed = Number(settings.backgroundEffectSpeed ?? 58);
+  state.backgroundEffectOpacity = Number(settings.backgroundEffectOpacity ?? 32);
   $('#tts-provider').value = settings.ttsProvider || 'edge';
   updateTtsProviderPanels();
   selectSavedVoice($('#vi-voice'), settings.viVoice);
@@ -373,7 +375,7 @@ async function loadSettings() {
   $('#page-id').value = settings.pageId || '';
   $('#page-token').value = '';
   $('#clear-facebook').hidden = !settings.facebookTokenSaved;
-  $('#facebook-status-pill').textContent = settings.facebookAdapter === 'mock' ? 'Mock' : (settings.facebookConnectionVerified ? 'Đã kiểm tra' : 'Chưa xác minh');
+  $('#facebook-status-pill').textContent = settings.facebookAdapter === 'mock' ? 'Mock' : (settings.facebookConnectionVerified ? 'Đọc được Page' : 'Chưa xác minh');
   $('#facebook-status-pill').className = `state-pill ${settings.facebookConnectionVerified ? 'ok' : settings.facebookAdapter === 'mock' ? 'neutral' : 'warn'}`;
   $('#ai-status-pill').textContent = system.aiReady ? 'Đã sẵn sàng' : 'Chưa kết nối';
   $('#ai-status-pill').className = `state-pill ${system.aiReady ? 'ok' : 'warn'}`;
@@ -410,6 +412,7 @@ async function generateVideo() {
 }
 
 let watchedJobs = new Set();
+const publishFailureNotices = new Set();
 let libraryProgressTimer;
 function refreshLibraryProgress() { if (state.view !== 'library') return; clearTimeout(libraryProgressTimer); libraryProgressTimer = setTimeout(() => loadVideos().catch(() => {}), 650); }
 function connectRealtime() {
@@ -440,6 +443,7 @@ function connectRealtime() {
         refreshData();
       }
       if (log.code === 'PUBLISH_FAILED') {
+        if (watchedJobs.has(log.job_id)) publishFailureNotices.add(log.job_id);
         toast('Đăng không thành công', true, log.message);
         refreshData();
       }
@@ -465,8 +469,13 @@ function watchJob(jobId) {
         if (job.type === 'create_video') setGenerateButtonBusy(false);
         await refreshData();
       } else if (job?.status === 'failed') {
-        clearInterval(timer); watchedJobs.delete(jobId);
-        toast('Job gặp lỗi', true, job.last_error || 'Mở Nhật ký hoạt động để xem chi tiết.');
+        clearInterval(timer);
+        if (job.type === 'publish_video' && !publishFailureNotices.has(jobId)) {
+          await new Promise((resolve) => setTimeout(resolve, 700));
+        }
+        const publishFailureAlreadyShown = publishFailureNotices.delete(jobId);
+        watchedJobs.delete(jobId);
+        if (!publishFailureAlreadyShown) toast('Job gặp lỗi', true, job.last_error || 'Mở Nhật ký hoạt động để xem chi tiết.');
         if (job.type === 'create_video') setGenerateButtonBusy(false);
         await refreshData();
       } else if (checks > 360) {
@@ -551,6 +560,7 @@ async function saveSettings() {
     highlightColor: $('#highlight-color').value,
     backgroundEffect: $('#background-effect').value,
     backgroundEffectSpeed: state.backgroundEffectSpeed,
+    backgroundEffectOpacity: state.backgroundEffectOpacity,
     highlightPadding: Number($('#highlight-padding').value),
     highlightRadius: Number($('#highlight-radius').value),
     highlightTransition: $('#highlight-transition').value,
@@ -750,6 +760,14 @@ function setupEvents() {
       const speed = Number(event.data.speed);
       if (!Number.isInteger(speed) || speed < 25 || speed > 140 || state.backgroundEffectSpeed === speed) return;
       state.backgroundEffectSpeed = speed;
+      state.settingsDirty = true;
+      state.settingsRevision += 1;
+      return;
+    }
+    if (event.data?.type === 'background-effect-preview:change-opacity') {
+      const opacity = Number(event.data.opacity);
+      if (!Number.isInteger(opacity) || opacity < 10 || opacity > 70 || state.backgroundEffectOpacity === opacity) return;
+      state.backgroundEffectOpacity = opacity;
       state.settingsDirty = true;
       state.settingsRevision += 1;
       return;

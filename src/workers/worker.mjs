@@ -92,10 +92,12 @@ async function publishVideo(job) {
     log('INFO', 'PUBLISH_VERIFIED', `Đã xác minh Reel ${result.facebookId} qua ${adapterName}.`, job.id);
     if (adapterName === 'meta' && archivePublishedVideo(videoId)) log('INFO', 'VIDEO_ARCHIVED', `Đã ẩn video ${videoId} khỏi thư viện sau khi đăng Facebook thành công.`, job.id);
   } catch (error) {
-    updatePublishHistory(historyId, { status: adapterName === 'meta' ? 'uncertain' : 'failed', error: String(error.message).slice(0, 1000) });
+    const definitePagePermissionFailure = adapterName === 'meta' && /\(#200\).*pages_manage_posts permission/i.test(String(error.message || ''));
+    updatePublishHistory(historyId, { status: adapterName === 'meta' && !definitePagePermissionFailure ? 'uncertain' : 'failed', error: String(error.message).slice(0, 1000) });
     if (scheduleId) markSchedule(scheduleId, 'failed');
     updateVideo(videoId, { status: 'publish_failed', last_error: error.message });
     log('ERROR', 'PUBLISH_FAILED', error.message, job.id);
+    if (definitePagePermissionFailure) error.permanentMetaPermission = true;
     throw error;
   }
 }

@@ -98,6 +98,7 @@ export const DEFAULTS = Object.freeze({
   highlightTransition: 'instant',
   backgroundEffect: 'bubbles',
   backgroundEffectSpeed: 58,
+  backgroundEffectOpacity: 32,
   level: 'A2-B1',
   postTime: '19:30',
   postsPerDay: 3,
@@ -106,6 +107,7 @@ export const DEFAULTS = Object.freeze({
   autoGenerationEnabled: false,
   autoPublishEnabled: false,
   facebookAdapter: 'mock',
+  pageId: '',
   facebookConnectionVerified: false,
   allowPaidAiApi: false
 });

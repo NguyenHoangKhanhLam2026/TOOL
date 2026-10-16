@@ -266,6 +266,9 @@
         const nextSpeed = Number(event.data.speed);
         if (Number.isInteger(nextSpeed) && nextSpeed >= 25 && nextSpeed <= 140) speed.value = String(nextSpeed);
         updateSpeedLabel();
+        const nextOpacity = Number(event.data.opacity);
+        if (Number.isInteger(nextOpacity) && nextOpacity >= 10 && nextOpacity <= 70) opacity.value = String(nextOpacity);
+        document.querySelector('#opacityOut').value = `${opacity.value}%`;
       }
     });
     density.addEventListener('input', () => { updateDensityLabel(); makeParticles(); });
@@ -273,7 +276,10 @@
       updateSpeedLabel();
       if (window.parent !== window) window.parent.postMessage({ type: 'background-effect-preview:change-speed', speed: Number(speed.value) }, location.origin);
     });
-    opacity.addEventListener('input', () => { document.querySelector('#opacityOut').value = `${opacity.value}%`; });
+    opacity.addEventListener('input', () => {
+      document.querySelector('#opacityOut').value = `${opacity.value}%`;
+      if (window.parent !== window) window.parent.postMessage({ type: 'background-effect-preview:change-opacity', opacity: Number(opacity.value) }, location.origin);
+    });
     document.querySelector('#reroll').addEventListener('click', () => { seed = Math.random() * 1e9; makeParticles(); });
     new ResizeObserver(resize).observe(reel); resize(); updateDensityLabel(); updateSpeedLabel(); requestAnimationFrame(draw);
   </script>

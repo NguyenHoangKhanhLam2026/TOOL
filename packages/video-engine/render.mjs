@@ -6,14 +6,14 @@ import { describeSpawnError } from '../../src/utils/process-errors.mjs';
 import {
   getTemplateAssetVersions, rasterizeScene, readVisualTemplate
 } from './visual-template-engine.mjs';
-import { normalizeBackgroundEffect, normalizeBackgroundEffectSpeed, renderBackgroundEffectMarkup } from './background-effects.mjs';
+import { normalizeBackgroundEffect, normalizeBackgroundEffectSpeed, normalizeBackgroundEffectOpacity, renderBackgroundEffectMarkup } from './background-effects.mjs';
 import {
   DEFAULT_HIGHLIGHT_SETTINGS, buildAudioTimeline, buildHighlightIntervals, normalizeLanguage
 } from '../audio-highlight/highlight-engine.mjs';
 
 const { default: sharp } = await import('sharp');
 const OUTPUT_FRAME_RATE = 30;
-const BACKGROUND_EFFECT_FRAME_SECONDS = 0.18;
+const BACKGROUND_EFFECT_FRAME_SECONDS = 1 / OUTPUT_FRAME_RATE;
 
 function alignUpToFrame(seconds, frameRate = OUTPUT_FRAME_RATE) {
   const frame = Math.ceil(Number(seconds) * frameRate - 1e-7);
@@ -146,6 +146,7 @@ export async function renderVideo(script, videoId, audioFiles, {
   const settings = { ...DEFAULT_HIGHLIGHT_SETTINGS, ...highlightSettings, highlightTransition: 'instant' };
   settings.backgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
   settings.backgroundEffectSpeed = normalizeBackgroundEffectSpeed(settings.backgroundEffectSpeed);
+  settings.backgroundEffectOpacity = normalizeBackgroundEffectOpacity(settings.backgroundEffectOpacity);
   const durations = [];
   for (const item of audioFiles) {
     if (!fs.existsSync(item.path)) throw new Error(`Thiếu audio cho đoạn ${item.segmentId || item.index || '?'} (${item.language || 'không rõ ngôn ngữ'}).`);
@@ -398,43 +399,75 @@ export async function renderVideo(script, videoId, audioFiles, {
         includeBackground: false, includeLayers: includeLayers.filter((layerId) => layerId !== 'background'),
         highlight: visual.highlight, highlightSettings: settings, speechSegment, totalCount
       });
-      const effectFrameCount = Math.max(1, Math.ceil(visual.duration / BACKGROUND_EFFECT_FRAME_SECONDS));
-      for (let frameIndex = 0; frameIndex < effectFrameCount; frameIndex += 1) {
-        const frameStart = frameIndex * BACKGROUND_EFFECT_FRAME_SECONDS;
-        const frameDuration = Math.min(BACKGROUND_EFFECT_FRAME_SECONDS, visual.duration - frameStart);
-        const effectMarkup = renderBackgroundEffectMarkup(settings.backgroundEffect, {
-          width: template.canvas.width,
-          height: template.canvas.height,
-          time: visualCursor + frameStart,
-          seed: videoId,
-          speed: settings.backgroundEffectSpeed
-        });
-        const effectSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${template.canvas.width}" height="${template.canvas.height}" viewBox="0 0 ${template.canvas.width} ${template.canvas.height}">${effectMarkup}</svg>`);
-        const frameFile = path.join(layerDir, `effect-${String(index + 1).padStart(5, '0')}-${String(frameIndex + 1).padStart(3, '0')}.png`);
-        await sharp(backgroundBaseFile)
-          .composite([{ input: effectSvg, blend: 'over' }, { input: foregroundFile, blend: 'over' }])
-          .png({ compressionLevel: 9 })
-          .toFile(frameFile);
-        imageEntries.push({ file: frameFile, duration: frameDuration });
-      }
+      imageEntries.push({ file: foregroundFile, duration: visual.duration, foreground: true });
     }
     visualCursor += visual.duration;
     if (index % Math.max(1, Math.floor(visualPlan.length / 20)) === 0) onProgress(0.02 + 0.18 * ((index + 1) / visualPlan.length));
   }
 
   const renderedImageEntries = [];
-  for (let index = 0; index < imageEntries.length; index += 1) {
-    const item = imageEntries[index];
-    if (!item.transition) {
-      renderedImageEntries.push(item);
-      continue;
+  if (settings.backgroundEffect !== 'none') {
+    // Render every effect frame against the absolute video clock, including
+    // scene transitions. This prevents the effect from freezing at each cut.
+    const outputFrameCount = Math.max(1, Math.round(total * OUTPUT_FRAME_RATE));
+    let visualStart = 0;
+    for (let index = 0; index < imageEntries.length; index += 1) {
+      const item = imageEntries[index];
+      const visualEnd = visualStart + item.duration;
+      const firstOutputFrame = Math.ceil(visualStart * OUTPUT_FRAME_RATE - 1e-7);
+      const endOutputFrame = Math.min(outputFrameCount, Math.ceil(visualEnd * OUTPUT_FRAME_RATE - 1e-7));
+      let previous = null;
+      let next = null;
+      if (item.transition) {
+        previous = [...imageEntries.slice(0, index)].reverse().find((candidate) => candidate.foreground && candidate.file);
+        next = imageEntries.slice(index + 1).find((candidate) => candidate.foreground && candidate.file);
+      }
+      for (let frameIndex = firstOutputFrame; frameIndex < endOutputFrame; frameIndex += 1) {
+        const frameTime = frameIndex * BACKGROUND_EFFECT_FRAME_SECONDS;
+        const effectMarkup = renderBackgroundEffectMarkup(settings.backgroundEffect, {
+          width: template.canvas.width,
+          height: template.canvas.height,
+          time: frameTime,
+          seed: videoId,
+          speed: settings.backgroundEffectSpeed,
+          opacity: settings.backgroundEffectOpacity
+        });
+        const effectSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${template.canvas.width}" height="${template.canvas.height}" viewBox="0 0 ${template.canvas.width} ${template.canvas.height}">${effectMarkup}</svg>`);
+        const overlays = [{ input: effectSvg, blend: 'over' }];
+        if (item.transition && previous?.file && next?.file) {
+          const progress = Math.max(0, Math.min(1, (frameTime - visualStart) / Math.max(item.duration, 1e-9)));
+          overlays.push(
+            { input: previous.file, blend: 'over', opacity: 1 - progress },
+            { input: next.file, blend: 'over', opacity: progress }
+          );
+        } else if (item.file) {
+          overlays.push({ input: item.file, blend: 'over' });
+        } else if (previous?.file || next?.file) {
+          overlays.push({ input: previous?.file || next.file, blend: 'over' });
+        }
+        const frameFile = path.join(layerDir, `effect-frame-${String(frameIndex + 1).padStart(5, '0')}.png`);
+        await sharp(backgroundBaseFile)
+          .composite(overlays)
+          .png({ compressionLevel: 9 })
+          .toFile(frameFile);
+        renderedImageEntries.push({ file: frameFile, duration: BACKGROUND_EFFECT_FRAME_SECONDS });
+      }
+      visualStart = visualEnd;
     }
-    const previous = [...renderedImageEntries].reverse().find((entry) => entry.file);
-    const next = imageEntries.slice(index + 1).find((entry) => entry.file);
-    if (previous?.file && next?.file) {
-      renderedImageEntries.push(...await createCrossfadeFrames(previous.file, next.file, item.duration, layerDir, `transition-${String(index + 1).padStart(4, '0')}`));
-    } else if (previous?.file || next?.file) {
-      renderedImageEntries.push({ file: previous?.file || next.file, duration: item.duration });
+  } else {
+    for (let index = 0; index < imageEntries.length; index += 1) {
+      const item = imageEntries[index];
+      if (!item.transition) {
+        renderedImageEntries.push(item);
+        continue;
+      }
+      const previous = [...renderedImageEntries].reverse().find((entry) => entry.file);
+      const next = imageEntries.slice(index + 1).find((entry) => entry.file);
+      if (previous?.file && next?.file) {
+        renderedImageEntries.push(...await createCrossfadeFrames(previous.file, next.file, item.duration, layerDir, `transition-${String(index + 1).padStart(4, '0')}`));
+      } else if (previous?.file || next?.file) {
+        renderedImageEntries.push({ file: previous?.file || next.file, duration: item.duration });
+      }
     }
   }
 
@@ -508,6 +541,7 @@ export async function renderVideo(script, videoId, audioFiles, {
     highlightSettings: settings,
     backgroundEffect: settings.backgroundEffect,
     backgroundEffectSpeed: settings.backgroundEffectSpeed,
+    backgroundEffectOpacity: settings.backgroundEffectOpacity,
     effectiveTiming: { ...timing, vocabularyHold, cta: ctaDuration },
     highlightTimeline,
     synchronization: { audioDuration, videoDuration, driftSeconds: syncDriftSeconds, checked: true },

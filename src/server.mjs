@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { ROOT, PORT, HOST, PATHS, PYTHON_BIN, FFMPEG_BIN, FFPROBE_BIN } from './config.mjs';
 import {
   db, getSettings, saveSettings, getOverview, listTopics, listVideos, listJobs,
@@ -117,8 +117,36 @@ function publicSettings() {
   return { ...settings, allowPaidAiApi: false, facebookTokenSaved: facebookTokenSaved(), chatgpt: chatgptStatus() };
 }
 
-function checkTool(command, args = ['-version']) {
-  const result = spawnSync(command, args, { windowsHide: true, encoding: 'utf8', timeout: 2500 });
+function runCommand(command, args, timeoutMs) {
+  return new Promise((resolve) => {
+    let child;
+    let stdout = '';
+    let settled = false;
+    let timeout;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve({ stdout, ...result });
+    };
+    try {
+      child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch (error) {
+      finish({ status: null, error });
+      return;
+    }
+    timeout = setTimeout(() => {
+      try { child.kill(); } catch { /* the process may already have exited */ }
+      finish({ status: null, error: Object.assign(new Error('Process probe timed out.'), { code: 'ETIMEDOUT' }) });
+    }, timeoutMs);
+    child.stdout?.on('data', (chunk) => { stdout = `${stdout}${chunk.toString('utf8')}`.slice(-4096); });
+    child.once('error', (error) => finish({ status: null, error }));
+    child.once('close', (status) => finish({ status, error: null }));
+  });
+}
+
+async function checkTool(command, args = ['-version']) {
+  const result = await runCommand(command, args, 2500);
   return { ready: !result.error && result.status === 0, errorCode: result.error?.code || (result.status === 0 ? null : 'EXIT') };
 }
 
@@ -127,14 +155,16 @@ async function systemStatus() {
   const vieneu = vieneuModelStatus(settings);
   const kokoro = kokoroModelStatus(settings);
   const localTts = getLocalTtsManagerStatus();
-  const python = spawnSync(PYTHON_BIN, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
-  const edgeTts = spawnSync(PYTHON_BIN, ['-c', 'import edge_tts'], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
-  const alignment = spawnSync(PYTHON_BIN, ['-c', "import importlib.util; print('yes' if importlib.util.find_spec('stable_whisper') else 'no')"], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
-  const vieneuPython = vieneu.installed ? spawnSync(vieneu.python, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 6000 }) : null;
-  const kokoroPython = kokoro.installed ? spawnSync(kokoro.python, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 6000 }) : null;
+  const [python, edgeTts, alignment, vieneuPython, kokoroPython, ffmpeg, ffprobe] = await Promise.all([
+    runCommand(PYTHON_BIN, ['--version'], 6000),
+    runCommand(PYTHON_BIN, ['-c', 'import edge_tts'], 6000),
+    runCommand(PYTHON_BIN, ['-c', "import importlib.util; print('yes' if importlib.util.find_spec('stable_whisper') else 'no')"], 6000),
+    vieneu.installed ? runCommand(vieneu.python, ['--version'], 6000) : null,
+    kokoro.installed ? runCommand(kokoro.python, ['--version'], 6000) : null,
+    checkTool(FFMPEG_BIN, ['-version']),
+    checkTool(FFPROBE_BIN, ['-version'])
+  ]);
   const localWordAlignment = alignment.status === 0 && alignment.stdout.trim() === 'yes';
-  const ffmpeg = checkTool(FFMPEG_BIN, ['-version']);
-  const ffprobe = checkTool(FFPROBE_BIN, ['-version']);
   let worker = false;
   let workerLastSeen = null;
   try {
@@ -197,6 +227,26 @@ function safeOutputPath(value) {
   return resolved.startsWith(`${path.resolve(PATHS.output)}${path.sep}`) ? resolved : null;
 }
 
+function hasRenderedOutput(value) {
+  const outputPath = safeOutputPath(value);
+  if (!outputPath) return false;
+  try {
+    const stat = fs.statSync(outputPath);
+    return stat.isFile() && stat.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+function isDefinitePagePermissionFailure(message) {
+  return /\(#200\).*pages_manage_posts permission/i.test(String(message || ''));
+}
+
+function releaseDefinitePagePermissionFailure(videoId) {
+  db.prepare("UPDATE publish_history SET status='failed' WHERE video_id=? AND status='uncertain' AND error LIKE '%(#200)%pages_manage_posts permission%'")
+    .run(videoId);
+}
+
 function attachVideoProgress(videos) {
   const jobs = db.prepare("SELECT id,status,payload_json FROM jobs WHERE type='create_video' ORDER BY created_at DESC LIMIT 100").all().map((job) => {
     try { return { ...job, payload: JSON.parse(job.payload_json) }; } catch { return { ...job, payload: {} }; }
@@ -214,8 +264,8 @@ function attachVideoProgress(videos) {
     const currentEvents = events.slice(Math.max(0, lastAttempt));
     const scriptReady = currentEvents.some((item) => item.code === 'SCRIPT_READY');
     const ttsReady = currentEvents.some((item) => item.code === 'TTS_READY');
-    const videoReady = ['ready', 'scheduled', 'published'].includes(video.status);
-    const failed = video.status === 'failed';
+    const videoReady = hasRenderedOutput(video.video_path);
+    const failed = video.status === 'failed' && !videoReady;
     const failedStep = failed ? !scriptReady ? 'script' : !ttsReady ? 'voice' : 'render' : null;
     const steps = [
       { id: 'script', label: 'Kịch bản', status: scriptReady || videoReady ? 'done' : failedStep === 'script' ? 'error' : 'active' },
@@ -249,8 +299,9 @@ async function handleApi(req, res, url) {
     const settings = getSettings();
     const backgroundEffect = settings.backgroundEffect;
     const backgroundEffectSpeed = settings.backgroundEffectSpeed;
-    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false, backgroundEffect, backgroundEffectSpeed, effectSeed: script?.id || state })));
-    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index, backgroundEffect, backgroundEffectSpeed, effectSeed: script?.id || state }));
+    const backgroundEffectOpacity = settings.backgroundEffectOpacity;
+    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false, backgroundEffect, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state })));
+    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index, backgroundEffect, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state }));
   }
   if (route === 'POST /api/visual-template/render-test') {
     const body = await readJson(req, 100_000);
@@ -258,7 +309,7 @@ async function handleApi(req, res, url) {
     const imagePath = path.join(PATHS.temporary, 'visual-previews', `${id}.png`);
     const videoPath = path.join(PATHS.temporary, 'visual-previews', `${id}.mp4`);
     const settings = getSettings();
-    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath, backgroundEffect: settings.backgroundEffect, backgroundEffectSpeed: settings.backgroundEffectSpeed, effectSeed: id });
+    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath, backgroundEffect: settings.backgroundEffect, backgroundEffectSpeed: settings.backgroundEffectSpeed, backgroundEffectOpacity: settings.backgroundEffectOpacity, effectSeed: id });
     const jobId = queueJob('render_preview', { previewId: id, imagePath, videoPath, seconds: 5 });
     log('INFO', 'PREVIEW_RENDER_QUEUED', `Đã xếp render thử scene ${body.state || 'bilingual'}.`, jobId);
     return json(res, 202, { id, jobId, status: 'pending', url: `/api/visual-template/test-video/${id}` });
@@ -339,6 +390,7 @@ async function handleApi(req, res, url) {
     if (!Number.isInteger(Number(next.backgroundEffectSpeed)) || Number(next.backgroundEffectSpeed) < 25 || Number(next.backgroundEffectSpeed) > 140) return json(res, 400, { error: 'Tốc độ trôi phải là số nguyên từ 25 đến 140.' });
     if (!['mock', 'meta'].includes(next.facebookAdapter)) return json(res, 400, { error: 'Facebook adapter phải là Mock hoặc Meta Graph API.' });
     if (body.autoGenerationEnabled === true && !chatgptStatus().connected) return json(res, 409, { error: 'Hãy kết nối ChatGPT Plan trước khi bật tự tạo.' });
+    if (!Number.isInteger(Number(next.backgroundEffectOpacity)) || Number(next.backgroundEffectOpacity) < 10 || Number(next.backgroundEffectOpacity) > 70) return json(res, 400, { error: 'Độ rõ hiệu ứng phải là số nguyên từ 10 đến 70.' });
     const patch = { ...body };
     const currentSettings = getSettings();
     const facebookModeChanged = body.facebookAdapter && body.facebookAdapter !== currentSettings.facebookAdapter;
@@ -557,8 +609,10 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const settings = getSettings();
     if (settings.facebookAdapter === 'meta' && (!body.confirmLive || !settings.facebookConnectionVerified)) return json(res, 409, { error: 'Đăng live cần xác nhận rõ ràng và kiểm tra Page thành công.' });
-    const video = db.prepare('SELECT id,status FROM videos WHERE id=?').get(publishMatch[1]);
-    if (!video || !['ready', 'scheduled'].includes(video.status)) return json(res, 409, { error: 'Video chưa sẵn sàng để đăng.' });
+    const video = db.prepare('SELECT id,status,last_error FROM videos WHERE id=?').get(publishMatch[1]);
+    const retryablePermissionFailure = video?.status === 'publish_failed' && isDefinitePagePermissionFailure(video.last_error);
+    if (!video || (!['ready', 'scheduled'].includes(video.status) && !retryablePermissionFailure)) return json(res, 409, { error: 'Video chưa sẵn sàng để đăng lại.' });
+    if (retryablePermissionFailure) releaseDefinitePagePermissionFailure(video.id);
     if (settings.facebookAdapter === 'meta' && !settings.autoPublishEnabled) {
       // A direct user action permits this single live publish without enabling future auto-publishing.
     }

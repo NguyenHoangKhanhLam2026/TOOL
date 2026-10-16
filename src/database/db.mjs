@@ -151,7 +151,7 @@ export function failJob(job, error) {
   const message = String(error?.message || error);
   const processCannotStart = error?.syscall === 'spawn' && ['EPERM', 'EACCES', 'ENOENT'].includes(error?.code);
   const ttsServiceDenied = error?.code === 'EDGE_TTS_FORBIDDEN' || /WSServerHandshakeError:\s*403|403, message=['"]Invalid response status/i.test(message);
-  const retry = !processCannotStart && !ttsServiceDenied && job.attempts < job.max_attempts;
+  const retry = !processCannotStart && !ttsServiceDenied && !error?.permanentMetaPermission && job.attempts < job.max_attempts;
   const delay = Math.min(60 * 60_000, 10_000 * (2 ** Math.max(0, job.attempts - 1)));
   const status = retry ? 'pending' : 'failed';
   const when = retry ? new Date(Date.now() + delay).toISOString() : new Date().toISOString();
@@ -168,9 +168,28 @@ export function deferJob(jobId, delayMs = 5000) {
 
 export function recoverStaleJobs() {
   const cutoff = new Date(Date.now() - 15 * 60_000).toISOString();
-  const result = db.prepare("UPDATE jobs SET status='pending',locked_by=NULL,scheduled_at=?,updated_at=? WHERE status='running' AND updated_at<?")
-    .run(new Date().toISOString(), new Date().toISOString(), cutoff);
-  return Number(result.changes);
+  const now = new Date().toISOString();
+  const running = db.prepare("SELECT id,attempts,max_attempts,locked_by,updated_at,last_error FROM jobs WHERE status='running'").all();
+  const update = db.prepare('UPDATE jobs SET status=?,locked_by=NULL,scheduled_at=?,last_error=?,updated_at=? WHERE id=? AND status=\'running\'');
+  let recovered = 0;
+  for (const job of running) {
+    const workerPid = Number(String(job.locked_by || '').match(/^worker-(\d+)-/)?.[1]);
+    let ownerAlive = null;
+    if (Number.isInteger(workerPid) && workerPid > 0) {
+      try { process.kill(workerPid, 0); ownerAlive = true; }
+      catch (error) { ownerAlive = error.code === 'EPERM'; }
+    }
+    const olderThanTimeout = job.updated_at < cutoff;
+    if (ownerAlive !== false && !olderThanTimeout) continue;
+
+    const exhausted = Number(job.attempts) >= Number(job.max_attempts);
+    const failure = exhausted
+      ? (job.last_error || 'Worker đã dừng trước khi hoàn tất job sau số lần thử tối đa.')
+      : job.last_error;
+    const result = update.run(exhausted ? 'failed' : 'pending', now, failure, now, job.id);
+    recovered += Number(result.changes);
+  }
+  return recovered;
 }
 
 export function getOverview() {
