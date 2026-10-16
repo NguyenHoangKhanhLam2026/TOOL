@@ -68,7 +68,7 @@
   <main class="page">
     <header>
       <div><div class="eyebrow">Bản xem thử hiệu ứng</div><h1>Bong bóng nổi trên nền</h1></div>
-      <div class="badge">Preview · chưa áp dụng vào video</div>
+      <div class="badge">Preview · lưu cài đặt để áp dụng tốc độ trôi</div>
     </header>
     <section class="layout" aria-label="Preview và điều khiển hiệu ứng">
       <div class="preview-column">
@@ -131,10 +131,10 @@
       const count = Number(density.value);
       particles = Array.from({ length: count }, () => {
         const side = random() < .5 ? -1 : 1;
+        const x = effect === 'rings' ? (side < 0 ? random() * w * .18 : w * (.82 + random() * .18)) : random() * w;
         return {
-          x: effect === 'rings' ? (side < 0 ? random() * w * .18 : w * (.82 + random() * .18)) : random() * w,
-          y: random() * h, r: 4 + random() * 15, vy: .12 + random() * .25,
-          vx: (random() - .5) * .12, phase: random() * Math.PI * 2,
+          x, baseX: x, y: random() * h, r: 4 + random() * 15, drift: random(),
+          phase: random() * Math.PI * 2,
           wobble: .2 + random() * .75, shine: .15 + random() * .4,
           tint: random(), size: 9 + random() * 12, word: words[Math.floor(random() * words.length)],
           rot: (random() - .5) * .35, side
@@ -142,9 +142,9 @@
       });
     }
     function drawBubble(b, a, now, dt, mult) {
-      b.y -= b.vy * dt * mult; b.x += Math.sin(now * .00065 + b.phase) * b.wobble * .08 * dt + b.vx * dt;
-      if (b.y < -b.r * 2) { b.y = h + b.r * 1.5; b.x = random() * w; }
-      if (b.x < -b.r) b.x = w + b.r; if (b.x > w + b.r) b.x = -b.r;
+      b.y -= (13 + b.drift * 25) * dt / 1000 * mult;
+      b.x = ((b.baseX + Math.sin(now * .00034 * mult + b.phase) * 13) % w + w) % w;
+      if (b.y < -b.r * 2) { b.y = h + b.r * 1.5; b.baseX = random() * w; }
       const g = ctx.createRadialGradient(b.x - b.r * .34, b.y - b.r * .4, b.r * .05, b.x, b.y, b.r);
       g.addColorStop(0, `rgba(255,255,255,${a * b.shine})`); g.addColorStop(.55, `rgba(255,255,255,${a * .1})`); g.addColorStop(1, `rgba(217,139,101,${a * .035})`);
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
@@ -152,26 +152,27 @@
       ctx.beginPath(); ctx.ellipse(b.x - b.r * .28, b.y - b.r * .34, b.r * .17, b.r * .09, -.55, 0, Math.PI * 2); ctx.fillStyle = `rgba(255,255,255,${Math.min(.9, a * 1.7)})`; ctx.fill();
     }
     function drawSparkle(b, a, now, dt, mult) {
-      b.y -= b.vy * dt * mult; b.x += Math.sin(now * .0008 + b.phase) * b.wobble * .1;
-      if (b.y < -8) { b.y = h + 8; b.x = random() * w; }
-      const blink = .35 + .65 * (.5 + .5 * Math.sin(now * .0025 + b.phase)), radius = 1 + b.r * .2;
-      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.phase + now * .00012); ctx.globalAlpha = a * blink;
+      b.y -= (8 + b.drift * 18) * dt / 1000 * mult;
+      b.x = b.baseX + Math.sin(now * .0005 * mult + b.phase) * 6;
+      if (b.y < -8) { b.y = h + 8; b.baseX = random() * w; }
+      const blink = .35 + .65 * (.5 + .5 * Math.sin(now * .0023 * mult + b.phase)), radius = 1 + b.r * .2;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.phase + now * .00012 * mult); ctx.globalAlpha = a * blink;
       ctx.fillStyle = b.tint > .5 && warm.checked ? '#d98b65' : '#fffdf4'; ctx.beginPath();
       ctx.moveTo(0, -radius * 2.1); ctx.quadraticCurveTo(radius * .22, -radius * .22, radius * 1.7, 0); ctx.quadraticCurveTo(radius * .22, radius * .22, 0, radius * 2.1);
       ctx.quadraticCurveTo(-radius * .22, radius * .22, -radius * 1.7, 0); ctx.quadraticCurveTo(-radius * .22, -radius * .22, 0, -radius * 2.1); ctx.fill(); ctx.restore();
     }
     function drawVocabulary(b, a, now, dt, mult) {
-      b.y -= b.vy * dt * mult; b.x += Math.sin(now * .0005 + b.phase) * b.wobble * .12;
-      if (b.y < -25) { b.y = h + 20; b.x = random() * w; b.word = words[Math.floor(random() * words.length)]; }
-      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot + Math.sin(now * .0005 + b.phase) * .08);
-      ctx.globalAlpha = a * (.38 + .25 * Math.sin(now * .001 + b.phase)); ctx.fillStyle = b.tint > .5 && warm.checked ? '#d98b65' : '#17395d';
+      b.y -= (9 + b.drift * 13) * dt / 1000 * mult; b.x = b.baseX;
+      if (b.y < -25) { b.y = h + 20; b.baseX = random() * w; b.word = words[Math.floor(random() * words.length)]; }
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot);
+      ctx.globalAlpha = a * (.38 + .25 * Math.sin(now * .001 * mult + b.phase)); ctx.fillStyle = b.tint > .5 && warm.checked ? '#d98b65' : '#17395d';
       ctx.font = `${b.size}px Georgia,serif`; ctx.fillText(b.word, 0, 0); ctx.restore();
     }
     function drawWaves(a, now, mult) {
       const sides = [{ x: 0, dir: 1, color: warm.checked ? '217,139,101' : '255,255,255' }, { x: w, dir: -1, color: '23,57,93' }];
       const laneCount = Math.max(2, Math.round(Number(density.value) / 8));
       for (const side of sides) for (let lane = 0; lane < laneCount; lane++) {
-        const phase = now * .00038 * mult + lane * 1.27; ctx.beginPath();
+        const phase = now * .00034 * mult + lane * 1.27; ctx.beginPath();
         for (let step = 0; step <= 24; step++) {
           const y = step / 24 * h, envelope = Math.sin(Math.PI * step / 24), reach = (17 + lane * 8) * envelope;
           const x = side.x + side.dir * (reach + Math.sin(y * .023 + phase) * 8);
@@ -181,32 +182,36 @@
       }
     }
     function drawFirefly(b, a, now, dt, mult) {
-      b.y -= b.vy * dt * .55 * mult; b.x += Math.sin(now * .00045 + b.phase) * b.wobble * .25;
-      if (b.y < -12) { b.y = h + 12; b.x = random() * w; }
-      const pulse = .35 + .65 * (.5 + .5 * Math.sin(now * .002 + b.phase)), color = b.tint > .5 ? '230,179,108' : '221,231,161';
+      b.y -= (6 + b.drift * 12) * dt / 1000 * mult;
+      b.x = b.baseX + Math.sin(now * .00036 * mult + b.phase) * 28;
+      if (b.y < -12) { b.y = h + 12; b.baseX = random() * w; }
+      const pulse = .35 + .65 * (.5 + .5 * Math.sin(now * .002 * mult + b.phase)), color = b.tint > .5 ? '230,179,108' : '221,231,161';
       const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 4); glow.addColorStop(0, `rgba(${color},${a * .35 * pulse})`); glow.addColorStop(1, `rgba(${color},0)`);
       ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 4, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = `rgba(${color},${a * .8 * pulse})`; ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(2, b.r * .35), 0, Math.PI * 2); ctx.fill();
     }
     function drawPetal(b, a, now, dt, mult) {
-      b.y += b.vy * dt * .45 * mult; b.x += Math.sin(now * .00045 + b.phase) * b.wobble * .18;
-      if (b.y > h + 25) { b.y = -25; b.x = random() * w; }
-      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot + now * .00015 * (b.tint > .5 ? 1 : -1)); ctx.globalAlpha = a * .43;
+      b.y += (9 + b.drift * 18) * dt / 1000 * mult;
+      b.x = b.baseX + Math.sin(now * .00042 * mult + b.phase) * 24;
+      if (b.y > h + 25) { b.y = -25; b.baseX = random() * w; }
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot + now * .00020944 * mult * (b.tint > .5 ? 1 : -1)); ctx.globalAlpha = a * .43;
       ctx.fillStyle = b.tint > .5 && warm.checked ? '#d98b65' : '#f4d6b8'; ctx.beginPath(); ctx.ellipse(0, 0, b.r * .48, b.r * 1.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
     function drawRain(b, a, now, dt, mult) {
-      b.y += b.vy * dt * 2.3 * mult; b.x += b.vx * dt * .3;
-      if (b.y > h + 45) { b.y = -45; b.x = random() * w; }
+      b.y += (150 + b.drift * 220) * dt / 1000 * mult;
+      b.x = ((b.baseX + now / 1000 * (28 + b.drift * 20) * mult) % w + w) % w;
+      if (b.y > h + 45) { b.y = -45; b.baseX = random() * w; }
       ctx.strokeStyle = `rgba(255,255,255,${a * .4})`; ctx.lineWidth = 1.2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - 4, b.y + 12 + b.r * 1.5); ctx.stroke();
     }
     function drawDust(b, a, now, dt, mult) {
-      b.y -= b.vy * dt * .35 * mult; b.x += Math.sin(now * .0003 + b.phase) * b.wobble * .1;
-      if (b.y < -5) { b.y = h + 5; b.x = random() * w; }
+      b.y -= (3 + b.drift * 10) * dt / 1000 * mult;
+      b.x = b.baseX + Math.sin(now * .0002 * mult + b.phase) * 8;
+      if (b.y < -5) { b.y = h + 5; b.baseX = random() * w; }
       ctx.fillStyle = b.tint > .5 && warm.checked ? `rgba(217,139,101,${a * .38})` : `rgba(255,255,255,${a * .5})`;
       ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(1, b.r * .16), 0, Math.PI * 2); ctx.fill();
     }
-    function drawAurora(a, now) {
-      const shift = Math.sin(now * .00025) * w * .045;
+    function drawAurora(a, now, mult) {
+      const shift = Math.sin(now * .00025 * mult) * w * .045;
       ctx.save(); ctx.globalAlpha = a * (.25 + Number(density.value) / 60 * .5);
       const left = ctx.createLinearGradient(0, 0, w * .42, 0); left.addColorStop(0, warm.checked ? '#d8e9c8' : '#c9e2f0'); left.addColorStop(1, 'rgba(214,233,229,0)');
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.bezierCurveTo(w * .2 + shift, h * .23, w * .04, h * .43, w * .21, h * .62); ctx.bezierCurveTo(w * .12, h * .9, w * .25, h, 0, h); ctx.closePath(); ctx.fillStyle = left; ctx.fill();
@@ -214,13 +219,16 @@
       ctx.beginPath(); ctx.moveTo(w, 0); ctx.bezierCurveTo(w * .78 - shift, h * .2, w * .98, h * .45, w * .8, h * .65); ctx.bezierCurveTo(w * .91, h * .91, w * .74, h, w, h); ctx.closePath(); ctx.fillStyle = right; ctx.fill(); ctx.restore();
     }
     function drawRings(b, a, now, mult) {
-      const phase = (now * .024 * mult + b.phase * 15) % 72, x = b.side < 0 ? w * .1 : w * .9;
-      ctx.strokeStyle = b.tint > .5 && warm.checked ? `rgba(217,139,101,${a * .34 * (1 - phase / 72)})` : `rgba(255,255,255,${a * .42 * (1 - phase / 72)})`;
+      const phase = (now / 1000 * (22 + b.drift * 26) * mult + b.phase / (Math.PI * 2) * 130) % 130, x = b.side < 0 ? w * .1 : w * .9;
+      ctx.strokeStyle = b.tint > .5 && warm.checked ? `rgba(217,139,101,${a * .34 * (1 - phase / 130)})` : `rgba(255,255,255,${a * .42 * (1 - phase / 130)})`;
       ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, b.y, phase, 0, Math.PI * 2); ctx.stroke();
     }
     function updateDensityLabel() {
       const labels = { bubbles: 'bong bóng', sparkles: 'hạt sáng', vocabulary: 'từ bay', waves: 'dải sóng', fireflies: 'đom đóm', petals: 'cánh hoa', rain: 'vệt mưa', dust: 'hạt bụi', aurora: 'dải sáng', rings: 'gợn vòng' };
       densityOut.value = effect === 'none' ? 'Nền tĩnh' : `${density.value} ${labels[effect]}`;
+    }
+    function updateSpeedLabel() {
+      document.querySelector('#speedOut').value = Number(speed.value) < 50 ? 'Rất chậm' : Number(speed.value) < 85 ? 'Chậm' : Number(speed.value) < 115 ? 'Vừa' : 'Nhanh';
     }
     function setEffect(next, { notifyParent = false } = {}) {
       if (!validEffects.has(next)) return;
@@ -236,7 +244,7 @@
       const dt = Math.min(40, now - last || 16), a = Number(opacity.value) / 100, mult = Number(speed.value) / 58;
       last = now; ctx.clearRect(0, 0, w, h);
       if (effect === 'waves') drawWaves(a, now, mult);
-      else if (effect === 'aurora') drawAurora(a, now);
+      else if (effect === 'aurora') drawAurora(a, now, mult);
       for (const b of particles) {
         if (effect === 'waves' || effect === 'aurora' || effect === 'none') break;
         if (effect === 'bubbles') drawBubble(b, a, now, dt, mult);
@@ -253,13 +261,21 @@
     document.querySelectorAll('.preset').forEach((button) => button.addEventListener('click', () => setEffect(button.dataset.effect, { notifyParent: true })));
     window.addEventListener('message', (event) => {
       if (event.origin !== location.origin || event.source !== window.parent) return;
-      if (event.data?.type === 'background-effect-preview:set-effect') setEffect(event.data.effectId);
+      if (event.data?.type === 'background-effect-preview:set-effect') {
+        setEffect(event.data.effectId);
+        const nextSpeed = Number(event.data.speed);
+        if (Number.isInteger(nextSpeed) && nextSpeed >= 25 && nextSpeed <= 140) speed.value = String(nextSpeed);
+        updateSpeedLabel();
+      }
     });
     density.addEventListener('input', () => { updateDensityLabel(); makeParticles(); });
-    speed.addEventListener('input', () => { document.querySelector('#speedOut').value = Number(speed.value) < 50 ? 'Rất chậm' : Number(speed.value) < 85 ? 'Chậm' : Number(speed.value) < 115 ? 'Vừa' : 'Nhanh'; });
+    speed.addEventListener('input', () => {
+      updateSpeedLabel();
+      if (window.parent !== window) window.parent.postMessage({ type: 'background-effect-preview:change-speed', speed: Number(speed.value) }, location.origin);
+    });
     opacity.addEventListener('input', () => { document.querySelector('#opacityOut').value = `${opacity.value}%`; });
     document.querySelector('#reroll').addEventListener('click', () => { seed = Math.random() * 1e9; makeParticles(); });
-    new ResizeObserver(resize).observe(reel); resize(); updateDensityLabel(); requestAnimationFrame(draw);
+    new ResizeObserver(resize).observe(reel); resize(); updateDensityLabel(); updateSpeedLabel(); requestAnimationFrame(draw);
   </script>
 </body>
 </html>

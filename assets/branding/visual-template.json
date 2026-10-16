@@ -19,7 +19,7 @@
     "fontFamily": "Be Vietnam Pro"
   },
   "timing": {
-      "intro": 0,
+    "intro": 0,
     "vocabularyHold": 1.5,
     "transition": 0.3,
     "transitionFade": 0.12,
@@ -66,7 +66,7 @@
       "id": "youtube-logo",
       "label": "YouTube",
       "kind": "social-logo",
-      "visible": false,
+      "visible": true,
       "x": 174,
       "y": 1702,
       "width": 70,

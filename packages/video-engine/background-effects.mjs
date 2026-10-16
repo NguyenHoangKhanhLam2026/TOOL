@@ -19,6 +19,11 @@ export function normalizeBackgroundEffect(value) {
   return EFFECT_IDS.has(String(value || '')) ? String(value) : 'bubbles';
 }
 
+export function normalizeBackgroundEffectSpeed(value) {
+  const speed = Number(value);
+  return Number.isFinite(speed) ? Math.min(140, Math.max(25, Math.round(speed))) : 58;
+}
+
 function hash(value) {
   let result = 2166136261;
   for (const char of String(value)) {
@@ -158,10 +163,11 @@ function ringsMarkup({ width, height, time, seed }) {
   }).join('');
 }
 
-export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 1920, time = 0, seed = 'preview' } = {}) {
+export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 1920, time = 0, seed = 'preview', speed = 58 } = {}) {
   const effect = normalizeBackgroundEffect(effectId);
   if (effect === 'none') return '';
-  const context = { width, height, time: Math.max(0, Number(time) || 0), seed: String(seed || 'preview') };
+  const speedMultiplier = normalizeBackgroundEffectSpeed(speed) / 58;
+  const context = { width, height, time: Math.max(0, Number(time) || 0) * speedMultiplier, seed: String(seed || 'preview') };
   const bodies = {
     bubbles: bubbleMarkup,
     sparkles: sparklesMarkup,

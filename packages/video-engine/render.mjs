@@ -6,7 +6,7 @@ import { describeSpawnError } from '../../src/utils/process-errors.mjs';
 import {
   getTemplateAssetVersions, rasterizeScene, readVisualTemplate
 } from './visual-template-engine.mjs';
-import { normalizeBackgroundEffect, renderBackgroundEffectMarkup } from './background-effects.mjs';
+import { normalizeBackgroundEffect, normalizeBackgroundEffectSpeed, renderBackgroundEffectMarkup } from './background-effects.mjs';
 import {
   DEFAULT_HIGHLIGHT_SETTINGS, buildAudioTimeline, buildHighlightIntervals, normalizeLanguage
 } from '../audio-highlight/highlight-engine.mjs';
@@ -145,6 +145,7 @@ export async function renderVideo(script, videoId, audioFiles, {
   if (!Array.isArray(audioFiles) || audioFiles.length === 0) throw new Error('Kịch bản không có đoạn audio Edge TTS nào để render.');
   const settings = { ...DEFAULT_HIGHLIGHT_SETTINGS, ...highlightSettings, highlightTransition: 'instant' };
   settings.backgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
+  settings.backgroundEffectSpeed = normalizeBackgroundEffectSpeed(settings.backgroundEffectSpeed);
   const durations = [];
   for (const item of audioFiles) {
     if (!fs.existsSync(item.path)) throw new Error(`Thiếu audio cho đoạn ${item.segmentId || item.index || '?'} (${item.language || 'không rõ ngôn ngữ'}).`);
@@ -405,7 +406,8 @@ export async function renderVideo(script, videoId, audioFiles, {
           width: template.canvas.width,
           height: template.canvas.height,
           time: visualCursor + frameStart,
-          seed: videoId
+          seed: videoId,
+          speed: settings.backgroundEffectSpeed
         });
         const effectSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${template.canvas.width}" height="${template.canvas.height}" viewBox="0 0 ${template.canvas.width} ${template.canvas.height}">${effectMarkup}</svg>`);
         const frameFile = path.join(layerDir, `effect-${String(index + 1).padStart(5, '0')}-${String(frameIndex + 1).padStart(3, '0')}.png`);
@@ -505,6 +507,7 @@ export async function renderVideo(script, videoId, audioFiles, {
     timeline,
     highlightSettings: settings,
     backgroundEffect: settings.backgroundEffect,
+    backgroundEffectSpeed: settings.backgroundEffectSpeed,
     effectiveTiming: { ...timing, vocabularyHold, cta: ctaDuration },
     highlightTimeline,
     synchronization: { audioDuration, videoDuration, driftSeconds: syncDriftSeconds, checked: true },

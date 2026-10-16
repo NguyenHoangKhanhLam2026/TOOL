@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { PATHS, ROOT } from '../../src/config.mjs';
 import { defaultDialogueSegmentId, tokenizeText } from '../audio-highlight/highlight-engine.mjs';
-import { renderBackgroundEffectMarkup } from './background-effects.mjs';
+import { normalizeBackgroundEffectSpeed, renderBackgroundEffectMarkup } from './background-effects.mjs';
 
 export const BRANDING_DIR = path.join(ROOT, 'assets', 'branding');
 export const TEMPLATE_PATH = path.join(BRANDING_DIR, 'visual-template.json');
@@ -522,7 +522,7 @@ async function layerMarkup(layerId, context) {
   return '';
 }
 
-export async function buildSceneSvg({ template = readVisualTemplate(), script, state = 'vietnamese', index = 0, embedAssets = false, includeBackground = true, forceLayer = null, includeLayers = null, highlight = null, highlightSettings = null, speechSegment = null, totalCount = null, backgroundEffect = 'none', effectTime = 0, effectSeed = 'preview' }) {
+export async function buildSceneSvg({ template = readVisualTemplate(), script, state = 'vietnamese', index = 0, embedAssets = false, includeBackground = true, forceLayer = null, includeLayers = null, highlight = null, highlightSettings = null, speechSegment = null, totalCount = null, backgroundEffect = 'none', backgroundEffectSpeed = 58, effectTime = 0, effectSeed = 'preview' }) {
   if (!VALID_SCENES.has(state)) throw new Error(`Scene không hỗ trợ: ${state}`);
   const sceneScript = script || { title: 'Học tiếng Anh giao tiếp mỗi ngày', topic: 'Giao tiếp hằng ngày', dialogues: [] };
   const geometry = layerGeometry(template, sceneScript, index, speechSegment);
@@ -547,7 +547,7 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
     if (markup) groups.push({ id, markup });
   }
   if (!forceLayer && includeBackground && backgroundEffect !== 'none') {
-    const effect = renderBackgroundEffectMarkup(backgroundEffect, { width, height, time: effectTime, seed: effectSeed });
+    const effect = renderBackgroundEffectMarkup(backgroundEffect, { width, height, time: effectTime, seed: effectSeed, speed: backgroundEffectSpeed });
     if (effect) {
       const backgroundIndex = groups.findIndex((group) => group.id === 'background');
       groups.splice(backgroundIndex < 0 ? 0 : backgroundIndex + 1, 0, { id: 'background-effect', markup: effect });
@@ -557,8 +557,8 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs>${shadowDef()}</defs>${selected}</svg>`;
 }
 
-export async function rasterizeScene({ template = readVisualTemplate(), script, state = 'vietnamese', index = 0, outputPath, includeBackground = true, includeLayers = null, highlight = null, highlightSettings = null, speechSegment = null, totalCount = null, backgroundEffect = 'none', effectTime = 0, effectSeed = 'preview' }) {
-  const svg = await buildSceneSvg({ template, script, state, index, embedAssets: true, includeBackground, includeLayers, highlight, highlightSettings, speechSegment, totalCount, backgroundEffect, effectTime, effectSeed });
+export async function rasterizeScene({ template = readVisualTemplate(), script, state = 'vietnamese', index = 0, outputPath, includeBackground = true, includeLayers = null, highlight = null, highlightSettings = null, speechSegment = null, totalCount = null, backgroundEffect = 'none', backgroundEffectSpeed = 58, effectTime = 0, effectSeed = 'preview' }) {
+  const svg = await buildSceneSvg({ template, script, state, index, embedAssets: true, includeBackground, includeLayers, highlight, highlightSettings, speechSegment, totalCount, backgroundEffect, backgroundEffectSpeed: normalizeBackgroundEffectSpeed(backgroundEffectSpeed), effectTime, effectSeed });
   const image = sharp(Buffer.from(svg)).png({ compressionLevel: 9 });
   if (outputPath) { fs.mkdirSync(path.dirname(outputPath), { recursive: true }); await image.toFile(outputPath); return outputPath; }
   return image.toBuffer();

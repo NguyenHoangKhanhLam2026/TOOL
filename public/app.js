@@ -2,7 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
-const state = { view: 'overview', topics: [], videos: [], schedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null, settingsDirty: false, settingsRevision: 0 };
+const state = { view: 'overview', topics: [], videos: [], schedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null, backgroundEffectSpeed: 58, settingsDirty: false, settingsRevision: 0 };
 let previewAudio = null;
 const EN_US_VOICES = [
   { id: 'en-US-AvaNeural', name: 'Ava', gender: 'Nữ' },
@@ -297,7 +297,7 @@ function syncBackgroundEffectPreview() {
   const frame = $('#background-effect-preview-frame');
   const effectId = $('#background-effect').value;
   if (!frame?.contentWindow || !effectId) return;
-  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId }, location.origin);
+  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId, speed: state.backgroundEffectSpeed }, location.origin);
 }
 
 async function loadSettings() {
@@ -312,6 +312,7 @@ async function loadSettings() {
   // edits in the DOM until the user saves them; the server response is only a
   // baseline and must not overwrite a selection or text field mid-edit.
   if (state.settingsDirty) return;
+  state.backgroundEffectSpeed = Number(settings.backgroundEffectSpeed ?? 58);
   $('#tts-provider').value = settings.ttsProvider || 'edge';
   updateTtsProviderPanels();
   selectSavedVoice($('#vi-voice'), settings.viVoice);
@@ -549,6 +550,7 @@ async function saveSettings() {
     highlightMode: $('#highlight-mode').value,
     highlightColor: $('#highlight-color').value,
     backgroundEffect: $('#background-effect').value,
+    backgroundEffectSpeed: state.backgroundEffectSpeed,
     highlightPadding: Number($('#highlight-padding').value),
     highlightRadius: Number($('#highlight-radius').value),
     highlightTransition: $('#highlight-transition').value,
@@ -744,6 +746,14 @@ function setupEvents() {
   backgroundEffectPreview.addEventListener('load', syncBackgroundEffectPreview);
   window.addEventListener('message', (event) => {
     if (event.origin !== location.origin || event.source !== backgroundEffectPreview.contentWindow) return;
+    if (event.data?.type === 'background-effect-preview:change-speed') {
+      const speed = Number(event.data.speed);
+      if (!Number.isInteger(speed) || speed < 25 || speed > 140 || state.backgroundEffectSpeed === speed) return;
+      state.backgroundEffectSpeed = speed;
+      state.settingsDirty = true;
+      state.settingsRevision += 1;
+      return;
+    }
     if (event.data?.type !== 'background-effect-preview:select-effect') return;
     const select = $('#background-effect');
     if (![...select.options].some((option) => option.value === event.data.effectId)) return;

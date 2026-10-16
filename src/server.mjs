@@ -246,16 +246,19 @@ async function handleApi(req, res, url) {
     const state = url.searchParams.get('state') || 'vietnamese';
     const index = Math.max(0, Math.min(2, Number(url.searchParams.get('index') || 0)));
     const script = latestPreviewScript(url.searchParams.get('scriptId') || '') || undefined;
-    const backgroundEffect = getSettings().backgroundEffect;
-    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false, backgroundEffect, effectSeed: script?.id || state })));
-    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index, backgroundEffect, effectSeed: script?.id || state }));
+    const settings = getSettings();
+    const backgroundEffect = settings.backgroundEffect;
+    const backgroundEffectSpeed = settings.backgroundEffectSpeed;
+    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false, backgroundEffect, backgroundEffectSpeed, effectSeed: script?.id || state })));
+    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index, backgroundEffect, backgroundEffectSpeed, effectSeed: script?.id || state }));
   }
   if (route === 'POST /api/visual-template/render-test') {
     const body = await readJson(req, 100_000);
     const id = crypto.randomUUID();
     const imagePath = path.join(PATHS.temporary, 'visual-previews', `${id}.png`);
     const videoPath = path.join(PATHS.temporary, 'visual-previews', `${id}.mp4`);
-    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath, backgroundEffect: getSettings().backgroundEffect, effectSeed: id });
+    const settings = getSettings();
+    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath, backgroundEffect: settings.backgroundEffect, backgroundEffectSpeed: settings.backgroundEffectSpeed, effectSeed: id });
     const jobId = queueJob('render_preview', { previewId: id, imagePath, videoPath, seconds: 5 });
     log('INFO', 'PREVIEW_RENDER_QUEUED', `Đã xếp render thử scene ${body.state || 'bilingual'}.`, jobId);
     return json(res, 202, { id, jobId, status: 'pending', url: `/api/visual-template/test-video/${id}` });
@@ -333,6 +336,7 @@ async function handleApi(req, res, url) {
     if (!Number.isInteger(Number(next.highlightRadius)) || Number(next.highlightRadius) < 0 || Number(next.highlightRadius) > 32) return json(res, 400, { error: 'Bo góc highlight phải từ 0 đến 32 px.' });
     if (body.highlightTransition !== undefined && body.highlightTransition !== 'instant') return json(res, 400, { error: 'Highlight chuyển tức thời để khớp thời điểm đọc.' });
     if (!BACKGROUND_EFFECTS.some((effect) => effect.id === String(next.backgroundEffect))) return json(res, 400, { error: 'Hiệu ứng nền không nằm trong danh sách hỗ trợ.' });
+    if (!Number.isInteger(Number(next.backgroundEffectSpeed)) || Number(next.backgroundEffectSpeed) < 25 || Number(next.backgroundEffectSpeed) > 140) return json(res, 400, { error: 'Tốc độ trôi phải là số nguyên từ 25 đến 140.' });
     if (!['mock', 'meta'].includes(next.facebookAdapter)) return json(res, 400, { error: 'Facebook adapter phải là Mock hoặc Meta Graph API.' });
     if (body.autoGenerationEnabled === true && !chatgptStatus().connected) return json(res, 409, { error: 'Hãy kết nối ChatGPT Plan trước khi bật tự tạo.' });
     const patch = { ...body };
