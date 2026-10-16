@@ -45,32 +45,32 @@ function edgeX(index, width, seed) {
   return side > 0 ? 35 + random(seed, index, 'x') * width * 0.2 : width * 0.8 + random(seed, index, 'x') * width * 0.17;
 }
 
-function bubbleMarkup({ width, height, time, seed }) {
+function bubbleMarkup({ width, height, time, seed, motionScale }) {
   return Array.from({ length: 46 }, (_, index) => {
     const radius = 13 + random(seed, index, 'radius') * 42;
     const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.34 + index) * 13, width);
-    const y = mod(random(seed, index, 'y') * height - time * (13 + random(seed, index, 'speed') * 25), height);
+    const y = mod(random(seed, index, 'y') * height - time * (13 + random(seed, index, 'speed') * 25) * motionScale, height);
     const opacity = 0.045 + random(seed, index, 'alpha') * 0.085;
     const color = random(seed, index, 'color') > 0.48 ? '#D98B65' : '#FFFFFF';
     return `<g opacity="${opacity.toFixed(3)}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius.toFixed(1)}" fill="url(#effectBubble)" stroke="${color}" stroke-opacity="0.8" stroke-width="2.2"/><ellipse cx="${(x - radius * 0.3).toFixed(1)}" cy="${(y - radius * 0.34).toFixed(1)}" rx="${(radius * 0.15).toFixed(1)}" ry="${(radius * 0.075).toFixed(1)}" fill="#FFFFFF" opacity="0.95"/></g>`;
   }).join('');
 }
 
-function sparklesMarkup({ width, height, time, seed }) {
+function sparklesMarkup({ width, height, time, seed, motionScale }) {
   return Array.from({ length: 72 }, (_, index) => {
     const size = 5 + random(seed, index, 'size') * 9;
     const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.5 + index) * 6, width);
-    const y = mod(random(seed, index, 'y') * height - time * (8 + random(seed, index, 'speed') * 18), height);
+    const y = mod(random(seed, index, 'y') * height - time * (8 + random(seed, index, 'speed') * 18) * motionScale, height);
     const opacity = 0.06 + 0.18 * (0.5 + 0.5 * Math.sin(time * 2.3 + index * 1.7));
     const color = random(seed, index, 'color') > 0.48 ? '#D98B65' : '#FFFFFF';
     return `<path d="M${x.toFixed(1)} ${(y - size).toFixed(1)} Q${(x + size * 0.16).toFixed(1)} ${(y - size * 0.16).toFixed(1)} ${(x + size).toFixed(1)} ${y.toFixed(1)} Q${(x + size * 0.16).toFixed(1)} ${(y + size * 0.16).toFixed(1)} ${x.toFixed(1)} ${(y + size).toFixed(1)} Q${(x - size * 0.16).toFixed(1)} ${(y + size * 0.16).toFixed(1)} ${(x - size).toFixed(1)} ${y.toFixed(1)} Q${(x - size * 0.16).toFixed(1)} ${(y - size * 0.16).toFixed(1)} ${x.toFixed(1)} ${(y - size).toFixed(1)}Z" fill="${color}" opacity="${opacity.toFixed(3)}"/>`;
   }).join('');
 }
 
-function vocabularyMarkup({ width, height, time, seed }) {
+function vocabularyMarkup({ width, height, time, seed, motionScale }) {
   return Array.from({ length: 18 }, (_, index) => {
     const x = edgeX(index, width, seed);
-    const y = mod(random(seed, index, 'y') * height - time * (9 + random(seed, index, 'speed') * 13), height);
+    const y = mod(random(seed, index, 'y') * height - time * (9 + random(seed, index, 'speed') * 13) * motionScale, height);
     const size = 23 + random(seed, index, 'size') * 22;
     const rotation = (random(seed, index, 'rotate') - 0.5) * 18;
     const word = VOCABULARY[Math.floor(random(seed, index, 'word') * VOCABULARY.length)];
@@ -103,11 +103,11 @@ function wavesMarkup({ width, height, time, seed }) {
   return paths.join('');
 }
 
-function firefliesMarkup({ width, height, time, seed }) {
+function firefliesMarkup({ width, height, time, seed, motionScale }) {
   return Array.from({ length: 36 }, (_, index) => {
     const baseX = random(seed, index, 'x') * width;
     const x = mod(baseX + Math.sin(time * 0.36 + index) * 28, width);
-    const y = mod(random(seed, index, 'y') * height - time * (6 + random(seed, index, 'speed') * 12), height);
+    const y = mod(random(seed, index, 'y') * height - time * (6 + random(seed, index, 'speed') * 12) * motionScale, height);
     const pulse = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time * 2 + index * 1.31));
     const color = random(seed, index, 'color') > 0.5 ? '#E6B36C' : '#DDE7A1';
     const radius = 4 + random(seed, index, 'radius') * 6;
@@ -115,10 +115,10 @@ function firefliesMarkup({ width, height, time, seed }) {
   }).join('');
 }
 
-function petalsMarkup({ width, height, time, seed }) {
+function petalsMarkup({ width, height, time, seed, motionScale }) {
   return Array.from({ length: 26 }, (_, index) => {
     const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.42 + index) * 24, width);
-    const y = mod(random(seed, index, 'y') * height + time * (9 + random(seed, index, 'speed') * 18), height);
+    const y = mod(random(seed, index, 'y') * height + time * (9 + random(seed, index, 'speed') * 18) * motionScale, height);
     const rx = 7 + random(seed, index, 'rx') * 10;
     const ry = rx * (1.5 + random(seed, index, 'ry'));
     const rotate = random(seed, index, 'rotate') * 360 + time * 12;
@@ -127,19 +127,19 @@ function petalsMarkup({ width, height, time, seed }) {
   }).join('');
 }
 
-function rainMarkup({ width, height, time, seed }) {
+function rainMarkup({ width, height, time, seed, motionScale }) {
   return Array.from({ length: 90 }, (_, index) => {
-    const x = mod(random(seed, index, 'x') * width + time * (28 + random(seed, index, 'drift') * 20), width);
-    const y = mod(random(seed, index, 'y') * height + time * (150 + random(seed, index, 'speed') * 220), height);
+    const x = mod(random(seed, index, 'x') * width + time * (28 + random(seed, index, 'drift') * 20) * motionScale, width);
+    const y = mod(random(seed, index, 'y') * height + time * (150 + random(seed, index, 'speed') * 220) * motionScale, height);
     const length = 18 + random(seed, index, 'length') * 40;
     return `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l-5 ${length.toFixed(1)}" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="2" stroke-linecap="round"/>`;
   }).join('');
 }
 
-function dustMarkup({ width, height, time, seed }) {
+function dustMarkup({ width, height, time, seed, motionScale }) {
   return Array.from({ length: 110 }, (_, index) => {
     const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.2 + index) * 8, width);
-    const y = mod(random(seed, index, 'y') * height - time * (3 + random(seed, index, 'speed') * 10), height);
+    const y = mod(random(seed, index, 'y') * height - time * (3 + random(seed, index, 'speed') * 10) * motionScale, height);
     const radius = 1 + random(seed, index, 'radius') * 3.4;
     const opacity = 0.08 + random(seed, index, 'alpha') * 0.14;
     const color = random(seed, index, 'color') > 0.5 ? '#D98B65' : '#FFFFFF';
@@ -153,13 +153,14 @@ function auroraMarkup({ width, height, time, seed }) {
   return `<path d="M0 0 C${(width * 0.18 + wave).toFixed(1)} ${(height * 0.23).toFixed(1)} ${(width * 0.04).toFixed(1)} ${(height * 0.43).toFixed(1)} ${(width * 0.21).toFixed(1)} ${(height * 0.62).toFixed(1)} S${(width * 0.12).toFixed(1)} ${(height * 0.9).toFixed(1)} ${(width * 0.25).toFixed(1)} ${height} L0 ${height}Z" fill="url(#effectAuroraA)" opacity="0.20"/><path d="M${right} 0 C${(width * 0.78 - wave).toFixed(1)} ${(height * 0.2).toFixed(1)} ${(width * 0.98).toFixed(1)} ${(height * 0.45).toFixed(1)} ${(width * 0.8).toFixed(1)} ${(height * 0.65).toFixed(1)} S${(width * 0.91).toFixed(1)} ${(height * 0.91).toFixed(1)} ${(width * 0.74).toFixed(1)} ${height} L${right} ${height}Z" fill="url(#effectAuroraB)" opacity="0.17"/>`;
 }
 
-function ringsMarkup({ width, height, time, seed }) {
+function ringsMarkup({ width, height, time, seed, motionScale }) {
   return Array.from({ length: 17 }, (_, index) => {
     const x = edgeX(index, width, seed);
     const y = random(seed, index, 'y') * height;
-    const phase = mod(time * (22 + random(seed, index, 'speed') * 26) + random(seed, index, 'phase') * 130, 130);
-    const opacity = 0.11 * (1 - phase / 130);
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${phase.toFixed(1)}" fill="none" stroke="${index % 2 ? '#D98B65' : '#FFFFFF'}" stroke-opacity="${opacity.toFixed(3)}" stroke-width="3"/>`;
+    const progress = mod(time * (22 + random(seed, index, 'speed') * 26) + random(seed, index, 'phase') * 130, 130);
+    const radius = progress * motionScale;
+    const opacity = 0.11 * (1 - progress / 130);
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius.toFixed(1)}" fill="none" stroke="${index % 2 ? '#D98B65' : '#FFFFFF'}" stroke-opacity="${opacity.toFixed(3)}" stroke-width="3"/>`;
   }).join('');
 }
 
@@ -167,7 +168,15 @@ export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 
   const effect = normalizeBackgroundEffect(effectId);
   if (effect === 'none') return '';
   const speedMultiplier = normalizeBackgroundEffectSpeed(speed) / 58;
-  const context = { width, height, time: Math.max(0, Number(time) || 0) * speedMultiplier, seed: String(seed || 'preview') };
+  const context = {
+    width,
+    height,
+    time: Math.max(0, Number(time) || 0) * speedMultiplier,
+    seed: String(seed || 'preview'),
+    // The settings preview is 360x640 CSS pixels; keep its normalized drift
+    // rate when rendering the 1080x1920 output canvas.
+    motionScale: height / 640
+  };
   const bodies = {
     bubbles: bubbleMarkup,
     sparkles: sparklesMarkup,
