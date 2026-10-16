@@ -6,12 +6,14 @@ import { describeSpawnError } from '../../src/utils/process-errors.mjs';
 import {
   getTemplateAssetVersions, rasterizeScene, readVisualTemplate
 } from './visual-template-engine.mjs';
+import { normalizeBackgroundEffect, renderBackgroundEffectMarkup } from './background-effects.mjs';
 import {
   DEFAULT_HIGHLIGHT_SETTINGS, buildAudioTimeline, buildHighlightIntervals, normalizeLanguage
 } from '../audio-highlight/highlight-engine.mjs';
 
 const { default: sharp } = await import('sharp');
 const OUTPUT_FRAME_RATE = 30;
+const BACKGROUND_EFFECT_FRAME_SECONDS = 0.18;
 
 function alignUpToFrame(seconds, frameRate = OUTPUT_FRAME_RATE) {
   const frame = Math.ceil(Number(seconds) * frameRate - 1e-7);
@@ -142,6 +144,7 @@ export async function renderVideo(script, videoId, audioFiles, {
 
   if (!Array.isArray(audioFiles) || audioFiles.length === 0) throw new Error('Kịch bản không có đoạn audio Edge TTS nào để render.');
   const settings = { ...DEFAULT_HIGHLIGHT_SETTINGS, ...highlightSettings, highlightTransition: 'instant' };
+  settings.backgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
   const durations = [];
   for (const item of audioFiles) {
     if (!fs.existsSync(item.path)) throw new Error(`Thiếu audio cho đoạn ${item.segmentId || item.index || '?'} (${item.language || 'không rõ ngôn ngữ'}).`);
@@ -182,9 +185,6 @@ export async function renderVideo(script, videoId, audioFiles, {
     transition: Number(timing.transition),
     safetyMargin: 0.1 + groups.length / OUTPUT_FRAME_RATE
   });
-  if (vocabularyHold + 0.001 < configuredVocabularyHold) {
-    throw new Error(`Không thể giữ đủ ${configuredVocabularyHold.toFixed(0)} giây sau khi đọc cụm từ mà vẫn nằm trong giới hạn video 60 giây. Hãy rút ngắn nội dung hoặc giảm số câu.`);
-  }
   const sequence = [{ type: 'silence', state: 'intro', index: 0, duration: Number(timing.intro) }];
   let sequenceCursor = Number(timing.intro);
   groups.forEach((group, groupIndex) => {
@@ -358,6 +358,12 @@ export async function renderVideo(script, videoId, audioFiles, {
     cta: [...persistentLayers, 'cta']
   };
   const imageEntries = [];
+  let visualCursor = 0;
+  let backgroundBaseFile = null;
+  if (settings.backgroundEffect !== 'none') {
+    backgroundBaseFile = path.join(layerDir, 'background-base.png');
+    await rasterizeScene({ template, script, state: 'intro', index: 0, outputPath: backgroundBaseFile, includeLayers: ['background'] });
+  }
   for (let index = 0; index < visualPlan.length; index += 1) {
     const visual = visualPlan[index];
     const entry = visual.entry;
@@ -365,6 +371,7 @@ export async function renderVideo(script, videoId, audioFiles, {
     const sceneIndex = Math.max(0, Math.min(totalCount - 1, Number(entry.index || 0)));
     if (entry.state === 'transition') {
       imageEntries.push({ file: null, duration: visual.duration, transition: true });
+      visualCursor += visual.duration;
       continue;
     }
     let includeLayers = [...(stateLayers[entry.state] || stateLayers.bilingual)];
@@ -376,12 +383,40 @@ export async function renderVideo(script, videoId, audioFiles, {
       includeLayers = includeLayers.filter((layerId) => !['vietnamese-card', 'english-card'].includes(layerId) || layerId === speechSegment.target.layerId);
     }
     if (speechSegment?.target?.layerId && !includeLayers.includes(speechSegment.target.layerId)) includeLayers.push(speechSegment.target.layerId);
-    await rasterizeScene({
-      template, script, state: entry.state, index: sceneIndex, outputPath: file,
-      includeBackground: true, includeLayers, highlight: visual.highlight,
-      highlightSettings: settings, speechSegment, totalCount
-    });
-    imageEntries.push({ file, duration: visual.duration });
+    if (settings.backgroundEffect === 'none') {
+      await rasterizeScene({
+        template, script, state: entry.state, index: sceneIndex, outputPath: file,
+        includeBackground: true, includeLayers, highlight: visual.highlight,
+        highlightSettings: settings, speechSegment, totalCount
+      });
+      imageEntries.push({ file, duration: visual.duration });
+    } else {
+      const foregroundFile = path.join(layerDir, `foreground-${String(index + 1).padStart(5, '0')}-${entry.state}.png`);
+      await rasterizeScene({
+        template, script, state: entry.state, index: sceneIndex, outputPath: foregroundFile,
+        includeBackground: false, includeLayers: includeLayers.filter((layerId) => layerId !== 'background'),
+        highlight: visual.highlight, highlightSettings: settings, speechSegment, totalCount
+      });
+      const effectFrameCount = Math.max(1, Math.ceil(visual.duration / BACKGROUND_EFFECT_FRAME_SECONDS));
+      for (let frameIndex = 0; frameIndex < effectFrameCount; frameIndex += 1) {
+        const frameStart = frameIndex * BACKGROUND_EFFECT_FRAME_SECONDS;
+        const frameDuration = Math.min(BACKGROUND_EFFECT_FRAME_SECONDS, visual.duration - frameStart);
+        const effectMarkup = renderBackgroundEffectMarkup(settings.backgroundEffect, {
+          width: template.canvas.width,
+          height: template.canvas.height,
+          time: visualCursor + frameStart,
+          seed: videoId
+        });
+        const effectSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${template.canvas.width}" height="${template.canvas.height}" viewBox="0 0 ${template.canvas.width} ${template.canvas.height}">${effectMarkup}</svg>`);
+        const frameFile = path.join(layerDir, `effect-${String(index + 1).padStart(5, '0')}-${String(frameIndex + 1).padStart(3, '0')}.png`);
+        await sharp(backgroundBaseFile)
+          .composite([{ input: effectSvg, blend: 'over' }, { input: foregroundFile, blend: 'over' }])
+          .png({ compressionLevel: 9 })
+          .toFile(frameFile);
+        imageEntries.push({ file: frameFile, duration: frameDuration });
+      }
+    }
+    visualCursor += visual.duration;
     if (index % Math.max(1, Math.floor(visualPlan.length / 20)) === 0) onProgress(0.02 + 0.18 * ((index + 1) / visualPlan.length));
   }
 
@@ -469,6 +504,7 @@ export async function renderVideo(script, videoId, audioFiles, {
     canvas: template.canvas,
     timeline,
     highlightSettings: settings,
+    backgroundEffect: settings.backgroundEffect,
     effectiveTiming: { ...timing, vocabularyHold, cta: ctaDuration },
     highlightTimeline,
     synchronization: { audioDuration, videoDuration, driftSeconds: syncDriftSeconds, checked: true },

@@ -96,6 +96,7 @@ function videoCard(video, compact = false) {
   const cardClass = compact ? 'video-card' : 'library-row';
   const actions = [
     `<button class="mini-action" data-script-id="${escapeHtml(video.script_id)}">Kịch bản</button>`,
+    video.status === 'failed' ? `<button class="mini-action" data-retry-video-id="${escapeHtml(video.id)}">Thử lại</button>` : '',
     video.status === 'ready' ? `<button class="mini-action" data-schedule-id="${escapeHtml(video.id)}">Lên lịch</button>` : '',
     ['ready', 'scheduled'].includes(video.status) ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}">Đăng ngay</button>` : '',
     video.video_path ? `<a class="mini-action" href="/api/videos/${encodeURIComponent(video.id)}/file" download>MP4 ↓</a>` : '',
@@ -170,7 +171,7 @@ function renderLibrary() {
   const matches = state.filter === 'failed' ? all.filter((v) => ['failed', 'publish_failed'].includes(v.status)) : state.filter === 'all' ? all : all.filter((v) => v.status === state.filter);
   $('#video-count').textContent = `${matches.length} VIDEO`;
   $('#library-list').innerHTML = matches.length ? matches.map((video) => videoCard(video)).join('') : `<div class="empty-state"><strong>Chưa có video trong mục này</strong>${state.filter === 'all' ? 'Tạo video đầu tiên từ bảng Tổng quan.' : 'Video sẽ xuất hiện tại đây sau khi trạng thái thay đổi.'}</div>`;
-  $$('.library-row [data-script-id],.library-row [data-schedule-id],.library-row [data-publish-id],.library-row [data-delete-video-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
+  $$('.library-row [data-script-id],.library-row [data-retry-video-id],.library-row [data-schedule-id],.library-row [data-publish-id],.library-row [data-delete-video-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
 }
 
 function renderSchedules() {
@@ -292,9 +293,21 @@ function markSettingsDirty(event) {
   state.settingsRevision += 1;
 }
 
+function syncBackgroundEffectPreview() {
+  const frame = $('#background-effect-preview-frame');
+  const effectId = $('#background-effect').value;
+  if (!frame?.contentWindow || !effectId) return;
+  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId }, location.origin);
+}
+
 async function loadSettings() {
-  const [settings, system] = await Promise.all([api('/api/settings'), api('/api/system')]);
+  const [settings, system, backgroundEffects] = await Promise.all([api('/api/settings'), api('/api/system'), api('/api/background-effects')]);
   state.settings = settings; state.system = system;
+  const backgroundEffectSelect = $('#background-effect');
+  if (Array.isArray(backgroundEffects) && backgroundEffectSelect.dataset.catalogLoaded !== 'true') {
+    backgroundEffectSelect.innerHTML = backgroundEffects.map((effect) => `<option value="${escapeHtml(effect.id)}">${escapeHtml(effect.label)} · ${escapeHtml(effect.description)}</option>`).join('');
+    backgroundEffectSelect.dataset.catalogLoaded = 'true';
+  }
   // The eight-second live refresh also calls this function. Keep in-progress
   // edits in the DOM until the user saves them; the server response is only a
   // baseline and must not overwrite a selection or text field mid-edit.
@@ -344,6 +357,8 @@ async function loadSettings() {
   $('#highlight-enabled').checked = settings.highlightEnabled !== false;
   $('#highlight-mode').value = settings.highlightMode || 'word';
   $('#highlight-color').value = settings.highlightColor || '#FF8066';
+  $('#background-effect').value = settings.backgroundEffect || 'bubbles';
+  syncBackgroundEffectPreview();
   $('#highlight-padding').value = settings.highlightPadding ?? 6;
   $('#highlight-radius').value = settings.highlightRadius ?? 8;
   $('#highlight-transition').value = 'instant';
@@ -463,6 +478,18 @@ function watchJob(jobId) {
 
 async function handleVideoAction(event) {
   const button = event.currentTarget;
+  if (button.dataset.retryVideoId) {
+    button.disabled = true;
+    try {
+      const result = await api(`/api/videos/${encodeURIComponent(button.dataset.retryVideoId)}/retry`, { method: 'POST' });
+      toast('Đã xếp tạo lại video', false, 'Đang dùng kịch bản đã lưu.');
+      watchJob(result.jobId);
+      await loadVideos();
+    } catch (error) {
+      toast('Không xếp lại được video', true, error.message);
+    } finally { button.disabled = false; }
+    return;
+  }
   if (button.dataset.deleteVideoId) {
     const video = state.videos.find((item) => item.id === button.dataset.deleteVideoId);
     if (!video) return;
@@ -521,6 +548,7 @@ async function saveSettings() {
     highlightEnabled: $('#highlight-enabled').checked,
     highlightMode: $('#highlight-mode').value,
     highlightColor: $('#highlight-color').value,
+    backgroundEffect: $('#background-effect').value,
     highlightPadding: Number($('#highlight-padding').value),
     highlightRadius: Number($('#highlight-radius').value),
     highlightTransition: $('#highlight-transition').value,
@@ -711,6 +739,19 @@ function setupEvents() {
   $('#highlight-padding').addEventListener('input', updateHighlightPreviewStyle);
   $('#highlight-radius').addEventListener('input', updateHighlightPreviewStyle);
   $('#highlight-transition').addEventListener('change', updateHighlightPreviewStyle);
+  $('#background-effect').addEventListener('change', syncBackgroundEffectPreview);
+  const backgroundEffectPreview = $('#background-effect-preview-frame');
+  backgroundEffectPreview.addEventListener('load', syncBackgroundEffectPreview);
+  window.addEventListener('message', (event) => {
+    if (event.origin !== location.origin || event.source !== backgroundEffectPreview.contentWindow) return;
+    if (event.data?.type !== 'background-effect-preview:select-effect') return;
+    const select = $('#background-effect');
+    if (![...select.options].some((option) => option.value === event.data.effectId)) return;
+    if (select.value === event.data.effectId) return;
+    select.value = event.data.effectId;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  syncBackgroundEffectPreview();
   $('#highlight-preview-language').addEventListener('change', (event) => {
     const input = $('#highlight-preview-source');
     const oldSample = HIGHLIGHT_PREVIEW_TEXT[event.target.value === 'vi' ? 'en' : 'vi'];

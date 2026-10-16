@@ -162,6 +162,15 @@
                 <div class="tool-checks" id="tool-checks"></div>
               </article>
 
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng nền video</h2><p class="panel-caption">Chọn một hiệu ứng chuyển động nhẹ cho nền của video mới.</p></div></div></div>
+                <label>Hiệu ứng<select id="background-effect"><option value="bubbles">Đang tải danh sách hiệu ứng…</option></select></label>
+                <p class="panel-caption background-effect-note">Hiệu ứng được giữ ổn định theo từng video khi render lại. Thay đổi chỉ áp dụng cho video tạo sau khi lưu.</p>
+              </article>
+
+              <section class="background-effect-preview span-two" aria-label="Xem thử và chỉnh hiệu ứng nền">
+                <iframe id="background-effect-preview-frame" src="/bubble-effect-preview.html" title="Xem thử hiệu ứng nền video" loading="lazy"></iframe>
+              </section>
+
               <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Edge dùng WordBoundary; Local AI dùng căn chỉnh audio cục bộ khi cần.</p></div></div></div>
                 <div class="highlight-settings-grid">
                   <label class="switch-row highlight-enable"><input type="checkbox" id="highlight-enabled" checked /><span class="switch"></span><span><strong>Bật highlight đồng bộ</strong><small>Áp dụng tự động cho video mới.</small></span></label>

@@ -96,6 +96,7 @@ export const DEFAULTS = Object.freeze({
   highlightPadding: 6,
   highlightRadius: 8,
   highlightTransition: 'instant',
+  backgroundEffect: 'bubbles',
   level: 'A2-B1',
   postTime: '19:30',
   postsPerDay: 3,

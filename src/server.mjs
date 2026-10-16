@@ -19,6 +19,7 @@ import { KOKORO_VOICES, kokoroModelStatus, synthesizeKokoroPreview } from './tts
 import { getLocalTtsManagerStatus, withLocalTtsModel } from './tts/local-model-manager.mjs';
 import { buildHighlightIntervals, mapWordBoundariesToTokens, normalizeLanguage, prepareSpeechText } from '../packages/audio-highlight/highlight-engine.mjs';
 import { BRANDING_DIR, buildSceneSvg, rasterizeScene, readVisualTemplate, saveVisualTemplate, getDesignPrompts } from '../packages/video-engine/visual-template-engine.mjs';
+import { BACKGROUND_EFFECTS } from '../packages/video-engine/background-effects.mjs';
 import { deleteAsset, listAssets, resetBrandAssets, saveUploadedAsset, setDefaultAsset } from '../packages/video-engine/asset-manager.mjs';
 
 const mimeTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff2': 'font/woff2' };
@@ -245,15 +246,16 @@ async function handleApi(req, res, url) {
     const state = url.searchParams.get('state') || 'vietnamese';
     const index = Math.max(0, Math.min(2, Number(url.searchParams.get('index') || 0)));
     const script = latestPreviewScript(url.searchParams.get('scriptId') || '') || undefined;
-    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false })));
-    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index }));
+    const backgroundEffect = getSettings().backgroundEffect;
+    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false, backgroundEffect, effectSeed: script?.id || state })));
+    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index, backgroundEffect, effectSeed: script?.id || state }));
   }
   if (route === 'POST /api/visual-template/render-test') {
     const body = await readJson(req, 100_000);
     const id = crypto.randomUUID();
     const imagePath = path.join(PATHS.temporary, 'visual-previews', `${id}.png`);
     const videoPath = path.join(PATHS.temporary, 'visual-previews', `${id}.mp4`);
-    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath });
+    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath, backgroundEffect: getSettings().backgroundEffect, effectSeed: id });
     const jobId = queueJob('render_preview', { previewId: id, imagePath, videoPath, seconds: 5 });
     log('INFO', 'PREVIEW_RENDER_QUEUED', `Đã xếp render thử scene ${body.state || 'bilingual'}.`, jobId);
     return json(res, 202, { id, jobId, status: 'pending', url: `/api/visual-template/test-video/${id}` });
@@ -302,6 +304,7 @@ async function handleApi(req, res, url) {
   if (route === 'GET /api/health') return json(res, 200, { ok: true, database: true, app: 'Auto English Reels Studio' });
   if (route === 'GET /api/system') return json(res, 200, await systemStatus());
   if (route === 'GET /api/overview') return json(res, 200, { ...getOverview(), system: await systemStatus(), providers: providerStatus(), settings: publicSettings(), schedules: listSchedules().slice(0, 8) });
+  if (route === 'GET /api/background-effects') return json(res, 200, BACKGROUND_EFFECTS);
   if (route === 'GET /api/settings') return json(res, 200, publicSettings());
   if (route === 'POST /api/settings') {
     const body = await readJson(req);
@@ -329,6 +332,7 @@ async function handleApi(req, res, url) {
     if (!Number.isInteger(Number(next.highlightPadding)) || Number(next.highlightPadding) < 0 || Number(next.highlightPadding) > 24) return json(res, 400, { error: 'Padding highlight phải từ 0 đến 24 px.' });
     if (!Number.isInteger(Number(next.highlightRadius)) || Number(next.highlightRadius) < 0 || Number(next.highlightRadius) > 32) return json(res, 400, { error: 'Bo góc highlight phải từ 0 đến 32 px.' });
     if (body.highlightTransition !== undefined && body.highlightTransition !== 'instant') return json(res, 400, { error: 'Highlight chuyển tức thời để khớp thời điểm đọc.' });
+    if (!BACKGROUND_EFFECTS.some((effect) => effect.id === String(next.backgroundEffect))) return json(res, 400, { error: 'Hiệu ứng nền không nằm trong danh sách hỗ trợ.' });
     if (!['mock', 'meta'].includes(next.facebookAdapter)) return json(res, 400, { error: 'Facebook adapter phải là Mock hoặc Meta Graph API.' });
     if (body.autoGenerationEnabled === true && !chatgptStatus().connected) return json(res, 409, { error: 'Hãy kết nối ChatGPT Plan trước khi bật tự tạo.' });
     const patch = { ...body };
@@ -575,6 +579,34 @@ async function handleApi(req, res, url) {
     if (!fs.existsSync(filePath)) return json(res, 404, { error: 'Không tìm thấy bản thử giọng.' });
     res.writeHead(200, { 'content-type': filePath.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg', 'content-length': fs.statSync(filePath).size, 'cache-control': 'no-store' });
     fs.createReadStream(filePath).pipe(res); return;
+  }
+  const videoRetryMatch = url.pathname.match(/^\/api\/videos\/([\w-]+)\/retry$/);
+  if (req.method === 'POST' && videoRetryMatch) {
+    const video = db.prepare('SELECT id,script_id,status FROM videos WHERE id=?').get(videoRetryMatch[1]);
+    if (!video) return json(res, 404, { error: 'Không tìm thấy video cần tạo lại.' });
+    if (video.status !== 'failed') return json(res, 409, { error: 'Chỉ có thể tạo lại video đang ở trạng thái lỗi.' });
+
+    const relatedJobs = db.prepare("SELECT id,status,payload_json FROM jobs WHERE type='create_video' ORDER BY created_at DESC").all()
+      .map((job) => {
+        try { return { ...job, payload: JSON.parse(job.payload_json) }; }
+        catch { return { ...job, payload: {} }; }
+      })
+      .filter((job) => job.payload.videoId === video.id || job.payload.scriptId === video.script_id);
+    const activeJob = relatedJobs.find((job) => ['pending', 'running'].includes(job.status));
+    if (activeJob) return json(res, 409, { error: 'Video này đã có job đang chờ hoặc đang chạy.' });
+
+    const failedJob = relatedJobs.find((job) => job.status === 'failed');
+    let jobId;
+    if (failedJob) {
+      const stamp = new Date().toISOString();
+      db.prepare("UPDATE jobs SET status='pending',attempts=0,last_error=NULL,scheduled_at=?,locked_by=NULL,updated_at=? WHERE id=? AND status='failed'")
+        .run(stamp, stamp, failedJob.id);
+      jobId = failedJob.id;
+    } else {
+      jobId = queueJob('create_video', { scriptId: video.script_id, videoId: video.id });
+    }
+    log('INFO', 'VIDEO_RETRY_QUEUED', `Đã xếp tạo lại video ${video.id} từ kịch bản đã lưu.`, jobId);
+    return json(res, 202, { jobId, status: 'pending' });
   }
   const retryMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/retry$/);
   if (req.method === 'POST' && retryMatch) {

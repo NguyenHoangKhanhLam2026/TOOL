@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f6f0e5">
+  <title>Preview hiệu ứng bong bóng nền</title>
+  <style>
+    :root{font-family:"Be Vietnam Pro","Segoe UI",sans-serif;color:#17395d;background:#f5f1e8;font-synthesis:none;font-weight:400}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 12% 8%,#fffdf7 0,transparent 36%),#f5f1e8}
+    .page{width:min(1120px,calc(100% - 40px));margin:0 auto;padding:30px 0 38px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:24px}
+    .eyebrow{font-size:10px;letter-spacing:.15em;text-transform:uppercase;font-weight:700;color:#b17a5d}
+    h1{font-size:clamp(21px,3vw,30px);letter-spacing:-.04em;margin:6px 0 0;font-weight:700}
+    .badge{border:1px solid #e5d7c5;background:#fffaf2;color:#806a55;border-radius:999px;padding:8px 12px;font-size:11px;white-space:nowrap}
+    .layout{display:grid;grid-template-columns:minmax(290px,420px) minmax(300px,1fr);gap:36px;align-items:center;justify-content:center}
+    .preview-column{display:grid;justify-items:center;gap:12px}
+    .reel{position:relative;width:min(100%,360px);aspect-ratio:9/16;overflow:hidden;border-radius:22px;background:#f6f0e5;box-shadow:0 28px 70px #32424a29,0 4px 14px #32424a16;isolation:isolate}
+    .scene-bg{position:absolute;inset:0;background:url('/assets/branding/background-main.png') center/cover no-repeat;z-index:-2}
+    .scene-tint{position:absolute;inset:0;background:linear-gradient(180deg,#fffaf03c 0%,#fff5e400 42%,#e9dac11e 100%);z-index:-1}
+    #bubbles{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    .brandline{position:absolute;top:8%;left:8%;right:8%;display:flex;align-items:center;gap:9px;color:#17395d}
+    .brandmark{width:30px;height:30px;border:1.5px solid #17395d;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;background:#fff9e999}
+    .brandcopy{font-size:9px;font-weight:700;line-height:1.3;letter-spacing:.015em}
+    .brandcopy small{display:block;font-size:7px;opacity:.65;font-weight:500;margin-top:2px}
+    .lesson{position:absolute;top:32%;left:8%;right:8%;text-align:center}
+    .kicker{display:inline-flex;align-items:center;gap:6px;border:1px solid #d9c5a8;background:#fffaf0d9;color:#9a684c;padding:5px 10px;border-radius:30px;font-size:8px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+    .lesson h2{margin:15px 0 7px;color:#17395d;font-size:clamp(26px,7vw,38px);line-height:1.08;letter-spacing:-.045em;font-weight:700;text-shadow:0 1px 0 #fff9}
+    .pronunciation{font-size:11px;color:#927962;font-style:italic}
+    .definition{margin:22px auto 0;max-width:235px;padding:12px 15px;background:#fffcf5d9;border:1px solid #e7ddcd;border-radius:14px;box-shadow:0 7px 18px #6e58320c;color:#344b61;font-size:11px;line-height:1.65}
+    .definition strong{color:#17395d}
+    .example{margin-top:10px;color:#5f6e76;font-size:9px;line-height:1.6;font-style:italic}
+    .caption{position:absolute;bottom:10%;left:9%;right:9%;text-align:center;color:#17395d;font-size:11px;line-height:1.7;font-weight:600;text-shadow:0 1px 2px #fff8}
+    .caption span{background:#fff9edc9;border-radius:7px;padding:3px 8px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+    .social{position:absolute;bottom:4%;left:8%;right:8%;display:flex;justify-content:space-between;align-items:center;color:#526176;font-size:7px;font-weight:600}
+    .sound{display:flex;align-items:center;gap:5px}.sound i{display:block;height:9px;width:2px;border-radius:3px;background:#d98b65;box-shadow:4px 2px 0 #d98b65,8px -1px 0 #d98b65}
+    .preview-caption{font-size:10px;color:#8f8778}
+    .selected-effect{margin:-12px 0 18px!important;padding:9px 11px;border-radius:9px;background:#f7f3e9;color:#8d6d54!important;font-size:10px!important}
+    .panel{background:#fffdf8;border:1px solid #ece4d7;border-radius:20px;padding:25px;box-shadow:0 12px 35px #3442550b}
+    .panel h2{font-size:16px;margin:0 0 6px;letter-spacing:-.02em}
+    .panel>p{font-size:11px;color:#838477;line-height:1.65;margin:0 0 22px}
+    .preset-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 19px}
+    .preset{display:grid;grid-template-columns:32px 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;text-align:left;padding:9px;border:1px solid #ebe5da;border-radius:11px;color:#556477;background:#fffefa;transition:.16s}
+    .preset:hover{border-color:#d9c5a8;background:#fffcf5}.preset[aria-pressed=true]{border-color:#d98b65;background:#fff8ef;box-shadow:0 0 0 2px #d98b6518}
+    .preset-icon{grid-row:1/3;width:31px;height:31px;border-radius:9px;display:grid;place-items:center;color:#b77a57;background:#f4eadb;font-size:18px}
+    .preset[data-effect=sparkles] .preset-icon{color:#9f8957;background:#f5f0db}.preset[data-effect=letters] .preset-icon{color:#486d8a;background:#eaf0f2;font-family:Georgia,serif;font-weight:700}.preset[data-effect=waves] .preset-icon{color:#66898e;background:#e8f0ee}
+    .preset strong{font-size:10px;color:#34495f}.preset small{font-size:8px;color:#929184;margin-top:2px}
+    .control{margin:18px 0 21px}
+    .control-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:11px;font-weight:600}
+    .control-head output{color:#a16f53;font-variant-numeric:tabular-nums;font-size:11px}
+    input[type=range]{width:100%;height:5px;margin:13px 0 5px;accent-color:#d98b65;cursor:pointer}
+    .range-note{display:flex;justify-content:space-between;color:#aaa394;font-size:9px}
+    .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0 17px;border-top:1px solid #f0ebe2;border-bottom:1px solid #f0ebe2;font-size:11px;font-weight:600}
+    .switch{appearance:none;width:36px;height:21px;border-radius:99px;background:#d4d2ca;position:relative;margin:0;cursor:pointer;transition:.2s}
+    .switch:before{content:"";position:absolute;left:3px;top:3px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:.2s}
+    .switch:checked{background:#17395d}.switch:checked:before{left:18px}
+    button{font:inherit;cursor:pointer}
+    .reroll{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;margin-top:20px;padding:12px 16px;border:0;border-radius:11px;background:#17395d;color:#fffaf1;font-size:11px;font-weight:600;box-shadow:0 5px 12px #17395d20;transition:transform .16s,background .16s}
+    .reroll:hover{background:#214b76;transform:translateY(-1px)}.reroll svg{width:14px;height:14px}
+    .seed-note{margin:13px 0 0!important;padding-top:12px;border-top:1px solid #f0ebe2;color:#999284!important;font-size:9px!important}
+    .key{display:inline-grid;place-items:center;border:1px solid #ddd5c8;border-radius:4px;padding:1px 5px;font:9px monospace;color:#787365;background:#f8f5ee}
+    @media(max-width:760px){.page{width:min(100% - 26px,470px);padding-top:19px}.layout{grid-template-columns:1fr;gap:20px}.reel{width:min(78vw,340px)}.panel{padding:20px}header{align-items:flex-start}.badge{font-size:9px;padding:7px 9px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div><div class="eyebrow">Bản xem thử hiệu ứng</div><h1>Bong bóng nổi trên nền</h1></div>
+      <div class="badge">Preview · chưa áp dụng vào video</div>
+    </header>
+    <section class="layout" aria-label="Preview và điều khiển hiệu ứng">
+      <div class="preview-column">
+        <div class="reel" id="reel">
+          <div class="scene-bg"></div><div class="scene-tint"></div><canvas id="bubbles" aria-hidden="true"></canvas>
+          <div class="brandline"><div class="brandmark">A</div><div class="brandcopy">SINH RA ĐỂ NÓI TIẾNG ANH<small>Mỗi ngày 3 câu · tự tin giao tiếp</small></div></div>
+          <div class="lesson"><div class="kicker">Từ vựng hôm nay</div><h2>make<br>a splash</h2><div class="pronunciation">/meɪk ə splæʃ/</div><div class="definition"><strong>gây ấn tượng mạnh</strong><br>được chú ý vì làm điều gì đó nổi bật</div><div class="example">“Her first video made a splash online.”</div></div>
+          <div class="caption"><span>Her first video <b>made a splash</b> online.<br>Video đầu tiên của cô ấy gây tiếng vang trên mạng.</span></div>
+          <div class="social"><span>◉ &nbsp;English every day</span><span class="sound"><i></i> LISTEN &amp; LEARN</span></div>
+        </div>
+        <div class="preview-caption">Khung dọc 9:16 · bong bóng trôi chậm, không che phần chữ chính</div>
+      </div>
+      <aside class="panel">
+        <h2>Chọn hiệu ứng nền</h2>
+        <p>Bấm từng kiểu để xem chuyển động trên cùng một khung video.</p>
+        <p class="selected-effect" id="selected-effect" aria-live="polite">Đang xem: Bong bóng trong</p>
+        <div class="preset-list" role="group" aria-label="Các hiệu ứng nền">
+          <button class="preset" data-effect="bubbles" aria-pressed="true"><span class="preset-icon">◌</span><strong>Bong bóng</strong><small>Trong, nổi chậm</small></button>
+          <button class="preset" data-effect="sparkles" aria-pressed="false"><span class="preset-icon">✦</span><strong>Hạt sáng</strong><small>Lấp lánh nhẹ</small></button>
+          <button class="preset" data-effect="vocabulary" aria-pressed="false"><span class="preset-icon">Aa</span><strong>Chữ bay</strong><small>Từ vựng mờ</small></button>
+          <button class="preset" data-effect="waves" aria-pressed="false"><span class="preset-icon">〰</span><strong>Sóng mềm</strong><small>Gợn ở viền nền</small></button>
+        </div>
+        <div class="control"><div class="control-head"><label for="density">Mật độ</label><output id="densityOut">28 bong bóng</output></div><input id="density" type="range" min="10" max="60" value="28"><div class="range-note"><span>Thoáng</span><span>Dày hơn</span></div></div>
+        <div class="control"><div class="control-head"><label for="speed">Tốc độ trôi</label><output id="speedOut">Chậm</output></div><input id="speed" type="range" min="25" max="140" value="58"><div class="range-note"><span>Chậm</span><span>Nhanh</span></div></div>
+        <div class="control"><div class="control-head"><label for="opacity">Độ rõ</label><output id="opacityOut">32%</output></div><input id="opacity" type="range" min="10" max="70" value="32"><div class="range-note"><span>Rất nhẹ</span><span>Nổi bật</span></div></div>
+        <div class="toggle-row"><label for="warm">Pha ánh vàng và xanh</label><input class="switch" id="warm" type="checkbox" checked></div>
+        <button class="reroll" id="reroll" type="button"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M16.3 7A6.8 6.8 0 0 0 4 5.2L2.5 7M2.5 7V3.8M2.5 7h3.2M3.7 13a6.8 6.8 0 0 0 12.3 1.8l1.5-1.8m0 0v3.2m0-3.2h-3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Làm mới bố cục</button>
+        <p class="seed-note">Có thể chọn ngẫu nhiên bố cục một lần cho mỗi video, rồi giữ ổn định khi render lại để hiệu ứng không nhảy vị trí.</p>
+      </aside>
+    </section>
+  </main>
+  <script>
+    const canvas = document.querySelector('#bubbles');
+    const ctx = canvas.getContext('2d');
+    const reel = document.querySelector('#reel');
+    const density = document.querySelector('#density');
+    const speed = document.querySelector('#speed');
+    const opacity = document.querySelector('#opacity');
+    const warm = document.querySelector('#warm');
+    const densityOut = document.querySelector('#densityOut');
+    const selectedEffect = document.querySelector('#selected-effect');
+    const words = ['hello', 'learn', 'speak', 'dream', 'grow', 'A2', 'you'];
+    const effectLabels = {
+      none: 'Tắt hiệu ứng', bubbles: 'Bong bóng trong', sparkles: 'Hạt sáng',
+      vocabulary: 'Chữ bay', waves: 'Sóng mềm', fireflies: 'Đom đóm',
+      petals: 'Cánh hoa', rain: 'Mưa nhẹ', dust: 'Bụi mịn',
+      aurora: 'Cực quang dịu', rings: 'Gợn vòng'
+    };
+    const validEffects = new Set(Object.keys(effectLabels));
+    let particles = [], w = 0, h = 0, last = 0, seed = Math.random() * 1e9, effect = 'bubbles';
+
+    function random() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+    function resize() {
+      const rect = reel.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+      w = rect.width; h = rect.height;
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); makeParticles();
+    }
+    function makeParticles() {
+      const count = Number(density.value);
+      particles = Array.from({ length: count }, () => {
+        const side = random() < .5 ? -1 : 1;
+        return {
+          x: effect === 'rings' ? (side < 0 ? random() * w * .18 : w * (.82 + random() * .18)) : random() * w,
+          y: random() * h, r: 4 + random() * 15, vy: .12 + random() * .25,
+          vx: (random() - .5) * .12, phase: random() * Math.PI * 2,
+          wobble: .2 + random() * .75, shine: .15 + random() * .4,
+          tint: random(), size: 9 + random() * 12, word: words[Math.floor(random() * words.length)],
+          rot: (random() - .5) * .35, side
+        };
+      });
+    }
+    function drawBubble(b, a, now, dt, mult) {
+      b.y -= b.vy * dt * mult; b.x += Math.sin(now * .00065 + b.phase) * b.wobble * .08 * dt + b.vx * dt;
+      if (b.y < -b.r * 2) { b.y = h + b.r * 1.5; b.x = random() * w; }
+      if (b.x < -b.r) b.x = w + b.r; if (b.x > w + b.r) b.x = -b.r;
+      const g = ctx.createRadialGradient(b.x - b.r * .34, b.y - b.r * .4, b.r * .05, b.x, b.y, b.r);
+      g.addColorStop(0, `rgba(255,255,255,${a * b.shine})`); g.addColorStop(.55, `rgba(255,255,255,${a * .1})`); g.addColorStop(1, `rgba(217,139,101,${a * .035})`);
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+      ctx.lineWidth = Math.max(.7, b.r * .075); ctx.strokeStyle = b.tint > .48 && warm.checked ? `rgba(217,139,101,${a * .85})` : `rgba(255,255,255,${a * .95})`; ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(b.x - b.r * .28, b.y - b.r * .34, b.r * .17, b.r * .09, -.55, 0, Math.PI * 2); ctx.fillStyle = `rgba(255,255,255,${Math.min(.9, a * 1.7)})`; ctx.fill();
+    }
+    function drawSparkle(b, a, now, dt, mult) {
+      b.y -= b.vy * dt * mult; b.x += Math.sin(now * .0008 + b.phase) * b.wobble * .1;
+      if (b.y < -8) { b.y = h + 8; b.x = random() * w; }
+      const blink = .35 + .65 * (.5 + .5 * Math.sin(now * .0025 + b.phase)), radius = 1 + b.r * .2;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.phase + now * .00012); ctx.globalAlpha = a * blink;
+      ctx.fillStyle = b.tint > .5 && warm.checked ? '#d98b65' : '#fffdf4'; ctx.beginPath();
+      ctx.moveTo(0, -radius * 2.1); ctx.quadraticCurveTo(radius * .22, -radius * .22, radius * 1.7, 0); ctx.quadraticCurveTo(radius * .22, radius * .22, 0, radius * 2.1);
+      ctx.quadraticCurveTo(-radius * .22, radius * .22, -radius * 1.7, 0); ctx.quadraticCurveTo(-radius * .22, -radius * .22, 0, -radius * 2.1); ctx.fill(); ctx.restore();
+    }
+    function drawVocabulary(b, a, now, dt, mult) {
+      b.y -= b.vy * dt * mult; b.x += Math.sin(now * .0005 + b.phase) * b.wobble * .12;
+      if (b.y < -25) { b.y = h + 20; b.x = random() * w; b.word = words[Math.floor(random() * words.length)]; }
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot + Math.sin(now * .0005 + b.phase) * .08);
+      ctx.globalAlpha = a * (.38 + .25 * Math.sin(now * .001 + b.phase)); ctx.fillStyle = b.tint > .5 && warm.checked ? '#d98b65' : '#17395d';
+      ctx.font = `${b.size}px Georgia,serif`; ctx.fillText(b.word, 0, 0); ctx.restore();
+    }
+    function drawWaves(a, now, mult) {
+      const sides = [{ x: 0, dir: 1, color: warm.checked ? '217,139,101' : '255,255,255' }, { x: w, dir: -1, color: '23,57,93' }];
+      const laneCount = Math.max(2, Math.round(Number(density.value) / 8));
+      for (const side of sides) for (let lane = 0; lane < laneCount; lane++) {
+        const phase = now * .00038 * mult + lane * 1.27; ctx.beginPath();
+        for (let step = 0; step <= 24; step++) {
+          const y = step / 24 * h, envelope = Math.sin(Math.PI * step / 24), reach = (17 + lane * 8) * envelope;
+          const x = side.x + side.dir * (reach + Math.sin(y * .023 + phase) * 8);
+          if (!step) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = `rgba(${side.color},${a * (.17 + lane * .022)})`; ctx.lineWidth = 1.1 + lane * .2; ctx.stroke();
+      }
+    }
+    function drawFirefly(b, a, now, dt, mult) {
+      b.y -= b.vy * dt * .55 * mult; b.x += Math.sin(now * .00045 + b.phase) * b.wobble * .25;
+      if (b.y < -12) { b.y = h + 12; b.x = random() * w; }
+      const pulse = .35 + .65 * (.5 + .5 * Math.sin(now * .002 + b.phase)), color = b.tint > .5 ? '230,179,108' : '221,231,161';
+      const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 4); glow.addColorStop(0, `rgba(${color},${a * .35 * pulse})`); glow.addColorStop(1, `rgba(${color},0)`);
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(${color},${a * .8 * pulse})`; ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(2, b.r * .35), 0, Math.PI * 2); ctx.fill();
+    }
+    function drawPetal(b, a, now, dt, mult) {
+      b.y += b.vy * dt * .45 * mult; b.x += Math.sin(now * .00045 + b.phase) * b.wobble * .18;
+      if (b.y > h + 25) { b.y = -25; b.x = random() * w; }
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot + now * .00015 * (b.tint > .5 ? 1 : -1)); ctx.globalAlpha = a * .43;
+      ctx.fillStyle = b.tint > .5 && warm.checked ? '#d98b65' : '#f4d6b8'; ctx.beginPath(); ctx.ellipse(0, 0, b.r * .48, b.r * 1.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    }
+    function drawRain(b, a, now, dt, mult) {
+      b.y += b.vy * dt * 2.3 * mult; b.x += b.vx * dt * .3;
+      if (b.y > h + 45) { b.y = -45; b.x = random() * w; }
+      ctx.strokeStyle = `rgba(255,255,255,${a * .4})`; ctx.lineWidth = 1.2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - 4, b.y + 12 + b.r * 1.5); ctx.stroke();
+    }
+    function drawDust(b, a, now, dt, mult) {
+      b.y -= b.vy * dt * .35 * mult; b.x += Math.sin(now * .0003 + b.phase) * b.wobble * .1;
+      if (b.y < -5) { b.y = h + 5; b.x = random() * w; }
+      ctx.fillStyle = b.tint > .5 && warm.checked ? `rgba(217,139,101,${a * .38})` : `rgba(255,255,255,${a * .5})`;
+      ctx.beginPath(); ctx.arc(b.x, b.y, Math.max(1, b.r * .16), 0, Math.PI * 2); ctx.fill();
+    }
+    function drawAurora(a, now) {
+      const shift = Math.sin(now * .00025) * w * .045;
+      ctx.save(); ctx.globalAlpha = a * (.25 + Number(density.value) / 60 * .5);
+      const left = ctx.createLinearGradient(0, 0, w * .42, 0); left.addColorStop(0, warm.checked ? '#d8e9c8' : '#c9e2f0'); left.addColorStop(1, 'rgba(214,233,229,0)');
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.bezierCurveTo(w * .2 + shift, h * .23, w * .04, h * .43, w * .21, h * .62); ctx.bezierCurveTo(w * .12, h * .9, w * .25, h, 0, h); ctx.closePath(); ctx.fillStyle = left; ctx.fill();
+      const right = ctx.createLinearGradient(w, 0, w * .58, 0); right.addColorStop(0, '#d6e8e8'); right.addColorStop(1, 'rgba(214,232,232,0)');
+      ctx.beginPath(); ctx.moveTo(w, 0); ctx.bezierCurveTo(w * .78 - shift, h * .2, w * .98, h * .45, w * .8, h * .65); ctx.bezierCurveTo(w * .91, h * .91, w * .74, h, w, h); ctx.closePath(); ctx.fillStyle = right; ctx.fill(); ctx.restore();
+    }
+    function drawRings(b, a, now, mult) {
+      const phase = (now * .024 * mult + b.phase * 15) % 72, x = b.side < 0 ? w * .1 : w * .9;
+      ctx.strokeStyle = b.tint > .5 && warm.checked ? `rgba(217,139,101,${a * .34 * (1 - phase / 72)})` : `rgba(255,255,255,${a * .42 * (1 - phase / 72)})`;
+      ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, b.y, phase, 0, Math.PI * 2); ctx.stroke();
+    }
+    function updateDensityLabel() {
+      const labels = { bubbles: 'bong bóng', sparkles: 'hạt sáng', vocabulary: 'từ bay', waves: 'dải sóng', fireflies: 'đom đóm', petals: 'cánh hoa', rain: 'vệt mưa', dust: 'hạt bụi', aurora: 'dải sáng', rings: 'gợn vòng' };
+      densityOut.value = effect === 'none' ? 'Nền tĩnh' : `${density.value} ${labels[effect]}`;
+    }
+    function setEffect(next, { notifyParent = false } = {}) {
+      if (!validEffects.has(next)) return;
+      effect = next;
+      document.querySelectorAll('.preset').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.effect === effect)));
+      const densityLabels = { bubbles: 'Mật độ', sparkles: 'Số hạt sáng', vocabulary: 'Số từ bay', waves: 'Mật độ sóng', fireflies: 'Số đom đóm', petals: 'Số cánh hoa', rain: 'Mật độ mưa', dust: 'Mật độ bụi', aurora: 'Độ phủ cực quang', rings: 'Số gợn vòng', none: 'Mật độ' };
+      document.querySelector('label[for="density"]').textContent = densityLabels[effect];
+      selectedEffect.textContent = `Đang xem: ${effectLabels[effect]}`;
+      makeParticles(); updateDensityLabel();
+      if (notifyParent && window.parent !== window) window.parent.postMessage({ type: 'background-effect-preview:select-effect', effectId: effect }, location.origin);
+    }
+    function draw(now = 0) {
+      const dt = Math.min(40, now - last || 16), a = Number(opacity.value) / 100, mult = Number(speed.value) / 58;
+      last = now; ctx.clearRect(0, 0, w, h);
+      if (effect === 'waves') drawWaves(a, now, mult);
+      else if (effect === 'aurora') drawAurora(a, now);
+      for (const b of particles) {
+        if (effect === 'waves' || effect === 'aurora' || effect === 'none') break;
+        if (effect === 'bubbles') drawBubble(b, a, now, dt, mult);
+        else if (effect === 'sparkles') drawSparkle(b, a, now, dt, mult);
+        else if (effect === 'vocabulary') drawVocabulary(b, a, now, dt, mult);
+        else if (effect === 'fireflies') drawFirefly(b, a, now, dt, mult);
+        else if (effect === 'petals') drawPetal(b, a, now, dt, mult);
+        else if (effect === 'rain') drawRain(b, a, now, dt, mult);
+        else if (effect === 'dust') drawDust(b, a, now, dt, mult);
+        else if (effect === 'rings') drawRings(b, a, now, mult);
+      }
+      requestAnimationFrame(draw);
+    }
+    document.querySelectorAll('.preset').forEach((button) => button.addEventListener('click', () => setEffect(button.dataset.effect, { notifyParent: true })));
+    window.addEventListener('message', (event) => {
+      if (event.origin !== location.origin || event.source !== window.parent) return;
+      if (event.data?.type === 'background-effect-preview:set-effect') setEffect(event.data.effectId);
+    });
+    density.addEventListener('input', () => { updateDensityLabel(); makeParticles(); });
+    speed.addEventListener('input', () => { document.querySelector('#speedOut').value = Number(speed.value) < 50 ? 'Rất chậm' : Number(speed.value) < 85 ? 'Chậm' : Number(speed.value) < 115 ? 'Vừa' : 'Nhanh'; });
+    opacity.addEventListener('input', () => { document.querySelector('#opacityOut').value = `${opacity.value}%`; });
+    document.querySelector('#reroll').addEventListener('click', () => { seed = Math.random() * 1e9; makeParticles(); });
+    new ResizeObserver(resize).observe(reel); resize(); updateDensityLabel(); requestAnimationFrame(draw);
+  </script>
+</body>
+</html>

@@ -10,3 +10,5 @@
 .content-history-note{max-width:590px;margin:12px 0 0;color:#768277;font-size:10px;line-height:1.55}
 .schedule-window{display:flex;align-items:center;min-height:36px;padding:0 10px;border:1px solid #e3e5dd;border-radius:8px;background:#f4f3ef;color:#718076;font-size:9px;font-weight:500}.schedule-row.failed{border-color:#efd2cb;background:#fff9f7}.schedule-row.failed .schedule-date,.schedule-row.failed .schedule-time{color:#a75f50}.schedule-copy .schedule-error{margin-top:7px;color:#aa5548;line-height:1.5;overflow-wrap:anywhere}
 .dialog-caption { white-space: pre-line; }
+.background-effect-note{margin:9px 0 0;max-width:760px;line-height:1.55}
+.background-effect-preview{grid-column:1/-1;width:100%;overflow:hidden;border:1px solid #e9e7df;border-radius:16px;background:#f5f1e8;box-shadow:0 8px 24px rgba(46,57,48,.04)}.background-effect-preview iframe{display:block;width:100%;height:820px;border:0}@media(max-width:850px){.background-effect-preview iframe{height:1380px}}

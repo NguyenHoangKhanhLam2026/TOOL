@@ -182,11 +182,21 @@ def main():
     minimum_available_ram_mb = int(request.get("minimumAvailableRamMb", MINIMUM_AVAILABLE_RAM_MB))
     minimum_remaining_ram_mb = int(request.get("minimumRemainingRamMb", MINIMUM_REMAINING_RAM_MB))
     check_model_files(request)
+    # Fail before waiting on the model lock when this machine cannot safely
+    # load VieNeu. This avoids leaving the UI in "waiting-for-model-lock"
+    # while the worker is already certain to fail its post-lock RAM check.
+    available = available_memory_bytes()
+    minimum = minimum_available_ram_mb * 1024 * 1024
+    if available is not None and available < minimum:
+        available_mb = round(available / (1024 * 1024), 1)
+        raise MemoryError(
+            f"VieNeu-TTS chưa được nạp vì RAM trống còn {available_mb} MB; "
+            f"cần tối thiểu {minimum_available_ram_mb} MB. Hãy đóng ứng dụng đang dùng nhiều RAM rồi thử lại."
+        )
     emit_memory("waiting-for-model-lock", segmentCount=len(items))
     with exclusive_model_lock(request["lockPath"]):
         available = available_memory_bytes()
         emit_memory("before-load", minimumAvailableRamMb=minimum_available_ram_mb)
-        minimum = minimum_available_ram_mb * 1024 * 1024
         if available is not None and available < minimum:
             available_mb = round(available / (1024 * 1024), 1)
             raise MemoryError(
