@@ -2,7 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
-const state = { view: 'overview', topics: [], videos: [], schedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0 };
+const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0 };
 let previewAudio = null;
 const EN_US_VOICES = [
   { id: 'en-US-AvaNeural', name: 'Ava', gender: 'Nữ' },
@@ -68,11 +68,13 @@ function setView(view) {
 }
 
 function statusName(status, video = null) {
+  if (status === 'ready' && video?.review_status !== 'approved') return 'Ch\u1edd duy\u1ec7t';
   if (status === 'published' && String(video?.published_id || '').startsWith('mock_reel_')) return 'Đã mô phỏng';
   return ({ script_ready: 'Đang chờ render', processing: 'Đang tạo', ready: 'Sẵn sàng', scheduled: 'Đã lên lịch', publishing: 'Đang đăng', published: 'Đã xuất bản', failed: 'Tạo video lỗi', publish_failed: 'Đăng thất bại' })[status] || status || 'Chưa rõ';
 }
 
-function statusClass(status) {
+function statusClass(status, video = null) {
+  if (status === 'ready' && video?.review_status !== 'approved') return 'warn';
   if (['ready', 'published'].includes(status)) return 'ok';
   if (['scheduled', 'processing', 'script_ready', 'publishing'].includes(status)) return 'warn';
   if (['failed', 'publish_failed'].includes(status)) return 'error';
@@ -94,20 +96,22 @@ function videoProgressMarkup(video) {
 function videoCard(video, compact = false) {
   const thumb = video.thumbnail_path ? `<img src="/api/videos/${encodeURIComponent(video.id)}/thumbnail" alt="Thumbnail ${escapeHtml(video.topic)}" loading="lazy" />` : `<span class="video-placeholder">${escapeHtml(video.topic || 'Video mới')}<small>${video.status === 'processing' ? 'Đang tạo các đoạn đọc và render…' : video.last_error ? escapeHtml(video.last_error) : 'Chưa có bản render'}</small></span>`;
   const cardClass = compact ? 'video-card' : 'library-row';
-  const retryPublish = video.status === 'publish_failed';
+  const facebookScheduling = ['queued', 'uploading', 'finishing', 'scheduled', 'uncertain'].includes(video.facebook_schedule_state);
+  const retryPublish = video.status === 'publish_failed' && !facebookScheduling;
   const retryMayDuplicate = retryPublish && !/\(#200\).*pages_manage_posts permission/i.test(video.last_error || '');
   const actions = [
+    video.status === 'ready' && video.review_status !== 'approved' ? `<button class="mini-action" data-approve-id="${escapeHtml(video.id)}">DUYỆT</button>` : '',
     `<button class="mini-action" data-script-id="${escapeHtml(video.script_id)}">Kịch bản</button>`,
     video.status === 'failed' ? `<button class="mini-action" data-retry-video-id="${escapeHtml(video.id)}">Thử lại</button>` : '',
     video.status === 'ready' ? `<button class="mini-action" data-schedule-id="${escapeHtml(video.id)}">Lên lịch</button>` : '',
-    ['ready', 'scheduled'].includes(video.status) || retryPublish ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}" ${retryPublish ? `data-retry-publish="true" data-retry-may-duplicate="${retryMayDuplicate}"` : ''}>Đăng ngay</button>` : '',
+    (['ready', 'scheduled'].includes(video.status) && !facebookScheduling) || retryPublish ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}" ${retryPublish ? `data-retry-publish="true" data-retry-may-duplicate="${retryMayDuplicate}"` : ''}>Đăng ngay</button>` : '',
     video.video_path ? `<a class="mini-action" href="/api/videos/${encodeURIComponent(video.id)}/file" download>MP4 ↓</a>` : '',
-    !compact ? `<button class="mini-action danger-action" data-delete-video-id="${escapeHtml(video.id)}" ${['processing', 'script_ready', 'publishing'].includes(video.status) ? 'disabled title="Không thể xóa khi video đang được tạo hoặc đăng"' : ''}>Xóa</button>` : ''
+    !compact ? `<button class="mini-action danger-action" data-delete-video-id="${escapeHtml(video.id)}" ${facebookScheduling ? 'disabled title="Hãy hủy lịch trên Facebook trước khi xóa video trong ứng dụng"' : ['processing', 'script_ready', 'publishing'].includes(video.status) ? 'disabled title="Không thể xóa khi video đang được tạo hoặc đăng"' : ''}>Xóa</button>` : ''
   ].filter(Boolean).join('');
   const caption = escapeHtml(video.captionText || video.caption || '');
   const category = video.category || video.provider || 'Video học tiếng Anh';
   if (compact) return `<article class="${cardClass}"><a class="video-thumb" href="${video.video_path ? `/api/videos/${encodeURIComponent(video.id)}/file` : '#'}" ${video.video_path ? 'target="_blank"' : ''}>${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></a><div class="video-info"><h3>${escapeHtml(video.topic || video.title)}</h3><p>${caption}</p><div class="video-meta"><span class="video-category">${escapeHtml(category)}</span><div class="video-actions">${actions}</div></div></div></article>`;
-  return `<article class="${cardClass}"><div class="video-thumb">${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></div><div class="library-main"><h3>${escapeHtml(video.title || video.topic)}</h3><p class="library-caption">${caption}</p><div class="row-meta"><span>${escapeHtml(video.category || 'Chưa phân nhóm')}</span><span>•</span><span>${dateText(video.created_at, { dateStyle: 'medium' })}</span><span>•</span><span>${escapeHtml(video.provider || 'AI')}</span>${video.duration_seconds ? `<span>•</span><span>${Number(video.duration_seconds).toFixed(1)} giây</span>` : ''}</div>${video.last_error && !video.pipeline?.error ? `<p class="inline-status">${escapeHtml(video.last_error)}</p>` : ''}${videoProgressMarkup(video)}</div><span class="state-pill ${statusClass(video.status)}">${escapeHtml(statusName(video.status, video))}</span><div class="row-actions">${actions}</div></article>`;
+  return `<article class="${cardClass}"><div class="video-thumb">${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></div><div class="library-main"><h3>${escapeHtml(video.title || video.topic)}</h3><p class="library-caption">${caption}</p><div class="row-meta"><span>${escapeHtml(video.category || 'Chưa phân nhóm')}</span><span>•</span><span>${dateText(video.created_at, { dateStyle: 'medium' })}</span><span>•</span><span>${escapeHtml(video.provider || 'AI')}</span>${video.duration_seconds ? `<span>•</span><span>${Number(video.duration_seconds).toFixed(1)} giây</span>` : ''}</div>${video.facebook_error ? `<p class="inline-status">${escapeHtml(video.facebook_error)}</p>` : video.last_error && !video.pipeline?.error ? `<p class="inline-status">${escapeHtml(video.last_error)}</p>` : ''}${videoProgressMarkup(video)}</div><span class="state-pill ${statusClass(video.status, video)}">${escapeHtml(statusName(video.status, video))}</span><div class="row-actions">${actions}</div></article>`;
 }
 
 function renderOverview() {
@@ -145,7 +149,7 @@ function renderOverview() {
   state.system = data.system;
   state.settings = data.settings;
   renderToolChecks(data.system.tools);
-  $$('.mini-action,[data-publish-id],[data-schedule-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
+  $$('.mini-action,[data-publish-id],[data-schedule-id],[data-approve-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
 }
 
 function renderToolChecks(tools = {}) {
@@ -173,20 +177,32 @@ function renderLibrary() {
   const matches = state.filter === 'failed' ? all.filter((v) => ['failed', 'publish_failed'].includes(v.status)) : state.filter === 'all' ? all : all.filter((v) => v.status === state.filter);
   $('#video-count').textContent = `${matches.length} VIDEO`;
   $('#library-list').innerHTML = matches.length ? matches.map((video) => videoCard(video)).join('') : `<div class="empty-state"><strong>Chưa có video trong mục này</strong>${state.filter === 'all' ? 'Tạo video đầu tiên từ bảng Tổng quan.' : 'Video sẽ xuất hiện tại đây sau khi trạng thái thay đổi.'}</div>`;
-  $$('.library-row [data-script-id],.library-row [data-retry-video-id],.library-row [data-schedule-id],.library-row [data-publish-id],.library-row [data-delete-video-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
+  $$('.library-row [data-script-id],.library-row [data-retry-video-id],.library-row [data-approve-id],.library-row [data-schedule-id],.library-row [data-publish-id],.library-row [data-delete-video-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
 }
 
 function renderSchedules() {
+  if (!$('#published-list')) {
+    $('#schedule-list').insertAdjacentHTML('afterend', '<div class="section-heading schedule-list-heading"><div><div class="eyebrow">LỊCH SỬ NỘI DUNG</div><h2>Đã đăng thành công</h2></div></div><div class="schedule-list" id="published-list"></div>');
+  }
   const schedules = state.schedules;
   const available = state.videos.filter((v) => v.status === 'ready');
   $('#schedule-video').innerHTML = `<option value="">Chọn video</option>${available.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.topic)}</option>`).join('')}`;
   const visible = schedules.filter((item) => item.status !== 'published');
   $('#schedule-list').innerHTML = visible.length ? visible.map((item) => {
-    const failed = item.status === 'failed';
-    const stateLabel = failed ? 'Đăng thất bại' : item.status === 'publishing' ? 'Đang đăng' : 'Đã lên lịch';
+    const failed = item.status === 'failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state);
+    const stateLabel = item.facebook_schedule_state === 'scheduled' ? 'Đã lên lịch trên Facebook'
+      : item.facebook_schedule_state === 'published' ? 'Đã đăng trên Facebook'
+        : item.facebook_schedule_state === 'uncertain' ? 'Chưa xác minh được lịch Facebook'
+          : item.facebook_schedule_state === 'failed' ? 'Gửi lịch Facebook thất bại'
+            : ['queued', 'uploading', 'finishing'].includes(item.facebook_schedule_state) ? 'Đang gửi lịch lên Facebook'
+              : item.status === 'publishing' ? 'Đang đăng' : 'Đã lên lịch trong ứng dụng';
     const error = failed && item.error ? `<small class="schedule-error">${escapeHtml(item.error)}</small>` : '';
     return `<article class="schedule-row${failed ? ' failed' : ''}"><span class="schedule-date">${dateText(item.scheduled_at, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.topic)}</strong><small>${escapeHtml(item.title)} · ${stateLabel}</small>${error}</div><span class="schedule-time">${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span></article>`;
   }).join('') : `<div class="empty-state"><strong>Chưa có lịch đăng</strong>Bật “Tự đăng theo lịch” trong cài đặt để xếp video sẵn sàng tự động.</div>`;
+  $('#published-list').innerHTML = state.publishedSchedules.length ? state.publishedSchedules.map((item) => {
+    const mode = item.adapter === 'mock' ? ' · Bản chạy thử' : '';
+    return `<article class="schedule-row published-row"><span class="schedule-date">Đã đăng</span><div class="schedule-copy"><strong>${escapeHtml(item.title || item.topic)}</strong><small>${escapeHtml(item.topic)} · Facebook xác nhận ${dateText(item.published_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}${mode}</small><small>Giờ đã xếp: ${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</small><details><summary>Xem nội dung bài đăng</summary><p style="white-space:pre-wrap">${escapeHtml(item.caption || '')}</p></details></div><button class="mini-action danger-action" data-delete-published-id="${escapeHtml(item.id)}">Xóa</button></article>`;
+  }).join('') : `<div class="empty-state"><strong>Chưa có bài đăng thành công</strong>Khi Facebook xác nhận đăng xong, thông tin bài viết và thời gian sẽ được lưu tại đây.</div>`;
 }
 
 function renderLogs() {
@@ -209,6 +225,7 @@ async function loadVideos() {
 async function loadSchedules() {
   const [scheduleData, videoData] = await Promise.all([api('/api/schedules'), api('/api/videos')]);
   state.schedules = scheduleData.schedules;
+  state.publishedSchedules = scheduleData.published || [];
   state.videos = videoData.videos;
   renderSchedules();
 }
@@ -299,7 +316,7 @@ function syncBackgroundEffectPreview() {
   const frame = $('#background-effect-preview-frame');
   const effectId = $('#background-effect').value;
   if (!frame?.contentWindow || !effectId) return;
-  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId, speed: state.backgroundEffectSpeed, opacity: state.backgroundEffectOpacity }, location.origin);
+  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId, density: state.backgroundEffectDensity, speed: state.backgroundEffectSpeed, opacity: state.backgroundEffectOpacity }, location.origin);
 }
 
 async function loadSettings() {
@@ -314,6 +331,7 @@ async function loadSettings() {
   // edits in the DOM until the user saves them; the server response is only a
   // baseline and must not overwrite a selection or text field mid-edit.
   if (state.settingsDirty) return;
+  state.backgroundEffectDensity = Number(settings.backgroundEffectDensity ?? 28);
   state.backgroundEffectSpeed = Number(settings.backgroundEffectSpeed ?? 58);
   state.backgroundEffectOpacity = Number(settings.backgroundEffectOpacity ?? 32);
   $('#tts-provider').value = settings.ttsProvider || 'edge';
@@ -489,6 +507,21 @@ function watchJob(jobId) {
 
 async function handleVideoAction(event) {
   const button = event.currentTarget;
+  if (button.dataset.approveId) {
+    button.disabled = true;
+    try {
+      const result = await api(`/api/videos/${encodeURIComponent(button.dataset.approveId)}/approve`, { method: 'POST' });
+      const scheduleTime = dateText(result.scheduledAt, { dateStyle: 'medium', timeStyle: 'short' });
+      toast('Đã duyệt video và xếp lịch', false, result.facebookScheduleState === 'queued'
+        ? `Facebook đang nhận lịch đăng ${scheduleTime}.`
+        : `Lịch đăng trong ứng dụng: ${scheduleTime}.`);
+      await refreshData();
+    } catch (error) {
+      toast('Không duyệt được video', true, error.message);
+      button.disabled = false;
+    }
+    return;
+  }
   if (button.dataset.retryVideoId) {
     button.disabled = true;
     try {
@@ -564,6 +597,7 @@ async function saveSettings() {
     highlightMode: $('#highlight-mode').value,
     highlightColor: $('#highlight-color').value,
     backgroundEffect: $('#background-effect').value,
+    backgroundEffectDensity: state.backgroundEffectDensity,
     backgroundEffectSpeed: state.backgroundEffectSpeed,
     backgroundEffectOpacity: state.backgroundEffectOpacity,
     highlightPadding: Number($('#highlight-padding').value),
@@ -578,6 +612,11 @@ async function saveSettings() {
     const result = await api('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
     if (result.ttsProvider !== payload.ttsProvider) {
       throw new Error('Server không xác nhận nhà cung cấp giọng đọc đã chọn. App có thể đang chạy phiên bản cũ; hãy khởi động lại app rồi lưu lại.');
+    }
+    if (Number(result.backgroundEffectDensity) !== payload.backgroundEffectDensity
+      || Number(result.backgroundEffectSpeed) !== payload.backgroundEffectSpeed
+      || Number(result.backgroundEffectOpacity) !== payload.backgroundEffectOpacity) {
+      throw new Error('Server chưa xác nhận mật độ, tốc độ trôi hoặc độ rõ hiệu ứng đã lưu. Hãy khởi động lại app rồi lưu lại.');
     }
     state.settings = result;
     const editedWhileSaving = state.settingsRevision !== revisionAtSave;
@@ -722,9 +761,26 @@ async function createSchedule(event) {
   event.preventDefault();
   try {
     const result = await api(`/api/videos/${encodeURIComponent($('#schedule-video').value)}/schedule`, { method: 'POST', body: JSON.stringify({ scheduledAt: $('#schedule-time').value }) });
-    toast('Đã lưu lịch đăng', false, dateText(result.scheduledAt));
+    toast(result.facebookScheduleState === 'queued' ? 'Đã xếp lịch gửi lên Facebook' : 'Đã lưu lịch đăng', false, dateText(result.scheduledAt));
     $('#schedule-form').reset(); await loadSchedules(); await loadOverview();
   } catch (error) { toast('Không lưu được lịch', true, error.message); }
+}
+
+async function deletePublishedSchedule(event) {
+  const button = event.target.closest('[data-delete-published-id]');
+  if (!button) return;
+  const record = state.publishedSchedules.find((item) => item.id === button.dataset.deletePublishedId);
+  if (!record) return;
+  if (!window.confirm(`Xóa thông tin lịch sử của “${record.title || record.topic}”? Bài đã đăng trên Facebook sẽ không bị gỡ.`)) return;
+  button.disabled = true;
+  try {
+    await api(`/api/published-posts/${encodeURIComponent(record.id)}`, { method: 'DELETE' });
+    toast('Đã xóa thông tin lịch sử bài đăng');
+    await loadSchedules();
+  } catch (error) {
+    toast('Không xóa được thông tin lịch sử', true, error.message);
+    button.disabled = false;
+  }
 }
 
 async function refreshData() {
@@ -761,6 +817,14 @@ function setupEvents() {
   backgroundEffectPreview.addEventListener('load', syncBackgroundEffectPreview);
   window.addEventListener('message', (event) => {
     if (event.origin !== location.origin || event.source !== backgroundEffectPreview.contentWindow) return;
+    if (event.data?.type === 'background-effect-preview:change-density') {
+      const density = Number(event.data.density);
+      if (!Number.isInteger(density) || density < 10 || density > 60 || state.backgroundEffectDensity === density) return;
+      state.backgroundEffectDensity = density;
+      state.settingsDirty = true;
+      state.settingsRevision += 1;
+      return;
+    }
     if (event.data?.type === 'background-effect-preview:change-speed') {
       const speed = Number(event.data.speed);
       if (!Number.isInteger(speed) || speed < 25 || speed > 140 || state.backgroundEffectSpeed === speed) return;
@@ -777,12 +841,6 @@ function setupEvents() {
       state.settingsRevision += 1;
       return;
     }
-    if (event.data?.type !== 'background-effect-preview:select-effect') return;
-    const select = $('#background-effect');
-    if (![...select.options].some((option) => option.value === event.data.effectId)) return;
-    if (select.value === event.data.effectId) return;
-    select.value = event.data.effectId;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
   });
   syncBackgroundEffectPreview();
   $('#highlight-preview-language').addEventListener('change', (event) => {
@@ -817,6 +875,7 @@ function setupEvents() {
   });
   $('#add-topic').addEventListener('click', addTopic);
   $('#schedule-form').addEventListener('submit', createSchedule);
+  $('#view-schedule').addEventListener('click', deletePublishedSchedule);
   $('#chatgpt-disconnect').addEventListener('click', async () => { try { const result = await api('/api/chatgpt/disconnect', { method: 'POST', body: '{}' }); toast('Đã xóa thông tin kết nối local', false, result.revocationConfirmed ? 'OpenAI xác nhận thu hồi phiên.' : 'Chưa xác nhận thu hồi phía OpenAI; bạn có thể ngắt ứng dụng trong ChatGPT Settings.'); await loadSettings(); } catch (error) { toast('Không ngắt được kết nối', true, error.message); } });
   $('#clear-facebook').addEventListener('click', async () => { try { await api('/api/facebook/clear-token', { method: 'POST', body: '{}' }); toast('Đã xóa Page Access Token'); await loadSettings(); } catch (error) { toast('Không xóa được token', true, error.message); } });
   $('#facebook-adapter').addEventListener('change', () => {

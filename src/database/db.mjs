@@ -51,7 +51,15 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS scheduled_posts (
     id TEXT PRIMARY KEY, video_id TEXT NOT NULL UNIQUE REFERENCES videos(id),
     scheduled_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'scheduled',
+    facebook_schedule_state TEXT NOT NULL DEFAULT 'local', facebook_video_id TEXT,
+    facebook_upload_session_id TEXT, facebook_upload_offset INTEGER, facebook_upload_end_offset INTEGER,
+    facebook_error TEXT,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS published_schedule_history (
+    id TEXT PRIMARY KEY, video_id TEXT NOT NULL, topic TEXT NOT NULL, title TEXT NOT NULL,
+    caption TEXT NOT NULL, scheduled_at TEXT NOT NULL, published_at TEXT NOT NULL, adapter TEXT NOT NULL DEFAULT 'meta',
+    facebook_id TEXT, url TEXT, created_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS active_publications (
     page_key TEXT PRIMARY KEY, job_id TEXT NOT NULL, video_id TEXT NOT NULL,
@@ -86,6 +94,45 @@ db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(5
 for (const [key, value] of Object.entries(DEFAULTS)) insertSetting.run(key, JSON.stringify(value), now);
 db.prepare('DELETE FROM settings WHERE key IN (?,?)').run('ollamaBaseUrl', 'ollamaModel');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(8,?)').run(now);
+const scheduleColumns = new Set(db.prepare('PRAGMA table_info(scheduled_posts)').all().map((column) => column.name));
+for (const [name, definition] of [
+  ['facebook_schedule_state', "TEXT NOT NULL DEFAULT 'local'"],
+  ['facebook_video_id', 'TEXT'],
+  ['facebook_upload_session_id', 'TEXT'],
+  ['facebook_upload_offset', 'INTEGER'],
+  ['facebook_upload_end_offset', 'INTEGER'],
+  ['facebook_error', 'TEXT']
+]) {
+  if (scheduleColumns.has(name)) continue;
+  try { db.exec(`ALTER TABLE scheduled_posts ADD COLUMN ${name} ${definition}`); }
+  catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
+}
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(9,?)').run(now);
+if (!db.prepare('PRAGMA table_info(videos)').all().some((column) => column.name === 'review_status')) {
+  try { db.exec("ALTER TABLE videos ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'"); }
+  catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
+}
+db.prepare("UPDATE videos SET review_status='approved' WHERE status IN ('scheduled','publishing','published')").run();
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(10,?)').run(now);
+if (!db.prepare('PRAGMA table_info(videos)').all().some((column) => column.name === 'published_files_cleanup_pending')) {
+  try { db.exec('ALTER TABLE videos ADD COLUMN published_files_cleanup_pending INTEGER NOT NULL DEFAULT 0'); }
+  catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
+}
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(11,?)').run(now);
+db.exec('BEGIN IMMEDIATE');
+try {
+  db.prepare(`INSERT OR IGNORE INTO published_schedule_history
+    (id,video_id,topic,title,caption,scheduled_at,published_at,adapter,facebook_id,url,created_at)
+    SELECT p.id,p.video_id,s.topic,s.title,s.caption,p.scheduled_at,COALESCE(v.updated_at,p.updated_at),
+      COALESCE((SELECT h.adapter FROM publish_history h WHERE h.video_id=v.id AND h.status='published' ORDER BY h.created_at DESC LIMIT 1),'meta'),
+      COALESCE(p.facebook_video_id,v.published_id),v.published_url,p.created_at
+    FROM scheduled_posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
+    WHERE v.status='published' AND v.published_id IS NOT NULL`).run();
+  db.prepare(`DELETE FROM scheduled_posts WHERE video_id IN
+    (SELECT id FROM videos WHERE status='published' AND published_id IS NOT NULL)`).run();
+  db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(12,?)').run(now);
+  db.exec('COMMIT');
+} catch (error) { db.exec('ROLLBACK'); throw error; }
 const insertTopic = db.prepare('INSERT OR IGNORE INTO topics(id,category,title,created_at) VALUES(?,?,?,?)');
 for (const topic of TOPICS) insertTopic.run(topic.id, topic.category, topic.title, now);
 
@@ -151,12 +198,20 @@ export function failJob(job, error) {
   const message = String(error?.message || error);
   const processCannotStart = error?.syscall === 'spawn' && ['EPERM', 'EACCES', 'ENOENT'].includes(error?.code);
   const ttsServiceDenied = error?.code === 'EDGE_TTS_FORBIDDEN' || /WSServerHandshakeError:\s*403|403, message=['"]Invalid response status/i.test(message);
-  const retry = !processCannotStart && !ttsServiceDenied && !error?.permanentMetaPermission && job.attempts < job.max_attempts;
+  const retry = !processCannotStart && !ttsServiceDenied && !error?.permanentMetaPermission && !error?.facebookOutcomeUnknown && job.attempts < job.max_attempts;
   const delay = Math.min(60 * 60_000, 10_000 * (2 ** Math.max(0, job.attempts - 1)));
   const status = retry ? 'pending' : 'failed';
   const when = retry ? new Date(Date.now() + delay).toISOString() : new Date().toISOString();
   db.prepare('UPDATE jobs SET status=?,scheduled_at=?,locked_by=NULL,last_error=?,updated_at=? WHERE id=?')
     .run(status, when, message.slice(0, 1000), new Date().toISOString(), job.id);
+  if (job.type === 'schedule_facebook_video' && !retry) {
+    const scheduleId = job.payload?.scheduleId;
+    if (scheduleId) {
+      const facebookScheduleState = error?.facebookOutcomeUnknown ? 'uncertain' : 'failed';
+      db.prepare('UPDATE scheduled_posts SET facebook_schedule_state=?,facebook_error=?,updated_at=? WHERE id=?')
+        .run(facebookScheduleState, message.slice(0, 1000), new Date().toISOString(), scheduleId);
+    }
+  }
   log('ERROR', 'JOB_FAILED', message, job.id);
 }
 
@@ -278,15 +333,56 @@ export function updateVideo(videoId, patch) {
   db.prepare(sql).run(...keys.map((key) => patch[key]), new Date().toISOString(), videoId);
 }
 
+function removeGeneratedVideoFiles(videoId) {
+  const safeId = String(videoId || '');
+  if (!/^[\w-]+$/.test(safeId)) throw new Error('Video ID không hợp lệ khi dọn tệp đã đăng.');
+  let removed = false;
+  for (const root of [PATHS.output, PATHS.temporary]) {
+    const absoluteRoot = path.resolve(root);
+    const target = path.resolve(absoluteRoot, safeId);
+    if (path.dirname(target) !== absoluteRoot || path.basename(target) !== safeId) continue;
+    if (!fs.existsSync(target)) continue;
+    fs.rmSync(target, { recursive: true, force: true });
+    removed = true;
+  }
+  return removed;
+}
+
 export function archivePublishedVideo(videoId) {
+  const video = db.prepare('SELECT status,published_id,archived_at FROM videos WHERE id=?').get(videoId);
+  if (!video || video.status !== 'published' || !video.published_id) return false;
   const stamp = new Date().toISOString();
-  const result = db.prepare("UPDATE videos SET archived_at=?,updated_at=? WHERE id=? AND status='published' AND archived_at IS NULL")
+  const result = db.prepare("UPDATE videos SET archived_at=COALESCE(archived_at,?),published_files_cleanup_pending=1,updated_at=? WHERE id=? AND status='published' AND published_id IS NOT NULL")
     .run(stamp, stamp, videoId);
-  return Number(result.changes) === 1;
+  if (Number(result.changes) !== 1) return false;
+  try {
+    if (removeGeneratedVideoFiles(videoId)) log('INFO', 'PUBLISHED_VIDEO_FILES_DELETED', `Đã xóa tệp video ${videoId} sau khi xác nhận đăng thành công.`);
+    db.prepare('UPDATE videos SET published_files_cleanup_pending=0,updated_at=? WHERE id=?').run(new Date().toISOString(), videoId);
+  } catch (error) {
+    log('WARN', 'PUBLISHED_VIDEO_FILES_DELETE_FAILED', `Đã đăng video ${videoId} nhưng chưa dọn được tệp cục bộ: ${error.message}`);
+  }
+  return !video.archived_at;
+}
+
+export function cleanupArchivedPublishedVideoFiles() {
+  const rows = db.prepare("SELECT id FROM videos WHERE status='published' AND published_id IS NOT NULL AND archived_at IS NOT NULL AND published_files_cleanup_pending=1").all();
+  let removed = 0;
+  for (const { id } of rows) {
+    try {
+      if (removeGeneratedVideoFiles(id)) removed += 1;
+      db.prepare('UPDATE videos SET published_files_cleanup_pending=0,updated_at=? WHERE id=?').run(new Date().toISOString(), id);
+    }
+    catch (error) { log('WARN', 'PUBLISHED_VIDEO_FILES_DELETE_FAILED', `Chưa dọn được tệp video đã đăng ${id}: ${error.message}`); }
+  }
+  return removed;
 }
 
 export function listVideos() {
-  return db.prepare('SELECT v.*,s.topic,s.title,s.caption,s.hashtags_json,s.dialogues_json,s.provider FROM videos v JOIN scripts s ON s.id=v.script_id WHERE v.archived_at IS NULL ORDER BY v.created_at DESC').all()
+  return db.prepare(`SELECT v.*,s.topic,s.title,s.caption,s.hashtags_json,s.dialogues_json,s.provider,
+    p.facebook_schedule_state,p.facebook_video_id,p.facebook_error
+    FROM videos v JOIN scripts s ON s.id=v.script_id
+    LEFT JOIN scheduled_posts p ON p.video_id=v.id
+    WHERE v.archived_at IS NULL ORDER BY v.created_at DESC`).all()
     .map((video) => {
       const hashtags = ensureBrandHashtag(JSON.parse(video.hashtags_json));
       return { ...video, dialogues: JSON.parse(video.dialogues_json), hashtags, captionText: formatCaption(video.caption, hashtags) };
@@ -298,6 +394,10 @@ export function deleteVideo(videoId) {
   try {
     const video = db.prepare('SELECT v.*,s.topic FROM videos v JOIN scripts s ON s.id=v.script_id WHERE v.id=?').get(videoId);
     if (!video) { db.exec('COMMIT'); return null; }
+    const facebookSchedule = db.prepare('SELECT facebook_schedule_state FROM scheduled_posts WHERE video_id=?').get(videoId);
+    if (['queued', 'uploading', 'finishing', 'scheduled', 'uncertain'].includes(facebookSchedule?.facebook_schedule_state)) {
+      throw Object.assign(new Error('Video đã được gửi hoặc đang được lên lịch trên Facebook. Hãy hủy lịch trong Facebook trước khi xóa khỏi ứng dụng.'), { statusCode: 409 });
+    }
     if (['processing', 'script_ready', 'publishing'].includes(video.status)) {
       throw Object.assign(new Error('Không thể xóa video khi đang được tạo hoặc đăng.'), { statusCode: 409 });
     }
@@ -342,8 +442,17 @@ function insertSchedule(videoId, scheduledAt) {
   const id = crypto.randomUUID();
   db.prepare("INSERT INTO scheduled_posts(id,video_id,scheduled_at,status,created_at,updated_at) VALUES(?,?,?,'scheduled',?,?)")
     .run(id, videoId, scheduledAt, stamp, stamp);
-  updateVideo(videoId, { status: 'scheduled', scheduled_at: scheduledAt });
-  return { id, videoId, scheduledAt, status: 'scheduled' };
+  updateVideo(videoId, { status: 'scheduled', scheduled_at: scheduledAt, review_status: 'approved' });
+  return { id, videoId, scheduledAt, status: 'scheduled', facebookScheduleState: 'local' };
+}
+
+function occupiedScheduleTimes(excludeScheduleId = null) {
+  if (excludeScheduleId) {
+    return db.prepare(`SELECT scheduled_at FROM scheduled_posts WHERE id<>?
+      UNION ALL SELECT scheduled_at FROM published_schedule_history`).all(excludeScheduleId);
+  }
+  return db.prepare(`SELECT scheduled_at FROM scheduled_posts
+    UNION ALL SELECT scheduled_at FROM published_schedule_history`).all();
 }
 
 function scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay) {
@@ -352,7 +461,7 @@ function scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay) {
   if (video.archived_at || !['ready', 'scheduled'].includes(video.status)) throw new Error('Video chưa sẵn sàng để lên lịch.');
   if (db.prepare('SELECT 1 FROM scheduled_posts WHERE video_id=? LIMIT 1').get(videoId)) throw new Error('Video này đã có trong lịch đăng.');
   const slot = localScheduleSlot(scheduledAt, timeZone);
-  const sameDay = db.prepare('SELECT scheduled_at FROM scheduled_posts').all()
+  const sameDay = occupiedScheduleTimes()
     .map((row) => localScheduleSlot(row.scheduled_at, timeZone))
     .filter((item) => item.day === slot.day);
   if (sameDay.some((item) => item.minute === slot.minute)) {
@@ -380,7 +489,34 @@ export function createSchedule(videoId, scheduledAt) {
 export function createRandomSchedule(videoId, timeZone = getSettings().timezone, postsPerDay = getSettings().postsPerDay, after = new Date()) {
   db.exec('BEGIN IMMEDIATE');
   try {
-    const schedules = db.prepare('SELECT scheduled_at FROM scheduled_posts').all();
+    const schedules = occupiedScheduleTimes();
+    const scheduledAt = randomNextScheduledTime(after, timeZone, postsPerDay, schedules).toISOString();
+    scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay);
+    const schedule = insertSchedule(videoId, scheduledAt);
+    db.exec('COMMIT');
+    return schedule;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function approveVideoAndCreateRandomSchedule(videoId, timeZone = getSettings().timezone, postsPerDay = getSettings().postsPerDay, after = new Date()) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const video = db.prepare('SELECT id,status,archived_at FROM videos WHERE id=?').get(videoId);
+    if (!video || video.archived_at) throw Object.assign(new Error('Không tìm thấy video cần duyệt.'), { statusCode: 404 });
+    const existing = db.prepare('SELECT id,video_id,scheduled_at,status,facebook_schedule_state FROM scheduled_posts WHERE video_id=?').get(videoId);
+    if (existing) {
+      if (video.status === 'scheduled' && existing.status === 'scheduled') {
+        db.prepare("UPDATE videos SET review_status='approved',updated_at=? WHERE id=?").run(new Date().toISOString(), videoId);
+        db.exec('COMMIT');
+        return { id: existing.id, videoId: existing.video_id, scheduledAt: existing.scheduled_at, status: existing.status, facebookScheduleState: existing.facebook_schedule_state, alreadyScheduled: true };
+      }
+      throw Object.assign(new Error('Video này đã có lịch đăng.'), { statusCode: 409 });
+    }
+    if (video.status !== 'ready') throw Object.assign(new Error('Chỉ có thể duyệt video đã render xong.'), { statusCode: 409 });
+    const schedules = occupiedScheduleTimes();
     const scheduledAt = randomNextScheduledTime(after, timeZone, postsPerDay, schedules).toISOString();
     scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay);
     const schedule = insertSchedule(videoId, scheduledAt);
@@ -393,14 +529,103 @@ export function createRandomSchedule(videoId, timeZone = getSettings().timezone,
 }
 
 export function listSchedules() {
-  return db.prepare(`SELECT p.*,v.status AS video_status,COALESCE(v.last_error,(SELECT h.error FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1)) AS error,s.topic,s.title,s.caption FROM scheduled_posts p
-    JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id ORDER BY p.scheduled_at`).all();
+  return db.prepare(`SELECT p.*,v.status AS video_status,COALESCE(p.facebook_error,v.last_error,(SELECT h.error FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1)) AS error,s.topic,s.title,s.caption FROM scheduled_posts p
+    JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id WHERE p.status<>'published' ORDER BY p.scheduled_at`).all();
+}
+
+export function listPublishedSchedules() {
+  return db.prepare('SELECT * FROM published_schedule_history ORDER BY published_at DESC,created_at DESC').all();
+}
+
+export function deletePublishedSchedule(scheduleId) {
+  const record = db.prepare('SELECT id FROM published_schedule_history WHERE id=?').get(scheduleId);
+  if (!record) return false;
+  db.prepare('DELETE FROM published_schedule_history WHERE id=?').run(scheduleId);
+  return true;
+}
+
+export function completePublishedSchedule(scheduleId, { facebookId = null, url = null, publishedAt = new Date().toISOString(), adapter = 'meta', publishHistoryId = null } = {}) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const schedule = db.prepare(`SELECT p.*,s.topic,s.title,s.caption FROM scheduled_posts p
+      JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id WHERE p.id=?`).get(scheduleId);
+    if (!schedule) { db.exec('COMMIT'); return false; }
+    const finalFacebookId = facebookId || schedule.facebook_video_id;
+    db.prepare(`UPDATE videos SET status='published',published_id=COALESCE(?,published_id),published_url=COALESCE(?,published_url),
+      scheduled_at=?,last_error=NULL,archived_at=CASE WHEN ?='meta' THEN COALESCE(archived_at,?) ELSE archived_at END,
+      published_files_cleanup_pending=CASE WHEN ?='meta' THEN 1 ELSE published_files_cleanup_pending END,updated_at=? WHERE id=?`)
+      .run(finalFacebookId, url, schedule.scheduled_at, adapter, publishedAt, adapter, publishedAt, schedule.video_id);
+    if (publishHistoryId) {
+      db.prepare("UPDATE publish_history SET status='published',facebook_id=COALESCE(?,facebook_id),url=COALESCE(?,url),error=NULL WHERE id=?")
+        .run(finalFacebookId, url, publishHistoryId);
+    } else {
+      const prior = finalFacebookId
+        ? db.prepare("SELECT id FROM publish_history WHERE video_id=? AND status='published' AND facebook_id=? ORDER BY created_at DESC LIMIT 1").get(schedule.video_id, finalFacebookId)
+        : null;
+      if (!prior) {
+        db.prepare('INSERT INTO publish_history(id,video_id,adapter,status,facebook_id,url,created_at) VALUES(?,?,?,\'published\',?,?,?)')
+          .run(crypto.randomUUID(), schedule.video_id, adapter, finalFacebookId, url, publishedAt);
+      }
+    }
+    db.prepare(`INSERT OR IGNORE INTO published_schedule_history
+      (id,video_id,topic,title,caption,scheduled_at,published_at,adapter,facebook_id,url,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(schedule.id, schedule.video_id, schedule.topic, schedule.title, schedule.caption,
+      schedule.scheduled_at, publishedAt, adapter, finalFacebookId, url, schedule.created_at);
+    db.prepare('DELETE FROM scheduled_posts WHERE id=?').run(schedule.id);
+    db.exec('COMMIT');
+    return true;
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+
+export function queueFacebookSchedule(scheduleId) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const schedule = db.prepare("SELECT id,video_id,scheduled_at,facebook_schedule_state,status FROM scheduled_posts WHERE id=?").get(scheduleId);
+    if (!schedule || schedule.status !== 'scheduled' || schedule.facebook_schedule_state !== 'local') {
+      db.exec('COMMIT');
+      return null;
+    }
+    const settings = getSettings();
+    if (new Date(schedule.scheduled_at).getTime() < Date.now() + 15 * 60_000) {
+      const otherSchedules = occupiedScheduleTimes(schedule.id);
+      const revisedAt = randomNextScheduledTime(new Date(), settings.timezone, settings.postsPerDay, otherSchedules).toISOString();
+      db.prepare('UPDATE scheduled_posts SET scheduled_at=?,updated_at=? WHERE id=?').run(revisedAt, new Date().toISOString(), schedule.id);
+      db.prepare('UPDATE videos SET scheduled_at=?,updated_at=? WHERE id=?').run(revisedAt, new Date().toISOString(), schedule.video_id);
+      log('WARN', 'FACEBOOK_SCHEDULE_TIME_ADJUSTED', `Lịch Facebook cũ đã quá sát giờ đăng; hệ thống chuyển lịch ${schedule.id} sang ${revisedAt} để Facebook kịp nhận.`);
+    }
+    const jobId = queueJob('schedule_facebook_video', { scheduleId: schedule.id, videoId: schedule.video_id });
+    db.prepare("UPDATE scheduled_posts SET facebook_schedule_state='queued',facebook_error=NULL,updated_at=? WHERE id=? AND facebook_schedule_state='local'")
+      .run(new Date().toISOString(), schedule.id);
+    db.exec('COMMIT');
+    return { jobId, scheduleId: schedule.id, videoId: schedule.video_id };
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+
+export function queueUnsubmittedFacebookSchedules(limit = 3) {
+  const rows = db.prepare("SELECT id FROM scheduled_posts WHERE status='scheduled' AND facebook_schedule_state='local' ORDER BY scheduled_at LIMIT ?")
+    .all(Math.max(1, Math.min(20, Number(limit) || 3)));
+  return rows.map(({ id }) => queueFacebookSchedule(id)).filter(Boolean);
+}
+
+export function getFacebookSchedule(scheduleId) {
+  return db.prepare('SELECT * FROM scheduled_posts WHERE id=?').get(scheduleId) || null;
+}
+
+export function updateFacebookSchedule(scheduleId, patch) {
+  const allowed = new Set([
+    'facebook_schedule_state', 'facebook_video_id', 'facebook_upload_session_id',
+    'facebook_upload_offset', 'facebook_upload_end_offset', 'facebook_error', 'scheduled_at', 'status'
+  ]);
+  const entries = Object.entries(patch).filter(([key]) => allowed.has(key));
+  if (!entries.length) return;
+  db.prepare(`UPDATE scheduled_posts SET ${entries.map(([key]) => `${key}=?`).join(',')},updated_at=? WHERE id=?`)
+    .run(...entries.map(([, value]) => value), new Date().toISOString(), scheduleId);
 }
 
 export function claimDueSchedule() {
   db.exec('BEGIN IMMEDIATE');
   try {
-    const row = db.prepare("SELECT * FROM scheduled_posts WHERE status='scheduled' AND scheduled_at<=? ORDER BY scheduled_at LIMIT 1").get(new Date().toISOString());
+    const row = db.prepare("SELECT * FROM scheduled_posts WHERE status='scheduled' AND facebook_schedule_state='local' AND scheduled_at<=? ORDER BY scheduled_at LIMIT 1").get(new Date().toISOString());
     if (!row) { db.exec('COMMIT'); return null; }
     const update = db.prepare("UPDATE scheduled_posts SET status='publishing',updated_at=? WHERE id=? AND status='scheduled'")
       .run(new Date().toISOString(), row.id);

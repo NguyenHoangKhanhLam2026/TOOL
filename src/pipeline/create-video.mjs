@@ -1,4 +1,4 @@
-import { insertVideo, updateVideo, log, createRandomSchedule, getSettings, getScript, getVideo, findVideoByScriptId, updateJobPayload } from '../database/db.mjs';
+import { insertVideo, updateVideo, log, getSettings, getScript, getVideo, findVideoByScriptId, updateJobPayload } from '../database/db.mjs';
 import { createScript } from '../ai/script-service.mjs';
 import { formatCaption } from '../ai/hashtag-utils.mjs';
 import { synthesizeScript } from '../tts/edge-tts.mjs';
@@ -70,14 +70,7 @@ export async function createVideoJob(job) {
       log('WARN', 'VIDEO_SIDECAR_WRITE_FAILED', `MP4 đã render xong; không ghi được metadata phụ: ${error.message}`, job.id);
     }
     log('INFO', 'VIDEO_READY', `Video ${result.width}x${result.height}, ${result.fps}, ${result.duration.toFixed(1)} giây.`, job.id);
-    if (job.payload.autoSchedule || settings.autoPublishEnabled) {
-      try {
-        const schedule = createRandomSchedule(videoId, settings.timezone, settings.postsPerDay);
-        log('INFO', 'POST_SCHEDULED', `Đã xếp video vào lịch ${schedule.scheduledAt}.`, job.id);
-      } catch (error) {
-        log('ERROR', 'AUTO_SCHEDULE_FAILED', error.message, job.id);
-      }
-    }
+    log('INFO', 'VIDEO_AWAITING_REVIEW', `Video ${videoId} rendered and awaits approval before scheduling.`, job.id);
     return { videoId, scriptId, provider, ...result };
   } catch (error) {
     const completedVideo = getVideo(videoId);

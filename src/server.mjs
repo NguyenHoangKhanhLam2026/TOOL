@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { ROOT, PORT, HOST, PATHS, PYTHON_BIN, FFMPEG_BIN, FFPROBE_BIN } from './config.mjs';
 import {
   db, getSettings, saveSettings, getOverview, listTopics, listVideos, listJobs,
-  listPublishHistory, listSchedules, queueJob, createSchedule, log, getScript, updateVideo, addTopic, deleteVideo
+  listPublishHistory, listSchedules, listPublishedSchedules, deletePublishedSchedule, queueJob, createSchedule, approveVideoAndCreateRandomSchedule, queueFacebookSchedule, log, getScript, updateVideo, addTopic, deleteVideo
 } from './database/db.mjs';
 import { providerStatus } from './ai/script-service.mjs';
 import { beginChatGPTSignIn, completeChatGPTSignIn, chatgptStatus, disconnectChatGPT } from './ai/chatgpt-plan.mjs';
@@ -114,6 +114,9 @@ setInterval(() => {
 
 function publicSettings() {
   const settings = getSettings();
+  if (!BACKGROUND_EFFECTS.some((effect) => effect.id === String(settings.backgroundEffect || ''))) {
+    settings.backgroundEffect = 'bubbles';
+  }
   return { ...settings, allowPaidAiApi: false, facebookTokenSaved: facebookTokenSaved(), chatgpt: chatgptStatus() };
 }
 
@@ -298,10 +301,11 @@ async function handleApi(req, res, url) {
     const script = latestPreviewScript(url.searchParams.get('scriptId') || '') || undefined;
     const settings = getSettings();
     const backgroundEffect = settings.backgroundEffect;
+    const backgroundEffectDensity = settings.backgroundEffectDensity;
     const backgroundEffectSpeed = settings.backgroundEffectSpeed;
     const backgroundEffectOpacity = settings.backgroundEffectOpacity;
-    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false, backgroundEffect, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state })));
-    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index, backgroundEffect, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state }));
+    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state })));
+    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state }));
   }
   if (route === 'POST /api/visual-template/render-test') {
     const body = await readJson(req, 100_000);
@@ -309,7 +313,7 @@ async function handleApi(req, res, url) {
     const imagePath = path.join(PATHS.temporary, 'visual-previews', `${id}.png`);
     const videoPath = path.join(PATHS.temporary, 'visual-previews', `${id}.mp4`);
     const settings = getSettings();
-    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath, backgroundEffect: settings.backgroundEffect, backgroundEffectSpeed: settings.backgroundEffectSpeed, backgroundEffectOpacity: settings.backgroundEffectOpacity, effectSeed: id });
+    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath, backgroundEffect: settings.backgroundEffect, backgroundEffectDensity: settings.backgroundEffectDensity, backgroundEffectSpeed: settings.backgroundEffectSpeed, backgroundEffectOpacity: settings.backgroundEffectOpacity, effectSeed: id });
     const jobId = queueJob('render_preview', { previewId: id, imagePath, videoPath, seconds: 5 });
     log('INFO', 'PREVIEW_RENDER_QUEUED', `Đã xếp render thử scene ${body.state || 'bilingual'}.`, jobId);
     return json(res, 202, { id, jobId, status: 'pending', url: `/api/visual-template/test-video/${id}` });
@@ -363,6 +367,9 @@ async function handleApi(req, res, url) {
   if (route === 'POST /api/settings') {
     const body = await readJson(req);
     const next = { ...getSettings(), ...body };
+    const migrateRemovedBackgroundEffect = body.backgroundEffect === undefined
+      && !BACKGROUND_EFFECTS.some((effect) => effect.id === String(next.backgroundEffect || ''));
+    if (migrateRemovedBackgroundEffect) next.backgroundEffect = 'bubbles';
     if (body.allowPaidAiApi === true) return json(res, 400, { error: 'Ứng dụng không hỗ trợ API AI trả phí.' });
     if (next.pageId && !/^\d{5,}$/.test(String(next.pageId))) return json(res, 400, { error: 'Facebook Page ID phải gồm ít nhất 5 chữ số.' });
     if (!/^\d{2}:\d{2}$/.test(String(next.postTime)) || Number(next.postTime.slice(0, 2)) > 23 || Number(next.postTime.slice(3)) > 59) return json(res, 400, { error: 'Giờ đăng phải có dạng HH:mm.' });
@@ -387,11 +394,12 @@ async function handleApi(req, res, url) {
     if (!Number.isInteger(Number(next.highlightRadius)) || Number(next.highlightRadius) < 0 || Number(next.highlightRadius) > 32) return json(res, 400, { error: 'Bo góc highlight phải từ 0 đến 32 px.' });
     if (body.highlightTransition !== undefined && body.highlightTransition !== 'instant') return json(res, 400, { error: 'Highlight chuyển tức thời để khớp thời điểm đọc.' });
     if (!BACKGROUND_EFFECTS.some((effect) => effect.id === String(next.backgroundEffect))) return json(res, 400, { error: 'Hiệu ứng nền không nằm trong danh sách hỗ trợ.' });
+    if (!Number.isInteger(Number(next.backgroundEffectDensity)) || Number(next.backgroundEffectDensity) < 10 || Number(next.backgroundEffectDensity) > 60) return json(res, 400, { error: 'Mật độ hiệu ứng phải là số nguyên từ 10 đến 60.' });
     if (!Number.isInteger(Number(next.backgroundEffectSpeed)) || Number(next.backgroundEffectSpeed) < 25 || Number(next.backgroundEffectSpeed) > 140) return json(res, 400, { error: 'Tốc độ trôi phải là số nguyên từ 25 đến 140.' });
     if (!['mock', 'meta'].includes(next.facebookAdapter)) return json(res, 400, { error: 'Facebook adapter phải là Mock hoặc Meta Graph API.' });
     if (body.autoGenerationEnabled === true && !chatgptStatus().connected) return json(res, 409, { error: 'Hãy kết nối ChatGPT Plan trước khi bật tự tạo.' });
     if (!Number.isInteger(Number(next.backgroundEffectOpacity)) || Number(next.backgroundEffectOpacity) < 10 || Number(next.backgroundEffectOpacity) > 70) return json(res, 400, { error: 'Độ rõ hiệu ứng phải là số nguyên từ 10 đến 70.' });
-    const patch = { ...body };
+    const patch = { ...body, ...(migrateRemovedBackgroundEffect ? { backgroundEffect: 'bubbles' } : {}) };
     const currentSettings = getSettings();
     const facebookModeChanged = body.facebookAdapter && body.facebookAdapter !== currentSettings.facebookAdapter;
     if (body.autoPublishEnabled === true && next.facebookAdapter === 'meta' && !facebookModeChanged && !currentSettings.facebookConnectionVerified) return json(res, 409, { error: 'Hãy kiểm tra Page và token thành công trước khi bật đăng live.' });
@@ -428,7 +436,12 @@ async function handleApi(req, res, url) {
     return json(res, 200, { deleted: true, videoId: video.id });
   }
   if (route === 'GET /api/jobs') return json(res, 200, { jobs: listJobs() });
-  if (route === 'GET /api/schedules') return json(res, 200, { schedules: listSchedules() });
+  if (route === 'GET /api/schedules') return json(res, 200, { schedules: listSchedules(), published: listPublishedSchedules() });
+  const publishedScheduleMatch = url.pathname.match(/^\/api\/published-posts\/([\w-]+)$/);
+  if (req.method === 'DELETE' && publishedScheduleMatch) {
+    const deleted = deletePublishedSchedule(publishedScheduleMatch[1]);
+    return deleted ? json(res, 200, { deleted: true, id: publishedScheduleMatch[1] }) : json(res, 404, { error: 'KhÃ´ng tÃ¬m tháº¥y thÃ´ng tin bÃ i Ä‘Ã£ Ä‘Äƒng.' });
+  }
   if (route === 'GET /api/publish-history') return json(res, 200, { history: listPublishHistory() });
   if (route === 'GET /api/logs') return json(res, 200, { logs: db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id DESC LIMIT 100').all() });
   if (route === 'DELETE /api/logs') {
@@ -591,13 +604,36 @@ async function handleApi(req, res, url) {
   const scheduleMatch = url.pathname.match(/^\/api\/videos\/([\w-]+)\/schedule$/);
   if (req.method === 'POST' && scheduleMatch) {
     const body = await readJson(req);
-    const when = zonedLocalToDate(body.scheduledAt, getSettings().timezone);
+    const settings = getSettings();
+    const when = zonedLocalToDate(body.scheduledAt, settings.timezone);
     if (!Number.isFinite(when.getTime()) || when <= new Date()) return json(res, 400, { error: 'Thời điểm đăng phải ở tương lai.' });
+    if (settings.facebookAdapter === 'meta' && settings.autoPublishEnabled && when.getTime() < Date.now() + 15 * 60_000) {
+      return json(res, 400, { error: 'Facebook cần nhận lịch đăng trước ít nhất 15 phút. Hãy chọn giờ muộn hơn.' });
+    }
     try {
       const schedule = createSchedule(scheduleMatch[1], when.toISOString());
+      let facebookScheduleState = 'local';
+      if (settings.facebookAdapter === 'meta' && settings.autoPublishEnabled && settings.facebookConnectionVerified) {
+        const queued = queueFacebookSchedule(schedule.id);
+        if (queued) facebookScheduleState = 'queued';
+      }
       log('INFO', 'POST_SCHEDULED', `Đã lên lịch đăng video vào ${when.toISOString()}.`);
-      return json(res, 201, schedule);
+      return json(res, 201, { ...schedule, facebookScheduleState });
     } catch (error) { return json(res, 400, { error: error.message }); }
+  }
+  const approveMatch = url.pathname.match(/^\/api\/videos\/([\w-]+)\/approve$/);
+  if (req.method === 'POST' && approveMatch) {
+    const settings = getSettings();
+    try {
+      const schedule = approveVideoAndCreateRandomSchedule(approveMatch[1], settings.timezone, settings.postsPerDay);
+      let facebookScheduleState = schedule.facebookScheduleState || 'local';
+      if (settings.facebookAdapter === 'meta' && settings.autoPublishEnabled && settings.facebookConnectionVerified && facebookScheduleState === 'local') {
+        const queued = queueFacebookSchedule(schedule.id);
+        if (queued) facebookScheduleState = 'queued';
+      }
+      log('INFO', 'VIDEO_APPROVED', `Video ${approveMatch[1]} approved and scheduled for ${schedule.scheduledAt}.`);
+      return json(res, 201, { ...schedule, facebookScheduleState });
+    } catch (error) { return json(res, error.statusCode || 400, { error: error.message }); }
   }
   const scriptMatch = url.pathname.match(/^\/api\/scripts\/([\w-]+)$/);
   if (req.method === 'GET' && scriptMatch) {
@@ -610,6 +646,10 @@ async function handleApi(req, res, url) {
     const settings = getSettings();
     if (settings.facebookAdapter === 'meta' && (!body.confirmLive || !settings.facebookConnectionVerified)) return json(res, 409, { error: 'Đăng live cần xác nhận rõ ràng và kiểm tra Page thành công.' });
     const video = db.prepare('SELECT id,status,last_error FROM videos WHERE id=?').get(publishMatch[1]);
+    const facebookSchedule = db.prepare('SELECT facebook_schedule_state FROM scheduled_posts WHERE video_id=?').get(publishMatch[1]);
+    if (['queued', 'uploading', 'finishing', 'scheduled', 'uncertain'].includes(facebookSchedule?.facebook_schedule_state)) {
+      return json(res, 409, { error: 'Video này đã hoặc đang được lên lịch trên Facebook. Hãy kiểm tra Facebook Planner trước khi đăng ngay để tránh tạo bài trùng.' });
+    }
     const retryFailedPublish = video?.status === 'publish_failed';
     const retryablePermissionFailure = video?.status === 'publish_failed' && isDefinitePagePermissionFailure(video.last_error);
     if (!video || (!['ready', 'scheduled'].includes(video.status) && !retryFailedPublish)) return json(res, 409, { error: 'Video chưa sẵn sàng để đăng.' });

@@ -38,6 +38,7 @@ export function localScheduleSlot(value, timeZone = 'Asia/Ho_Chi_Minh') {
 
 const minimumPostGapMinutes = 5 * 60;
 const maximumPostGapMinutes = 8 * 60;
+const minimumFacebookScheduleLeadMinutes = 15;
 
 function shiftLocalDate(dateKey, days) {
   const [year, month, day] = dateKey.split('-').map(Number);
@@ -86,7 +87,13 @@ export function randomNextScheduledTime(after, timeZone = 'Asia/Ho_Chi_Minh', po
     const dayMinutes = Math.floor((end.getTime() - start.getTime()) / 60_000);
     const used = occupied.get(day) || { minutes: new Set(), count: 0 };
     if (used.count >= limit) continue;
-    const earliestMinute = offset === 0 ? Math.max(0, Math.floor((base.getTime() - start.getTime()) / 60_000) + 1) : 0;
+    const earliestMinute = offset === 0
+      ? Math.max(
+        0,
+        Math.floor((base.getTime() - start.getTime()) / 60_000) + 1,
+        Math.ceil((now.getTime() + minimumFacebookScheduleLeadMinutes * 60_000 - start.getTime()) / 60_000)
+      )
+      : 0;
     const available = [];
     for (let minute = earliestMinute; minute < dayMinutes; minute += 1) {
       const candidate = new Date(start.getTime() + minute * 60_000);

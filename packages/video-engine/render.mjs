@@ -6,7 +6,7 @@ import { describeSpawnError } from '../../src/utils/process-errors.mjs';
 import {
   getTemplateAssetVersions, rasterizeScene, readVisualTemplate
 } from './visual-template-engine.mjs';
-import { normalizeBackgroundEffect, normalizeBackgroundEffectSpeed, normalizeBackgroundEffectOpacity, renderBackgroundEffectMarkup } from './background-effects.mjs';
+import { normalizeBackgroundEffect, normalizeBackgroundEffectDensity, normalizeBackgroundEffectSpeed, normalizeBackgroundEffectOpacity, renderBackgroundEffectMarkup } from './background-effects.mjs';
 import {
   DEFAULT_HIGHLIGHT_SETTINGS, buildAudioTimeline, buildHighlightIntervals, normalizeLanguage
 } from '../audio-highlight/highlight-engine.mjs';
@@ -145,6 +145,7 @@ export async function renderVideo(script, videoId, audioFiles, {
   if (!Array.isArray(audioFiles) || audioFiles.length === 0) throw new Error('Kịch bản không có đoạn audio Edge TTS nào để render.');
   const settings = { ...DEFAULT_HIGHLIGHT_SETTINGS, ...highlightSettings, highlightTransition: 'instant' };
   settings.backgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
+  settings.backgroundEffectDensity = normalizeBackgroundEffectDensity(settings.backgroundEffectDensity);
   settings.backgroundEffectSpeed = normalizeBackgroundEffectSpeed(settings.backgroundEffectSpeed);
   settings.backgroundEffectOpacity = normalizeBackgroundEffectOpacity(settings.backgroundEffectOpacity);
   const durations = [];
@@ -429,6 +430,7 @@ export async function renderVideo(script, videoId, audioFiles, {
           height: template.canvas.height,
           time: frameTime,
           seed: videoId,
+          density: settings.backgroundEffectDensity,
           speed: settings.backgroundEffectSpeed,
           opacity: settings.backgroundEffectOpacity
         });
@@ -540,6 +542,7 @@ export async function renderVideo(script, videoId, audioFiles, {
     timeline,
     highlightSettings: settings,
     backgroundEffect: settings.backgroundEffect,
+    backgroundEffectDensity: settings.backgroundEffectDensity,
     backgroundEffectSpeed: settings.backgroundEffectSpeed,
     backgroundEffectOpacity: settings.backgroundEffectOpacity,
     effectiveTiming: { ...timing, vocabularyHold, cta: ctaDuration },

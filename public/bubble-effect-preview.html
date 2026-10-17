@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f6f0e5">
-  <title>Preview hiệu ứng bong bóng nền</title>
+  <title>Xem trước hiệu ứng nền</title>
   <style>
     :root{font-family:"Be Vietnam Pro","Segoe UI",sans-serif;color:#17395d;background:#f5f1e8;font-synthesis:none;font-weight:400}
     *{box-sizing:border-box}
@@ -40,12 +40,6 @@
     .panel{background:#fffdf8;border:1px solid #ece4d7;border-radius:20px;padding:25px;box-shadow:0 12px 35px #3442550b}
     .panel h2{font-size:16px;margin:0 0 6px;letter-spacing:-.02em}
     .panel>p{font-size:11px;color:#838477;line-height:1.65;margin:0 0 22px}
-    .preset-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 19px}
-    .preset{display:grid;grid-template-columns:32px 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;text-align:left;padding:9px;border:1px solid #ebe5da;border-radius:11px;color:#556477;background:#fffefa;transition:.16s}
-    .preset:hover{border-color:#d9c5a8;background:#fffcf5}.preset[aria-pressed=true]{border-color:#d98b65;background:#fff8ef;box-shadow:0 0 0 2px #d98b6518}
-    .preset-icon{grid-row:1/3;width:31px;height:31px;border-radius:9px;display:grid;place-items:center;color:#b77a57;background:#f4eadb;font-size:18px}
-    .preset[data-effect=sparkles] .preset-icon{color:#9f8957;background:#f5f0db}.preset[data-effect=letters] .preset-icon{color:#486d8a;background:#eaf0f2;font-family:Georgia,serif;font-weight:700}.preset[data-effect=waves] .preset-icon{color:#66898e;background:#e8f0ee}
-    .preset strong{font-size:10px;color:#34495f}.preset small{font-size:8px;color:#929184;margin-top:2px}
     .control{margin:18px 0 21px}
     .control-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:11px;font-weight:600}
     .control-head output{color:#a16f53;font-variant-numeric:tabular-nums;font-size:11px}
@@ -67,7 +61,7 @@
 <body>
   <main class="page">
     <header>
-      <div><div class="eyebrow">Bản xem thử hiệu ứng</div><h1>Bong bóng nổi trên nền</h1></div>
+      <div><div class="eyebrow">Bản xem thử hiệu ứng</div><h1>Hiệu ứng nền video</h1></div>
       <div class="badge">Preview · lưu cài đặt để áp dụng tốc độ trôi</div>
     </header>
     <section class="layout" aria-label="Preview và điều khiển hiệu ứng">
@@ -79,18 +73,12 @@
           <div class="caption"><span>Her first video <b>made a splash</b> online.<br>Video đầu tiên của cô ấy gây tiếng vang trên mạng.</span></div>
           <div class="social"><span>◉ &nbsp;English every day</span><span class="sound"><i></i> LISTEN &amp; LEARN</span></div>
         </div>
-        <div class="preview-caption">Khung dọc 9:16 · bong bóng trôi chậm, không che phần chữ chính</div>
+        <div class="preview-caption">Khung dọc 9:16 · xem hiệu ứng đang chọn, không che phần chữ chính</div>
       </div>
       <aside class="panel">
-        <h2>Chọn hiệu ứng nền</h2>
-        <p>Bấm từng kiểu để xem chuyển động trên cùng một khung video.</p>
+        <h2>Tùy chỉnh hiệu ứng</h2>
+        <p>Chọn hiệu ứng trong danh sách bên trên, rồi điều chỉnh chuyển động tại đây.</p>
         <p class="selected-effect" id="selected-effect" aria-live="polite">Đang xem: Bong bóng trong</p>
-        <div class="preset-list" role="group" aria-label="Các hiệu ứng nền">
-          <button class="preset" data-effect="bubbles" aria-pressed="true"><span class="preset-icon">◌</span><strong>Bong bóng</strong><small>Trong, nổi chậm</small></button>
-          <button class="preset" data-effect="sparkles" aria-pressed="false"><span class="preset-icon">✦</span><strong>Hạt sáng</strong><small>Lấp lánh nhẹ</small></button>
-          <button class="preset" data-effect="vocabulary" aria-pressed="false"><span class="preset-icon">Aa</span><strong>Chữ bay</strong><small>Từ vựng mờ</small></button>
-          <button class="preset" data-effect="waves" aria-pressed="false"><span class="preset-icon">〰</span><strong>Sóng mềm</strong><small>Gợn ở viền nền</small></button>
-        </div>
         <div class="control"><div class="control-head"><label for="density">Mật độ</label><output id="densityOut">28 bong bóng</output></div><input id="density" type="range" min="10" max="60" value="28"><div class="range-note"><span>Thoáng</span><span>Dày hơn</span></div></div>
         <div class="control"><div class="control-head"><label for="speed">Tốc độ trôi</label><output id="speedOut">Chậm</output></div><input id="speed" type="range" min="25" max="140" value="58"><div class="range-note"><span>Chậm</span><span>Nhanh</span></div></div>
         <div class="control"><div class="control-head"><label for="opacity">Độ rõ</label><output id="opacityOut">32%</output></div><input id="opacity" type="range" min="10" max="70" value="32"><div class="range-note"><span>Rất nhẹ</span><span>Nổi bật</span></div></div>
@@ -114,7 +102,8 @@
     const effectLabels = {
       none: 'Tắt hiệu ứng', bubbles: 'Bong bóng trong', sparkles: 'Hạt sáng',
       vocabulary: 'Chữ bay', waves: 'Sóng mềm', fireflies: 'Đom đóm',
-      petals: 'Cánh hoa', rain: 'Mưa nhẹ', dust: 'Bụi mịn',
+      petals: 'Cánh hoa', snow: 'Tuyết rơi', meteors: 'Sao băng',
+      hearts: 'Trái tim bay', embers: 'Tàn lửa', clouds: 'Mây trôi', dust: 'Bụi mịn',
       aurora: 'Cực quang dịu', rings: 'Gợn vòng'
     };
     const validEffects = new Set(Object.keys(effectLabels));
@@ -197,11 +186,51 @@
       ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot + now * .00020944 * mult * (b.tint > .5 ? 1 : -1)); ctx.globalAlpha = a * .43;
       ctx.fillStyle = b.tint > .5 && warm.checked ? '#d98b65' : '#f4d6b8'; ctx.beginPath(); ctx.ellipse(0, 0, b.r * .48, b.r * 1.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
-    function drawRain(b, a, now, dt, mult) {
-      b.y += (150 + b.drift * 220) * dt / 1000 * mult;
-      b.x = ((b.baseX + now / 1000 * (28 + b.drift * 20) * mult) % w + w) % w;
-      if (b.y > h + 45) { b.y = -45; b.baseX = random() * w; }
-      ctx.strokeStyle = `rgba(255,255,255,${a * .4})`; ctx.lineWidth = 1.2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - 4, b.y + 12 + b.r * 1.5); ctx.stroke();
+    function drawSnow(b, a, now, dt, mult) {
+      b.y += (12 + b.drift * 24) * dt / 1000 * mult;
+      b.x = b.baseX + Math.sin(now * .00045 * mult + b.phase) * (7 + b.wobble * 14);
+      if (b.y > h + 12) { b.y = -12; b.baseX = random() * w; }
+      const radius = 1.5 + b.r * .22;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.sin(now * .0003 * mult + b.phase) * .3);
+      ctx.globalAlpha = Math.min(1, a * (1.2 + b.shine * .65)); ctx.strokeStyle = '#afcbd7'; ctx.lineWidth = Math.max(1.2, radius * .24); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-radius, 0); ctx.lineTo(radius, 0); ctx.moveTo(0, -radius); ctx.lineTo(0, radius); ctx.moveTo(-radius * .7, -radius * .7); ctx.lineTo(radius * .7, radius * .7); ctx.moveTo(-radius * .7, radius * .7); ctx.lineTo(radius * .7, -radius * .7); ctx.stroke(); ctx.restore();
+    }
+    function drawMeteor(b, a, now, dt, mult) {
+      b.x -= (55 + b.drift * 100) * dt / 1000 * mult;
+      b.y += (28 + b.wobble * 45) * dt / 1000 * mult;
+      if (b.x < -90 || b.y > h + 45) { b.x = w + random() * 100; b.baseX = b.x; b.y = random() * h * .75; }
+      const length = 14 + b.r * 2.3;
+      const color = b.tint > .5 && warm.checked ? '217,139,101' : '100,139,164';
+      const tail = ctx.createLinearGradient(b.x + length, b.y - length * .58, b.x, b.y);
+      tail.addColorStop(0, `rgba(${color},0)`); tail.addColorStop(1, `rgba(${color},${Math.min(1, a * 1.35)})`);
+      ctx.strokeStyle = tail; ctx.lineWidth = 2 + b.shine * 2.5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(b.x + length, b.y - length * .58); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.fillStyle = `rgba(${color},${Math.min(1, a * 1.45)})`; ctx.beginPath(); ctx.arc(b.x, b.y, 1.8 + b.shine * 1.3, 0, Math.PI * 2); ctx.fill();
+    }
+    function drawHeart(b, a, now, dt, mult) {
+      b.y -= (7 + b.drift * 12) * dt / 1000 * mult;
+      b.x = b.baseX + Math.sin(now * .00034 * mult + b.phase) * (9 + b.wobble * 10);
+      if (b.y < -22) { b.y = h + 22; b.baseX = random() * w; }
+      const size = 3 + b.r * .28;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.sin(now * .0004 * mult + b.phase) * .15); ctx.globalAlpha = a * .62;
+      ctx.fillStyle = b.tint > .5 ? '#d98b8b' : '#e7a88c'; ctx.beginPath();
+      ctx.moveTo(0, size * .75); ctx.bezierCurveTo(-size * 1.8, -size * .35, -size * .75, -size * 1.65, 0, -size * .72); ctx.bezierCurveTo(size * .75, -size * 1.65, size * 1.8, -size * .35, 0, size * .75); ctx.fill(); ctx.restore();
+    }
+    function drawEmber(b, a, now, dt, mult) {
+      b.y -= (9 + b.drift * 19) * dt / 1000 * mult;
+      b.x = b.baseX + Math.sin(now * .00048 * mult + b.phase) * (4 + b.wobble * 11);
+      if (b.y < -16) { b.y = h + 16; b.baseX = random() * w; }
+      const pulse = .55 + .45 * Math.sin(now * .002 * mult + b.phase), radius = 1 + b.r * .16;
+      const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, radius * 3.3);
+      glow.addColorStop(0, `rgba(255,210,122,${a * .42 * pulse})`); glow.addColorStop(1, 'rgba(240,138,85,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(b.x, b.y, radius * 3.3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(255,210,122,${a * .82 * pulse})`; ctx.beginPath(); ctx.arc(b.x, b.y, radius, 0, Math.PI * 2); ctx.fill();
+    }
+    function drawCloud(b, a, now, dt, mult) {
+      b.x += (3 + b.drift * 7) * dt / 1000 * mult;
+      if (b.x > w + b.r * 5) { b.x = -b.r * 5; b.y = random() * h; }
+      const size = 5 + b.r * .62, y = b.y + Math.sin(now * .0002 * mult + b.phase) * 3;
+      ctx.save(); ctx.globalAlpha = Math.min(1, a * (.38 + b.shine * .3)); ctx.fillStyle = b.tint > .5 && warm.checked ? '#d7b58f' : '#91b2bf';
+      ctx.beginPath(); ctx.ellipse(b.x, y, size * 1.4, size * .52, 0, 0, Math.PI * 2); ctx.arc(b.x - size * .5, y - size * .12, size * .47, 0, Math.PI * 2); ctx.arc(b.x, y - size * .3, size * .58, 0, Math.PI * 2); ctx.arc(b.x + size * .5, y - size * .06, size * .4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
     function drawDust(b, a, now, dt, mult) {
       b.y -= (3 + b.drift * 10) * dt / 1000 * mult;
@@ -224,21 +253,19 @@
       ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, b.y, phase, 0, Math.PI * 2); ctx.stroke();
     }
     function updateDensityLabel() {
-      const labels = { bubbles: 'bong bóng', sparkles: 'hạt sáng', vocabulary: 'từ bay', waves: 'dải sóng', fireflies: 'đom đóm', petals: 'cánh hoa', rain: 'vệt mưa', dust: 'hạt bụi', aurora: 'dải sáng', rings: 'gợn vòng' };
+      const labels = { bubbles: 'bong bóng', sparkles: 'hạt sáng', vocabulary: 'từ bay', waves: 'dải sóng', fireflies: 'đom đóm', petals: 'cánh hoa', snow: 'bông tuyết', meteors: 'sao băng', hearts: 'trái tim', embers: 'tàn lửa', clouds: 'mây', dust: 'hạt bụi', aurora: 'dải sáng', rings: 'gợn vòng' };
       densityOut.value = effect === 'none' ? 'Nền tĩnh' : `${density.value} ${labels[effect]}`;
     }
     function updateSpeedLabel() {
       document.querySelector('#speedOut').value = Number(speed.value) < 50 ? 'Rất chậm' : Number(speed.value) < 85 ? 'Chậm' : Number(speed.value) < 115 ? 'Vừa' : 'Nhanh';
     }
-    function setEffect(next, { notifyParent = false } = {}) {
+    function setEffect(next) {
       if (!validEffects.has(next)) return;
       effect = next;
-      document.querySelectorAll('.preset').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.effect === effect)));
-      const densityLabels = { bubbles: 'Mật độ', sparkles: 'Số hạt sáng', vocabulary: 'Số từ bay', waves: 'Mật độ sóng', fireflies: 'Số đom đóm', petals: 'Số cánh hoa', rain: 'Mật độ mưa', dust: 'Mật độ bụi', aurora: 'Độ phủ cực quang', rings: 'Số gợn vòng', none: 'Mật độ' };
+      const densityLabels = { bubbles: 'Mật độ', sparkles: 'Số hạt sáng', vocabulary: 'Số từ bay', waves: 'Mật độ sóng', fireflies: 'Số đom đóm', petals: 'Số cánh hoa', snow: 'Số bông tuyết', meteors: 'Số sao băng', hearts: 'Số trái tim', embers: 'Số tàn lửa', clouds: 'Số cụm mây', dust: 'Mật độ bụi', aurora: 'Độ phủ cực quang', rings: 'Số gợn vòng', none: 'Mật độ' };
       document.querySelector('label[for="density"]').textContent = densityLabels[effect];
       selectedEffect.textContent = `Đang xem: ${effectLabels[effect]}`;
       makeParticles(); updateDensityLabel();
-      if (notifyParent && window.parent !== window) window.parent.postMessage({ type: 'background-effect-preview:select-effect', effectId: effect }, location.origin);
     }
     function draw(now = 0) {
       const dt = Math.min(40, now - last || 16), a = Number(opacity.value) / 100, mult = Number(speed.value) / 58;
@@ -252,17 +279,23 @@
         else if (effect === 'vocabulary') drawVocabulary(b, a, now, dt, mult);
         else if (effect === 'fireflies') drawFirefly(b, a, now, dt, mult);
         else if (effect === 'petals') drawPetal(b, a, now, dt, mult);
-        else if (effect === 'rain') drawRain(b, a, now, dt, mult);
+        else if (effect === 'snow') drawSnow(b, a, now, dt, mult);
+        else if (effect === 'meteors') drawMeteor(b, a, now, dt, mult);
+        else if (effect === 'hearts') drawHeart(b, a, now, dt, mult);
+        else if (effect === 'embers') drawEmber(b, a, now, dt, mult);
+        else if (effect === 'clouds') drawCloud(b, a, now, dt, mult);
         else if (effect === 'dust') drawDust(b, a, now, dt, mult);
         else if (effect === 'rings') drawRings(b, a, now, mult);
       }
       requestAnimationFrame(draw);
     }
-    document.querySelectorAll('.preset').forEach((button) => button.addEventListener('click', () => setEffect(button.dataset.effect, { notifyParent: true })));
     window.addEventListener('message', (event) => {
       if (event.origin !== location.origin || event.source !== window.parent) return;
       if (event.data?.type === 'background-effect-preview:set-effect') {
         setEffect(event.data.effectId);
+        const nextDensity = Number(event.data.density);
+        if (Number.isInteger(nextDensity) && nextDensity >= 10 && nextDensity <= 60) density.value = String(nextDensity);
+        makeParticles(); updateDensityLabel();
         const nextSpeed = Number(event.data.speed);
         if (Number.isInteger(nextSpeed) && nextSpeed >= 25 && nextSpeed <= 140) speed.value = String(nextSpeed);
         updateSpeedLabel();
@@ -271,7 +304,10 @@
         document.querySelector('#opacityOut').value = `${opacity.value}%`;
       }
     });
-    density.addEventListener('input', () => { updateDensityLabel(); makeParticles(); });
+    density.addEventListener('input', () => {
+      updateDensityLabel(); makeParticles();
+      if (window.parent !== window) window.parent.postMessage({ type: 'background-effect-preview:change-density', density: Number(density.value) }, location.origin);
+    });
     speed.addEventListener('input', () => {
       updateSpeedLabel();
       if (window.parent !== window) window.parent.postMessage({ type: 'background-effect-preview:change-speed', speed: Number(speed.value) }, location.origin);

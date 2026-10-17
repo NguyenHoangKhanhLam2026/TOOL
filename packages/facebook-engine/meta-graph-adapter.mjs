@@ -34,6 +34,7 @@ async function graph(path, form = null, host = 'graph.facebook.com') {
     const err = new Error(`Meta Graph API ${error.code || response.status}: ${error.message || response.statusText}`);
     err.code = error.code || response.status;
     err.subcode = error.error_subcode;
+    err.metaResponse = true;
     throw err;
   }
   return data;
@@ -53,6 +54,7 @@ async function uploadVideoChunk(path, fields, fileName, chunk) {
     const err = new Error(`Meta Graph API ${error.code || response.status}: ${error.message || response.statusText}`);
     err.code = error.code || response.status;
     err.subcode = error.error_subcode;
+    err.metaResponse = true;
     throw err;
   }
   return data;
@@ -115,6 +117,110 @@ export class MetaGraphAdapter {
     const status = await this.#waitUntilPublished(videoId);
     if (!status.verified) throw new Error('Meta đã nhận lệnh đăng nhưng chưa xác minh trạng thái xuất bản.');
     return { facebookId: videoId, url: status.url || '', status: 'published', verified: true };
+  }
+
+  async schedule({ video, script, scheduledAt, uploadSession = {}, onUploadSession = async () => {}, onFinishing = async () => {} }) {
+    if (!this.pageId) throw new Error('ChÆ°a cáº¥u hÃ¬nh Facebook Page ID.');
+    const filePath = video?.video_path;
+    if (!filePath || !fs.existsSync(filePath)) throw new Error('KhÃ´ng tÃ¬m tháº¥y tá»‡p video Ä‘á»ƒ táº£i lÃªn.');
+    const scheduledTime = new Date(scheduledAt);
+    if (!Number.isFinite(scheduledTime.getTime())) throw new Error('Thá»i Ä‘iá»ƒm Ä‘Äƒng Facebook khÃ´ng há»£p lá»‡.');
+    if (scheduledTime.getTime() < Date.now() + 10 * 60_000) throw new Error('Facebook cáº§n nháº­n lá»‹ch Ä‘Äƒng trÆ°á»›c Ã­t nháº¥t 10 phÃºt.');
+    if (!Number.isFinite(Number(video.duration_seconds)) || Number(video.duration_seconds) <= 0) throw new Error('Video chÆ°a cÃ³ thá»i lÆ°á»£ng há»£p lá»‡.');
+    const size = fs.statSync(filePath).size;
+    if (size <= 0) throw new Error('Tá»‡p video rá»—ng.');
+    if (size > 0xffffffff) throw new Error('Video vÆ°á»£t quÃ¡ giá»›i háº¡n dung lÆ°á»£ng upload cá»§a Meta.');
+
+    const endpoint = `${encodeURIComponent(this.pageId)}/videos`;
+    const uploadHost = 'graph-video.facebook.com';
+    let videoId = uploadSession.facebook_video_id || null;
+    let uploadSessionId = uploadSession.facebook_upload_session_id || null;
+    let offset = Number(uploadSession.facebook_upload_offset || 0);
+    let endOffset = Number(uploadSession.facebook_upload_end_offset || size);
+
+    if (uploadSession.facebook_schedule_state === 'finishing' && videoId) {
+      try {
+        const remote = await this.getVideoStatus(videoId);
+        const remoteTime = Number(remote.scheduled_publish_time);
+        if (remote.published === false && Number.isFinite(remoteTime) && Math.abs(remoteTime * 1000 - scheduledTime.getTime()) < 60_000) {
+          return { facebookId: videoId, url: remote.permalink_url || '', status: 'scheduled', verified: true };
+        }
+      } catch { /* The upload's final result cannot be established from this lookup. */ }
+      const uncertain = new Error('Meta Ä‘Ã£ nháº­n lá»‡nh hoÃ n táº¥t upload nhÆ°ng chÆ°a xÃ¡c minh Ä‘Æ°á»£c lá»‹ch. Äá»ƒ trÃ¡nh táº¡o bÃ i trÃ¹ng, hÃ£y kiá»ƒm tra Facebook Planner.');
+      uncertain.facebookOutcomeUnknown = true;
+      throw uncertain;
+    }
+
+    if (!videoId || !uploadSessionId) {
+      const start = await graph(endpoint, { upload_phase: 'start', file_size: String(size) }, uploadHost);
+      if (!start.video_id || !start.upload_session_id) throw new Error('Meta khÃ´ng tráº£ vá» phiÃªn upload video há»£p lá»‡.');
+      videoId = String(start.video_id);
+      uploadSessionId = String(start.upload_session_id);
+      offset = Number(start.start_offset ?? 0);
+      endOffset = Number(start.end_offset ?? size);
+      await onUploadSession({
+        facebook_video_id: videoId,
+        facebook_upload_session_id: uploadSessionId,
+        facebook_upload_offset: offset,
+        facebook_upload_end_offset: endOffset,
+        facebook_schedule_state: 'uploading'
+      });
+    } else {
+      try {
+        const progress = await graph(endpoint, { upload_phase: 'status', upload_session_id: uploadSessionId }, uploadHost);
+        const remoteOffset = Number(progress.start_offset);
+        const remoteEndOffset = Number(progress.end_offset);
+        if (Number.isSafeInteger(remoteOffset) && Number.isSafeInteger(remoteEndOffset) && remoteOffset >= 0 && remoteEndOffset >= remoteOffset && remoteEndOffset <= size) {
+          offset = remoteOffset;
+          endOffset = remoteEndOffset;
+          await onUploadSession({ facebook_upload_offset: offset, facebook_upload_end_offset: endOffset, facebook_schedule_state: 'uploading' });
+        }
+      } catch (error) {
+        if (error.metaResponse) throw error;
+      }
+    }
+
+    const file = await fs.promises.open(filePath, 'r');
+    try {
+      while (offset < size) {
+        if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(endOffset) || offset < 0 || endOffset <= offset || endOffset > size) {
+          throw new Error('Meta tráº£ vá» vá»‹ trÃ­ upload video khÃ´ng há»£p lá»‡.');
+        }
+        const chunk = Buffer.alloc(endOffset - offset);
+        const { bytesRead } = await file.read(chunk, 0, chunk.length, offset);
+        if (bytesRead !== chunk.length) throw new Error('KhÃ´ng Ä‘á»c Ä‘á»§ dá»¯ liá»‡u video Ä‘á»ƒ upload.');
+        const transfer = await uploadVideoChunk(endpoint, {
+          upload_phase: 'transfer', upload_session_id: uploadSessionId, start_offset: offset
+        }, filePath.split(/[\\/]/).at(-1), chunk);
+        const nextOffset = Number(transfer.start_offset);
+        const nextEndOffset = Number(transfer.end_offset);
+        if (!Number.isSafeInteger(nextOffset) || !Number.isSafeInteger(nextEndOffset) || nextOffset <= offset || nextEndOffset < nextOffset || nextEndOffset > size) {
+          throw new Error('Meta khÃ´ng xÃ¡c nháº­n Ä‘Æ°á»£c chunk video vá»«a táº£i lÃªn.');
+        }
+        offset = nextOffset;
+        endOffset = nextEndOffset;
+        await onUploadSession({ facebook_upload_offset: offset, facebook_upload_end_offset: endOffset, facebook_schedule_state: 'uploading' });
+      }
+    } finally {
+      await file.close();
+    }
+
+    await onFinishing({ facebook_schedule_state: 'finishing' });
+    try {
+      await graph(endpoint, {
+        upload_phase: 'finish', upload_session_id: uploadSessionId,
+        title: script.title, description: formatCaption(script.caption, script.hashtags),
+        published: 'false', scheduled_publish_time: String(Math.floor(scheduledTime.getTime() / 1000))
+      }, uploadHost);
+    } catch (error) {
+      if (!error.metaResponse) error.facebookOutcomeUnknown = true;
+      throw error;
+    }
+    return { facebookId: videoId, url: '', status: 'scheduled', verified: true };
+  }
+
+  async getVideoStatus(videoId) {
+    return graph(`${encodeURIComponent(String(videoId))}?fields=status,published,scheduled_publish_time,permalink_url`);
   }
 
   async #waitUntilPublished(videoId) {

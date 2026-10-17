@@ -6,7 +6,11 @@ export const BACKGROUND_EFFECTS = Object.freeze([
   { id: 'waves', label: 'Sóng mềm', description: 'Đường sóng chuyển động ở hai mép' },
   { id: 'fireflies', label: 'Đom đóm', description: 'Đốm sáng vàng xanh trôi chậm' },
   { id: 'petals', label: 'Cánh hoa', description: 'Cánh nhỏ xoay và lững lờ rơi' },
-  { id: 'rain', label: 'Mưa nhẹ', description: 'Vệt mưa mảnh, trong suốt' },
+  { id: 'snow', label: 'Tuyết rơi', description: 'Bông tuyết nhỏ rơi chậm' },
+  { id: 'meteors', label: 'Sao băng', description: 'Vệt sáng lướt chéo qua nền' },
+  { id: 'hearts', label: 'Trái tim bay', description: 'Trái tim nhỏ bay nhẹ lên cao' },
+  { id: 'embers', label: 'Tàn lửa', description: 'Đốm lửa ấm bay lên rồi tan' },
+  { id: 'clouds', label: 'Mây trôi', description: 'Mảng mây mờ trôi nhẹ ở viền' },
   { id: 'dust', label: 'Bụi mịn', description: 'Hạt bụi li ti bay trong ánh sáng' },
   { id: 'aurora', label: 'Cực quang dịu', description: 'Dải màu loang nhẹ hai bên nền' },
   { id: 'rings', label: 'Gợn vòng', description: 'Vòng tròn lan ra như gợn nước' }
@@ -22,6 +26,11 @@ export function normalizeBackgroundEffect(value) {
 export function normalizeBackgroundEffectSpeed(value) {
   const speed = Number(value);
   return Number.isFinite(speed) ? Math.min(140, Math.max(25, Math.round(speed))) : 58;
+}
+
+export function normalizeBackgroundEffectDensity(value) {
+  const density = Number(value);
+  return Number.isFinite(density) ? Math.min(60, Math.max(10, Math.round(density))) : 28;
 }
 
 export function normalizeBackgroundEffectOpacity(value) {
@@ -50,8 +59,8 @@ function edgeX(index, width, seed) {
   return side > 0 ? 35 + random(seed, index, 'x') * width * 0.2 : width * 0.8 + random(seed, index, 'x') * width * 0.17;
 }
 
-function bubbleMarkup({ width, height, time, seed, motionScale, opacityScale }) {
-  return Array.from({ length: 46 }, (_, index) => {
+function bubbleMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
     const radius = 13 + random(seed, index, 'radius') * 42;
     const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.34 + index) * 13, width);
     const y = mod(random(seed, index, 'y') * height - time * (13 + random(seed, index, 'speed') * 25) * motionScale, height);
@@ -61,8 +70,8 @@ function bubbleMarkup({ width, height, time, seed, motionScale, opacityScale }) 
   }).join('');
 }
 
-function sparklesMarkup({ width, height, time, seed, motionScale, opacityScale }) {
-  return Array.from({ length: 72 }, (_, index) => {
+function sparklesMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
     const size = 5 + random(seed, index, 'size') * 9;
     const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.5 + index) * 6, width);
     const y = mod(random(seed, index, 'y') * height - time * (8 + random(seed, index, 'speed') * 18) * motionScale, height);
@@ -72,8 +81,8 @@ function sparklesMarkup({ width, height, time, seed, motionScale, opacityScale }
   }).join('');
 }
 
-function vocabularyMarkup({ width, height, time, seed, motionScale, opacityScale }) {
-  return Array.from({ length: 18 }, (_, index) => {
+function vocabularyMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
     const x = edgeX(index, width, seed);
     const y = mod(random(seed, index, 'y') * height - time * (9 + random(seed, index, 'speed') * 13) * motionScale, height);
     const size = 23 + random(seed, index, 'size') * 22;
@@ -84,13 +93,14 @@ function vocabularyMarkup({ width, height, time, seed, motionScale, opacityScale
   }).join('');
 }
 
-function wavesMarkup({ width, height, time, seed, opacityScale }) {
+function wavesMarkup({ width, height, time, seed, opacityScale, density }) {
   const paths = [];
+  const laneCount = Math.max(2, Math.round(density / 8));
   for (const side of [0, 1]) {
     const sign = side === 0 ? 1 : -1;
     const start = side === 0 ? 0 : width;
     const base = side === 0 ? 0 : width;
-    for (let lane = 0; lane < 7; lane += 1) {
+    for (let lane = 0; lane < laneCount; lane += 1) {
       const phase = time * 0.34 + lane * 0.75 + random(seed, lane, `phase-${side}`) * 3;
       let d = '';
       for (let step = 0; step <= 20; step += 1) {
@@ -108,8 +118,8 @@ function wavesMarkup({ width, height, time, seed, opacityScale }) {
   return paths.join('');
 }
 
-function firefliesMarkup({ width, height, time, seed, motionScale, opacityScale }) {
-  return Array.from({ length: 36 }, (_, index) => {
+function firefliesMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
     const baseX = random(seed, index, 'x') * width;
     const x = mod(baseX + Math.sin(time * 0.36 + index) * 28, width);
     const y = mod(random(seed, index, 'y') * height - time * (6 + random(seed, index, 'speed') * 12) * motionScale, height);
@@ -120,8 +130,8 @@ function firefliesMarkup({ width, height, time, seed, motionScale, opacityScale 
   }).join('');
 }
 
-function petalsMarkup({ width, height, time, seed, motionScale, opacityScale }) {
-  return Array.from({ length: 26 }, (_, index) => {
+function petalsMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
     const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.42 + index) * 24, width);
     const y = mod(random(seed, index, 'y') * height + time * (9 + random(seed, index, 'speed') * 18) * motionScale, height);
     const rx = 7 + random(seed, index, 'rx') * 10;
@@ -132,17 +142,66 @@ function petalsMarkup({ width, height, time, seed, motionScale, opacityScale }) 
   }).join('');
 }
 
-function rainMarkup({ width, height, time, seed, motionScale, opacityScale }) {
-  return Array.from({ length: 90 }, (_, index) => {
-    const x = mod(random(seed, index, 'x') * width + time * (28 + random(seed, index, 'drift') * 20) * motionScale, width);
-    const y = mod(random(seed, index, 'y') * height + time * (150 + random(seed, index, 'speed') * 220) * motionScale, height);
-    const length = 18 + random(seed, index, 'length') * 40;
-    return `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l-5 ${length.toFixed(1)}" stroke="#FFFFFF" stroke-opacity="${(0.12 * opacityScale).toFixed(3)}" stroke-width="2" stroke-linecap="round"/>`;
+function snowMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
+    const radius = 3 + random(seed, index, 'radius') * 7;
+    const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.36 + index) * (8 + random(seed, index, 'drift') * 18) * motionScale, width);
+    const y = mod(random(seed, index, 'y') * height + time * (18 + random(seed, index, 'speed') * 34) * motionScale, height);
+    const opacity = (0.38 + random(seed, index, 'alpha') * 0.28) * opacityScale;
+    const cross = radius * 0.7;
+    return `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)})" stroke="#AFCBD7" stroke-opacity="${opacity.toFixed(3)}" stroke-width="${Math.max(1.2, radius * 0.24).toFixed(1)}" stroke-linecap="round"><path d="M${(-radius).toFixed(1)} 0H${radius.toFixed(1)}M0 ${(-radius).toFixed(1)}V${radius.toFixed(1)}M${(-cross).toFixed(1)} ${(-cross).toFixed(1)}L${cross.toFixed(1)} ${cross.toFixed(1)}M${(-cross).toFixed(1)} ${cross.toFixed(1)}L${cross.toFixed(1)} ${(-cross).toFixed(1)}"/><circle r="${Math.max(1, radius * 0.18).toFixed(1)}" fill="#FFFDF4" fill-opacity="${(opacity * 0.72).toFixed(3)}" stroke="none"/></g>`;
   }).join('');
 }
 
-function dustMarkup({ width, height, time, seed, motionScale, opacityScale }) {
-  return Array.from({ length: 110 }, (_, index) => {
+function meteorsMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
+    const x = mod(random(seed, index, 'x') * width - time * (80 + random(seed, index, 'speed') * 170) * motionScale, width);
+    const y = mod(random(seed, index, 'y') * height + time * (42 + random(seed, index, 'drift') * 92) * motionScale, height);
+    const length = 24 + random(seed, index, 'length') * 76;
+    const opacity = (0.32 + random(seed, index, 'alpha') * 0.18) * opacityScale;
+    const warmColor = random(seed, index, 'color') > 0.5;
+    const color = warmColor ? '#D98B65' : '#648BA4';
+    const gradientId = warmColor ? 'effectMeteorTailWarm' : 'effectMeteorTailCool';
+    return `<g stroke-linecap="round"><path d="M${(x + length * 0.75).toFixed(1)} ${(y - length * 0.48).toFixed(1)}L${x.toFixed(1)} ${y.toFixed(1)}" stroke="url(#${gradientId})" stroke-opacity="${opacity.toFixed(3)}" stroke-width="${(2 + random(seed, index, 'width') * 2.5).toFixed(1)}"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1.8 + random(seed, index, 'head') * 2.2).toFixed(1)}" fill="${color}" opacity="${Math.min(1, opacity * 1.4).toFixed(3)}"/></g>`;
+  }).join('');
+}
+
+function heartsMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
+    const size = 9 + random(seed, index, 'size') * 17;
+    const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.32 + index) * 16 * motionScale, width);
+    const y = mod(random(seed, index, 'y') * height - time * (8 + random(seed, index, 'speed') * 14) * motionScale, height);
+    const color = random(seed, index, 'color') > 0.5 ? '#D98B8B' : '#E7A88C';
+    const opacity = (0.16 + random(seed, index, 'alpha') * 0.13) * opacityScale;
+    return `<path d="M${x.toFixed(1)} ${(y + size * 0.32).toFixed(1)}C${(x - size * 1.15).toFixed(1)} ${(y - size * 0.34).toFixed(1)} ${(x - size * 0.48).toFixed(1)} ${(y - size * 1.04).toFixed(1)} ${x.toFixed(1)} ${(y - size * 0.48).toFixed(1)}C${(x + size * 0.48).toFixed(1)} ${(y - size * 1.04).toFixed(1)} ${(x + size * 1.15).toFixed(1)} ${(y - size * 0.34).toFixed(1)} ${x.toFixed(1)} ${(y + size * 0.32).toFixed(1)}Z" fill="${color}" opacity="${opacity.toFixed(3)}"/>`;
+  }).join('');
+}
+
+function embersMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
+    const radius = 2 + random(seed, index, 'radius') * 5.5;
+    const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.48 + index) * (5 + random(seed, index, 'drift') * 15) * motionScale, width);
+    const y = mod(random(seed, index, 'y') * height - time * (10 + random(seed, index, 'speed') * 25) * motionScale, height);
+    const flicker = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time * 2 + index * 1.7));
+    const opacity = (0.18 + random(seed, index, 'alpha') * 0.24) * flicker * opacityScale;
+    const tail = radius * (1.5 + random(seed, index, 'tail') * 2.5);
+    return `<g opacity="${opacity.toFixed(3)}"><path d="M${x.toFixed(1)} ${(y + tail).toFixed(1)}L${x.toFixed(1)} ${y.toFixed(1)}" stroke="#D98B65" stroke-width="${Math.max(1, radius * 0.45).toFixed(1)}" stroke-linecap="round"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${random(seed, index, 'color') > 0.45 ? '#FFD27A' : '#F08A55'}"/></g>`;
+  }).join('');
+}
+
+function cloudsMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
+    const size = 18 + random(seed, index, 'size') * 37;
+    const x = mod(random(seed, index, 'x') * width + time * (3 + random(seed, index, 'drift') * 8) * motionScale, width);
+    const y = random(seed, index, 'y') * height;
+    const opacity = (0.12 + random(seed, index, 'alpha') * 0.06) * opacityScale;
+    const color = random(seed, index, 'color') > 0.5 ? '#D7B58F' : '#91B2BF';
+    return `<g fill="${color}" opacity="${opacity.toFixed(3)}"><ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="${(size * 1.25).toFixed(1)}" ry="${(size * 0.48).toFixed(1)}"/><circle cx="${(x - size * 0.48).toFixed(1)}" cy="${(y - size * 0.12).toFixed(1)}" r="${(size * 0.42).toFixed(1)}"/><circle cx="${x.toFixed(1)}" cy="${(y - size * 0.28).toFixed(1)}" r="${(size * 0.54).toFixed(1)}"/><circle cx="${(x + size * 0.48).toFixed(1)}" cy="${(y - size * 0.06).toFixed(1)}" r="${(size * 0.38).toFixed(1)}"/></g>`;
+  }).join('');
+}
+
+function dustMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
     const x = mod(random(seed, index, 'x') * width + Math.sin(time * 0.2 + index) * 8, width);
     const y = mod(random(seed, index, 'y') * height - time * (3 + random(seed, index, 'speed') * 10) * motionScale, height);
     const radius = 1 + random(seed, index, 'radius') * 3.4;
@@ -152,14 +211,15 @@ function dustMarkup({ width, height, time, seed, motionScale, opacityScale }) {
   }).join('');
 }
 
-function auroraMarkup({ width, height, time, seed, opacityScale }) {
+function auroraMarkup({ width, height, time, seed, opacityScale, density }) {
   const wave = Math.sin(time * 0.25) * 45;
   const right = width;
-  return `<path d="M0 0 C${(width * 0.18 + wave).toFixed(1)} ${(height * 0.23).toFixed(1)} ${(width * 0.04).toFixed(1)} ${(height * 0.43).toFixed(1)} ${(width * 0.21).toFixed(1)} ${(height * 0.62).toFixed(1)} S${(width * 0.12).toFixed(1)} ${(height * 0.9).toFixed(1)} ${(width * 0.25).toFixed(1)} ${height} L0 ${height}Z" fill="url(#effectAuroraA)" opacity="${(0.20 * opacityScale).toFixed(3)}"/><path d="M${right} 0 C${(width * 0.78 - wave).toFixed(1)} ${(height * 0.2).toFixed(1)} ${(width * 0.98).toFixed(1)} ${(height * 0.45).toFixed(1)} ${(width * 0.8).toFixed(1)} ${(height * 0.65).toFixed(1)} S${(width * 0.91).toFixed(1)} ${(height * 0.91).toFixed(1)} ${(width * 0.74).toFixed(1)} ${height} L${right} ${height}Z" fill="url(#effectAuroraB)" opacity="${(0.17 * opacityScale).toFixed(3)}"/>`;
+  const densityScale = (0.25 + density / 60 * 0.5) / (0.25 + 28 / 60 * 0.5);
+  return `<path d="M0 0 C${(width * 0.18 + wave).toFixed(1)} ${(height * 0.23).toFixed(1)} ${(width * 0.04).toFixed(1)} ${(height * 0.43).toFixed(1)} ${(width * 0.21).toFixed(1)} ${(height * 0.62).toFixed(1)} S${(width * 0.12).toFixed(1)} ${(height * 0.9).toFixed(1)} ${(width * 0.25).toFixed(1)} ${height} L0 ${height}Z" fill="url(#effectAuroraA)" opacity="${(0.20 * opacityScale * densityScale).toFixed(3)}"/><path d="M${right} 0 C${(width * 0.78 - wave).toFixed(1)} ${(height * 0.2).toFixed(1)} ${(width * 0.98).toFixed(1)} ${(height * 0.45).toFixed(1)} ${(width * 0.8).toFixed(1)} ${(height * 0.65).toFixed(1)} S${(width * 0.91).toFixed(1)} ${(height * 0.91).toFixed(1)} ${(width * 0.74).toFixed(1)} ${height} L${right} ${height}Z" fill="url(#effectAuroraB)" opacity="${(0.17 * opacityScale * densityScale).toFixed(3)}"/>`;
 }
 
-function ringsMarkup({ width, height, time, seed, motionScale, opacityScale }) {
-  return Array.from({ length: 17 }, (_, index) => {
+function ringsMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+  return Array.from({ length: density }, (_, index) => {
     const x = edgeX(index, width, seed);
     const y = random(seed, index, 'y') * height;
     const progress = mod(time * (22 + random(seed, index, 'speed') * 26) + random(seed, index, 'phase') * 130, 130);
@@ -169,7 +229,7 @@ function ringsMarkup({ width, height, time, seed, motionScale, opacityScale }) {
   }).join('');
 }
 
-export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 1920, time = 0, seed = 'preview', speed = 58, opacity = 32 } = {}) {
+export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 1920, time = 0, seed = 'preview', density = 28, speed = 58, opacity = 32 } = {}) {
   const effect = normalizeBackgroundEffect(effectId);
   if (effect === 'none') return '';
   const speedMultiplier = normalizeBackgroundEffectSpeed(speed) / 58;
@@ -179,6 +239,7 @@ export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 
     height,
     time: Math.max(0, Number(time) || 0) * speedMultiplier,
     seed: String(seed || 'preview'),
+    density: normalizeBackgroundEffectDensity(density),
     opacityScale,
     // The settings preview is 360x640 CSS pixels; keep its normalized drift
     // rate when rendering the 1080x1920 output canvas.
@@ -191,11 +252,15 @@ export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 
     waves: wavesMarkup,
     fireflies: firefliesMarkup,
     petals: petalsMarkup,
-    rain: rainMarkup,
+    snow: snowMarkup,
+    meteors: meteorsMarkup,
+    hearts: heartsMarkup,
+    embers: embersMarkup,
+    clouds: cloudsMarkup,
     dust: dustMarkup,
     aurora: auroraMarkup,
     rings: ringsMarkup
   };
   const body = bodies[effect]?.(context) || '';
-  return `<g class="background-effect background-effect-${effect}" pointer-events="none"><defs><radialGradient id="effectBubble"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.84"/><stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0.18"/><stop offset="1" stop-color="#D98B65" stop-opacity="0.05"/></radialGradient><linearGradient id="effectAuroraA" x1="0" x2="1" y1="0" y2="0"><stop stop-color="#D8E9C8"/><stop offset=".62" stop-color="#D6E9E5" stop-opacity=".52"/><stop offset="1" stop-color="#D8E9C8" stop-opacity="0"/></linearGradient><linearGradient id="effectAuroraB" x1="1" x2="0" y1="0" y2="0"><stop stop-color="#E1E9D0"/><stop offset=".58" stop-color="#D6E8E8" stop-opacity=".5"/><stop offset="1" stop-color="#D6E8E8" stop-opacity="0"/></linearGradient></defs>${body}</g>`;
+  return `<g class="background-effect background-effect-${effect}" pointer-events="none"><defs><radialGradient id="effectBubble"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.84"/><stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0.18"/><stop offset="1" stop-color="#D98B65" stop-opacity="0.05"/></radialGradient><linearGradient id="effectAuroraA" x1="0" x2="1" y1="0" y2="0"><stop stop-color="#D8E9C8"/><stop offset=".62" stop-color="#D6E9E5" stop-opacity=".52"/><stop offset="1" stop-color="#D8E9C8" stop-opacity="0"/></linearGradient><linearGradient id="effectAuroraB" x1="1" x2="0" y1="0" y2="0"><stop stop-color="#E1E9D0"/><stop offset=".58" stop-color="#D6E8E8" stop-opacity=".5"/><stop offset="1" stop-color="#D6E8E8" stop-opacity="0"/></linearGradient><linearGradient id="effectMeteorTailWarm" x1="1" x2="0" y1="0" y2="1"><stop stop-color="#D98B65" stop-opacity="0"/><stop offset="1" stop-color="#D98B65"/></linearGradient><linearGradient id="effectMeteorTailCool" x1="1" x2="0" y1="0" y2="1"><stop stop-color="#648BA4" stop-opacity="0"/><stop offset="1" stop-color="#648BA4"/></linearGradient></defs>${body}</g>`;
 }
