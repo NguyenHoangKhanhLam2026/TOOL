@@ -13,6 +13,57 @@ import {
 
 const { default: sharp } = await import('sharp');
 const OUTPUT_FRAME_RATE = 30;
+
+export function filterChineseCtaAudioFiles(script, audioFiles) {
+  if (script?.contentLanguage !== 'zh') return audioFiles;
+  const ctaSegmentIds = new Set((Array.isArray(script.speechSegments) ? script.speechSegments : [])
+    .filter((segment) => segment.state === 'cta' || segment.target?.layerId === 'cta' || segment.segmentId === 'zh-cta-vi')
+    .flatMap((segment) => [segment.segmentId, segment.id].filter(Boolean).map(String)));
+  return (Array.isArray(audioFiles) ? audioFiles : []).filter((item) => item.state !== 'cta'
+    && item.target?.layerId !== 'cta'
+    && !ctaSegmentIds.has(String(item.segmentId || item.id || ''))
+    && String(item.segmentId || item.id || '') !== 'zh-cta-vi');
+}
+
+export function assertChineseRenderQuality(script, result) {
+  if (script?.contentLanguage !== 'zh') return result;
+  const timeline = result?.renderManifest?.timeline;
+  const audioManifest = result?.audioManifest;
+  if (!Array.isArray(timeline) || !Array.isArray(audioManifest)) {
+    throw new Error('Không xác minh được timeline audio/video tiếng Trung sau render.');
+  }
+  const ctaInTimeline = timeline.some((item) => item.state === 'cta'
+    && (item.type === 'speech' || Number(item.end) - Number(item.start) > 0.0001));
+  if (ctaInTimeline || audioManifest.some((item) => item.segmentId === 'zh-cta-vi')) {
+    throw new Error('Timeline render tiếng Trung vẫn chứa đoạn kêu gọi theo dõi.');
+  }
+  const expectedSegments = (Array.isArray(script.speechSegments) ? script.speechSegments : [])
+    .filter((item) => item.state !== 'cta' && item.target?.layerId !== 'cta' && item.segmentId !== 'zh-cta-vi');
+  const expectedIds = expectedSegments.map((item) => String(item.segmentId || item.id || ''));
+  const timelineSpeech = timeline.filter((item) => item.type === 'speech');
+  const timelineIds = timelineSpeech.map((item) => String(item.segmentId || ''));
+  const audioIds = audioManifest.map((item) => String(item.segmentId || ''));
+  const audioContentMismatch = expectedSegments.some((segment, index) =>
+    String(audioManifest[index]?.text || '').trim() !== String(segment.text || '').trim()
+      || normalizeLanguage(audioManifest[index]?.language) !== normalizeLanguage(segment.language));
+  if (!expectedIds.length || expectedIds.some((id) => !id)
+    || expectedIds.length !== timelineIds.length || expectedIds.some((id, index) => id !== timelineIds[index])
+    || expectedIds.length !== audioIds.length || expectedIds.some((id, index) => id !== audioIds[index])
+    || audioContentMismatch) {
+    throw new Error('Nội dung, ngôn ngữ hoặc thứ tự các đoạn voice tiếng Trung không khớp kịch bản đã kiểm định.');
+  }
+  const lastSpeech = timelineSpeech.at(-1);
+  const videoDuration = Number(result.duration ?? result.renderManifest.durationSeconds);
+  const sync = result.renderManifest.synchronization;
+  if (!lastSpeech || !Number.isFinite(videoDuration) || !Number.isFinite(Number(lastSpeech.end))
+    || Math.abs(videoDuration - Number(lastSpeech.end)) > 0.09) {
+    throw new Error('Video tiếng Trung còn phần đuôi sau khi voice nội dung kết thúc.');
+  }
+  if (sync?.checked !== true || !Number.isFinite(Number(sync.driftSeconds)) || Math.abs(Number(sync.driftSeconds)) > 0.09) {
+    throw new Error('Không xác minh được đồng bộ audio/video tiếng Trung sau render.');
+  }
+  return result;
+}
 const BACKGROUND_EFFECT_FRAME_SECONDS = 1 / OUTPUT_FRAME_RATE;
 
 function alignUpToFrame(seconds, frameRate = OUTPUT_FRAME_RATE) {
@@ -149,16 +200,18 @@ export async function renderVideo(script, videoId, audioFiles, {
   settings.backgroundEffectDensity = normalizeBackgroundEffectDensity(settings.backgroundEffectDensity);
   settings.backgroundEffectSpeed = normalizeBackgroundEffectSpeed(settings.backgroundEffectSpeed);
   settings.backgroundEffectOpacity = normalizeBackgroundEffectOpacity(settings.backgroundEffectOpacity);
+  const renderAudioFiles = filterChineseCtaAudioFiles(script, audioFiles);
   const durations = [];
-  for (const item of audioFiles) {
+  for (const [audioIndex, item] of renderAudioFiles.entries()) {
     if (!fs.existsSync(item.path)) throw new Error(`Thiếu audio cho đoạn ${item.segmentId || item.index || '?'} (${item.language || 'không rõ ngôn ngữ'}).`);
     const duration = await probeAudio(item.path);
     const source = script.contentLanguage === 'zh'
       ? (script.speechSegments || []).find((segment) => String(segment.segmentId || segment.id || '') === String(item.segmentId || item.id || ''))
       : null;
     const requestedPause = Number(item.pauseAfterSeconds ?? source?.pauseAfterSeconds);
+    const isFinalChineseSpeech = script.contentLanguage === 'zh' && audioIndex === renderAudioFiles.length - 1;
     const pauseAfterSeconds = script.contentLanguage === 'zh' && Number.isFinite(requestedPause)
-      ? Math.max(0, Math.min(2, requestedPause))
+      ? isFinalChineseSpeech ? 0 : Math.max(0, Math.min(2, requestedPause))
       : 0;
     durations.push({ ...item, target: resolveSpeechTarget(template, item), duration, pauseAfterSeconds });
   }
@@ -183,13 +236,13 @@ export async function renderVideo(script, videoId, audioFiles, {
     : 0;
   timing.transition = transitionFrames / OUTPUT_FRAME_RATE;
   const ctaSpeechDuration = ctaItems.reduce((sum, item) => sum + item.duration, 0);
-  const ctaDuration = Math.max(0, Number(timing.cta) || 0, ctaSpeechDuration);
+  const ctaDuration = script.contentLanguage === 'zh' ? 0 : Math.max(0, Number(timing.cta) || 0, ctaSpeechDuration);
   timing.cta = ctaDuration;
   const speechDuration = dialogueDurations.reduce((sum, item) => sum + item.duration + item.pauseAfterSeconds, 0);
   const configuredVocabularyHold = Math.max(0, Number(timing.vocabularyHold) || 0);
   const vocabularyHold = fitVocabularyHold({
     configuredHold: configuredVocabularyHold,
-    groupCount: groups.length,
+    groupCount: script.contentLanguage === 'zh' ? Math.max(0, groups.length - 1) : groups.length,
     speechDuration,
     intro: Number(timing.intro),
     cta: Number(timing.cta),
@@ -245,15 +298,18 @@ export async function renderVideo(script, videoId, audioFiles, {
     const index = Array.isArray(script.dialogues) && script.dialogues.length && Number.isInteger(requestedIndex)
       ? Math.max(0, Math.min(script.dialogues.length - 1, requestedIndex))
       : groupIndex;
-    const transitionStart = transitionFrames > 0
-      ? alignUpToFrame(sequenceCursor + vocabularyHold)
-      : sequenceCursor + vocabularyHold;
+    const hasNextChineseGroup = script.contentLanguage !== 'zh' || groupIndex < groups.length - 1;
+    const groupVocabularyHold = hasNextChineseGroup ? vocabularyHold : 0;
+    const groupTransitionFrames = hasNextChineseGroup ? transitionFrames : 0;
+    const transitionStart = groupTransitionFrames > 0
+      ? alignUpToFrame(sequenceCursor + groupVocabularyHold)
+      : sequenceCursor + groupVocabularyHold;
     const vocabularySilenceDuration = Math.max(0, transitionStart - sequenceCursor);
     sequence.push({ type: 'silence', state: 'vocabulary', index, duration: vocabularySilenceDuration });
     sequenceCursor += vocabularySilenceDuration;
-    if (transitionFrames > 0) {
-      sequence.push({ type: 'silence', state: 'transition', index, duration: transitionFrames / OUTPUT_FRAME_RATE });
-      sequenceCursor += transitionFrames / OUTPUT_FRAME_RATE;
+    if (groupTransitionFrames > 0) {
+      sequence.push({ type: 'silence', state: 'transition', index, duration: groupTransitionFrames / OUTPUT_FRAME_RATE });
+      sequenceCursor += groupTransitionFrames / OUTPUT_FRAME_RATE;
     }
   });
   const ctaIndex = Math.max(0, totalCount - 1);
@@ -272,8 +328,6 @@ export async function renderVideo(script, videoId, audioFiles, {
   const audioTimeline = buildAudioTimeline(sequence);
   const total = audioTimeline.duration;
   if (total < 4 || total > 60) throw new Error(`Timeline dài ${total.toFixed(1)} giây; video Reels phải từ 4 đến 60 giây.`);
-  const chinesePresentationStyle = String(script.presentationStyle || script.dialogues?.[0]?.presentationStyle || 'inline-meaning');
-
   const highlightTimeline = [];
   const visualPlan = [];
   const addVisual = (entry, duration, highlight = null) => {
@@ -374,15 +428,13 @@ export async function renderVideo(script, videoId, audioFiles, {
   const persistentLayers = ['background', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'footer'];
   const targetCardLayer = script.contentLanguage === 'zh' ? 'chinese-card' : 'english-card';
   const pinyinLayer = script.contentLanguage === 'zh' ? ['pinyin'] : [];
-  const inlineChinesePresentation = script.contentLanguage === 'zh'
-    && ['inline-meaning', 'inline-keyphrase'].includes(chinesePresentationStyle);
   const hasExplicitPinyinSequence = script.contentLanguage === 'zh' && durations.some((item) =>
     item.target?.layerId === 'chinese-card' && typeof item.target.pinyinVisible === 'boolean'
   );
   let pinyinVisibleForTimeline = !hasExplicitPinyinSequence;
   const stateLayers = {
     intro: [...persistentLayers, 'title'],
-    vietnamese: [...persistentLayers, 'scene-number', 'vietnamese-card', ...(inlineChinesePresentation ? [targetCardLayer] : [])],
+    vietnamese: [...persistentLayers, 'scene-number', 'vietnamese-card'],
     bilingual: [...persistentLayers, 'scene-number', 'vietnamese-card', targetCardLayer, ...pinyinLayer],
     vocabulary: [...persistentLayers, 'scene-number', 'vietnamese-card', targetCardLayer, ...pinyinLayer, 'vocabulary'],
     transition: [],
@@ -396,7 +448,6 @@ export async function renderVideo(script, videoId, audioFiles, {
     await rasterizeScene({ template, script, state: 'intro', index: 0, outputPath: backgroundBaseFile, includeLayers: ['background'] });
   }
   const pinyinAnimationElapsed = new Map();
-  const chineseLayerAnimationElapsed = new Map();
   for (let index = 0; index < visualPlan.length; index += 1) {
     const visual = visualPlan[index];
     const entry = visual.entry;
@@ -426,14 +477,8 @@ export async function renderVideo(script, videoId, audioFiles, {
       && speechSegment.target?.pinyinVisible !== false;
     const animationKey = String(speechSegment?.segmentId || '');
     const elapsed = animationKey ? (pinyinAnimationElapsed.get(animationKey) || 0) : 0;
-    const fadeLayer = speechSegment?.target?.layerId === 'vocabulary'
-      || (speechSegment?.target?.layerId === 'chinese-card' && speechSegment.target?.pinyinVisible === false);
-    const layerElapsed = animationKey ? (chineseLayerAnimationElapsed.get(animationKey) || 0) : 0;
     const animatedPinyinDuration = animatedPinyin ? Math.min(visual.duration, Math.max(0, 0.2 - elapsed)) : 0;
-    const animatedLayerDuration = script.contentLanguage === 'zh' && fadeLayer
-      ? Math.min(visual.duration, Math.max(0, 0.2 - layerElapsed))
-      : 0;
-    const animatedDuration = Math.max(animatedPinyinDuration, animatedLayerDuration);
+    const animatedDuration = animatedPinyinDuration;
     const requests = [];
     if (animatedDuration > 0.0001) {
       const frames = Math.max(1, Math.ceil(animatedDuration * OUTPUT_FRAME_RATE));
@@ -443,12 +488,10 @@ export async function renderVideo(script, videoId, audioFiles, {
         requests.push({
           duration,
           pinyinProgress: animatedPinyin ? Math.min(1, (elapsed + progressed) / 0.2) : 1,
-          layerProgress: animatedLayerDuration ? Math.min(1, (layerElapsed + progressed) / 0.2) : 1,
           frame
         });
       }
       if (animatedPinyinDuration > 0.0001) pinyinAnimationElapsed.set(animationKey, elapsed + animatedPinyinDuration);
-      if (animatedLayerDuration > 0.0001) chineseLayerAnimationElapsed.set(animationKey, layerElapsed + animatedLayerDuration);
     }
     const remaining = Math.max(0, visual.duration - animatedDuration);
     if (remaining > 0.0001 || !requests.length) requests.push({ duration: remaining || visual.duration, pinyinProgress: 1, layerProgress: 1, frame: 'rest' });
@@ -460,7 +503,7 @@ export async function renderVideo(script, videoId, audioFiles, {
           template, script, state: entry.state, index: sceneIndex, outputPath: frameFile,
           includeBackground: true, includeLayers, highlight: visual.highlight,
           highlightSettings: settings, speechSegment, totalCount,
-          pinyinEffectProgress: request.pinyinProgress, chineseTextEffectProgress: request.layerProgress
+          pinyinEffectProgress: request.pinyinProgress
         });
         imageEntries.push({ file: frameFile, duration: request.duration });
       } else {
@@ -469,7 +512,7 @@ export async function renderVideo(script, videoId, audioFiles, {
           template, script, state: entry.state, index: sceneIndex, outputPath: foregroundFile,
           includeBackground: false, includeLayers: includeLayers.filter((layerId) => layerId !== 'background'),
           highlight: visual.highlight, highlightSettings: settings, speechSegment, totalCount,
-          pinyinEffectProgress: request.pinyinProgress, chineseTextEffectProgress: request.layerProgress
+          pinyinEffectProgress: request.pinyinProgress
         });
         imageEntries.push({ file: foregroundFile, duration: request.duration, foreground: true });
       }

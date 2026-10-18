@@ -2,7 +2,31 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TOPICS, makeLocalScript } from '../../src/topics.mjs';
 import { assertDistinctFromRecent, contentHash, normalizeText, sentenceSimilarity, validateScript } from '../../src/ai/validator.mjs';
+import { buildChineseCaptionFallback, validateChineseCaption } from '../../src/ai/caption-service.mjs';
+import { assertChineseReviewResponse } from '../../src/ai/chinese-quality.mjs';
 import { createSpeechSegments } from '../../packages/audio-highlight/highlight-engine.mjs';
+
+function chineseFixture(style) {
+  const dialogueCards = [
+    { chinese: '你喝茶吗？', pinyin: 'Nǐ hē chá ma?', vietnamese: 'Bạn uống trà không?', term: '喝茶', termPinyin: 'hē chá', meaningVi: 'uống trà', noteVi: 'Dùng để hỏi về trà.', grammarNote: '' },
+    { chinese: '我喝茶。', pinyin: 'Wǒ hē chá.', vietnamese: 'Mình uống trà.', term: '喝茶', termPinyin: 'hē chá', meaningVi: 'uống trà', noteVi: 'Dùng để trả lời về trà.', grammarNote: '' }
+  ];
+  const numberedScenario = [
+    { chinese: '你去哪？', pinyin: 'Nǐ qù nǎ?', vietnamese: 'Bạn đi đâu?', term: '去哪', termPinyin: 'qù nǎ', meaningVi: 'đi đâu', noteVi: 'Hỏi.', grammarNote: '' },
+    { chinese: '我去上班。', pinyin: 'Wǒ qù shàng bān.', vietnamese: 'Mình đi làm.', term: '去上班', termPinyin: 'qù shàng bān', meaningVi: 'đi làm', noteVi: 'Báo việc.', grammarNote: '' },
+    { chinese: '再见，明天见！', pinyin: 'Zàijiàn, míngtiān jiàn!', vietnamese: 'Tạm biệt, mai gặp nhé.', term: '明天见', termPinyin: 'míngtiān jiàn', meaningVi: 'gặp mai', noteVi: 'Hẹn lại.', grammarNote: '' }
+  ];
+  const lesson = style === 'dialogue-cards'
+    ? dialogueCards
+    : style === 'numbered-scenario'
+      ? numberedScenario
+      : [{ chinese: '我喜欢喝茶。', pinyin: 'Wǒ xǐhuan hē chá.', vietnamese: 'Tôi thích uống trà.', term: '喝茶', termPinyin: 'hē chá', meaningVi: 'uống trà', noteVi: 'Dùng khi nói về sở thích.', grammarNote: '' }];
+  return {
+    contentLanguage: 'zh', presentationStyle: style, topic: 'Giao tiếp hằng ngày', category: 'Giao tiếp', level: 'A1',
+    title: 'Nói về trà', hook: 'Cùng học một câu ngắn.', thumbnailTitle: 'Nói về trà',
+    lessons: lesson, scenes: [{ description: 'Bạn bè nói chuyện ở quán trà.' }, { description: 'Một người gọi trà.' }]
+  };
+}
 
 test('topic library contains one hundred distinct topics', () => {
   assert.equal(TOPICS.length, 100);
@@ -72,4 +96,84 @@ test('an empty canonical speechSegments array falls back to audioSegments', () =
   const segments = createSpeechSegments({ speechSegments: [], audioSegments: [{ id: 'narrator', language: 'en', text: 'Welcome back.' }] });
   assert.equal(segments.length, 1);
   assert.equal(segments[0].segmentId, 'narrator');
+});
+
+test('all four Chinese lesson formats produce the expected spoken order without a follow CTA', () => {
+  const expected = {
+    'inline-meaning': { lessons: 1, count: 5 },
+    'inline-keyphrase': { lessons: 1, count: 5 },
+    'dialogue-cards': { lessons: 2, count: 6 },
+    'numbered-scenario': { lessons: 3, count: 12 }
+  };
+  for (const [style, shape] of Object.entries(expected)) {
+    const script = validateScript(chineseFixture(style), { contentLanguage: 'zh' });
+    assert.equal(script.dialogues.length, shape.lessons, style);
+    assert.equal(script.speechSegments.length, shape.count, style);
+    assert.ok(script.speechSegments.every((segment) => segment.state !== 'cta' && segment.target.layerId !== 'cta'), style);
+    assert.deepEqual(
+      script.speechSegments.filter((segment) => segment.language === 'zh').map((segment) => segment.text),
+      script.dialogues.flatMap((dialogue) => style === 'dialogue-cards'
+        ? [dialogue.chinese, dialogue.chinese]
+        : style === 'numbered-scenario'
+          ? [dialogue.chinese, dialogue.chinese]
+          : [dialogue.chinese, dialogue.chinese, dialogue.term]),
+      style
+    );
+  }
+});
+
+test('Chinese validation rejects repeated lesson lines and mismatched key phrase Pinyin', () => {
+  const repeated = chineseFixture('numbered-scenario');
+  repeated.lessons[1] = structuredClone(repeated.lessons[0]);
+  assert.throws(() => validateScript(repeated, { contentLanguage: 'zh' }), /không được lặp lại/);
+
+  const mismatchedPinyin = chineseFixture('inline-meaning');
+  mismatchedPinyin.lessons[0].termPinyin = 'hē shuǐ';
+  assert.throws(() => validateScript(mismatchedPinyin, { contentLanguage: 'zh' }), /Pinyin.*khớp/);
+});
+
+test('Chinese Pinyin validation accounts for 儿化 and rejects follow calls in lesson text', () => {
+  const erhua = chineseFixture('inline-meaning');
+  erhua.lessons[0] = {
+    chinese: '你在哪儿？', pinyin: 'Nǐ zài nǎr?', vietnamese: 'Bạn đang ở đâu?',
+    term: '在哪儿', termPinyin: 'zài nǎr', meaningVi: 'ở đâu', noteVi: 'Dùng để hỏi vị trí.', grammarNote: ''
+  };
+  assert.equal(validateScript(erhua, { contentLanguage: 'zh' }).dialogues[0].chinese, '你在哪儿？');
+
+  const followCta = chineseFixture('inline-meaning');
+  followCta.lessons[0].noteVi = 'Hãy theo dõi kênh để học thêm.';
+  assert.throws(() => validateScript(followCta, { contentLanguage: 'zh' }), /không được có lời kêu gọi/);
+});
+
+test('Chinese review gate fails closed on issues and malformed reviewer responses', () => {
+  assert.deepEqual(assertChineseReviewResponse('{"approved":true,"issues":[]}'), { approved: true, issues: [] });
+  assert.throws(() => assertChineseReviewResponse({ approved: true, issues: ['lesson 1 pinyin: tone is wrong'] }), /chưa đạt/);
+  assert.throws(() => assertChineseReviewResponse({ approved: 'true', issues: [] }), /bị chặn/);
+  assert.throws(() => assertChineseReviewResponse({ approved: true, issues: [], notes: 'unclear' }), /bị chặn/);
+});
+
+test('a saved Chinese script can be revalidated without unpersisted scenes and keeps its ID', () => {
+  const script = validateScript(chineseFixture('dialogue-cards'), { contentLanguage: 'zh' });
+  const savedId = script.id;
+  delete script.scenes;
+  const checked = validateScript(script, { contentLanguage: 'zh', requireChineseScenes: false });
+  assert.equal(checked.id, savedId);
+  assert.ok(checked.speechSegments.every((segment) => segment.state !== 'cta'));
+});
+
+test('Chinese captions invite practice without follow or subscribe language', () => {
+  const valid = 'Nói về trà\n\n“我喜欢喝茶。” đọc là “Wǒ xǐhuan hē chá”, nghĩa là “Tôi thích uống trà”. Cụm “喝茶” nghĩa là “uống trà”.\n\nHãy thử đọc câu này và bình luận cách bạn gọi trà nhé.';
+  assert.equal(validateChineseCaption(valid), '');
+  assert.match(validateChineseCaption(valid.replace('bình luận', 'theo dõi kênh')), /không được có lời kêu gọi/);
+  assert.match(validateChineseCaption(valid.replace('bình luận', 'follow the page and')), /không được có lời kêu gọi/);
+});
+
+test('Chinese caption fallback validates and summarizes every lesson style', () => {
+  for (const style of ['inline-meaning', 'inline-keyphrase', 'dialogue-cards', 'numbered-scenario']) {
+    const script = validateScript(chineseFixture(style), { contentLanguage: 'zh' });
+    const caption = buildChineseCaptionFallback(script);
+    assert.equal(validateChineseCaption(caption), '', style);
+    for (const dialogue of script.dialogues) assert.ok(caption.includes(dialogue.chinese.replace(/[.!?。！？]+$/u, '')), style);
+    assert.doesNotMatch(caption, /follow|theo\s*dõi|đăng\s*ký|关注|订阅/iu, style);
+  }
 });

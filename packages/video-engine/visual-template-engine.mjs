@@ -612,12 +612,7 @@ async function layerMarkup(layerId, context) {
   const inlineChinese = contentLanguage === 'zh' && Boolean(geometry.inlineTarget);
   const faintChineseLead = inlineChinese && layerId === 'chinese-card' && state === 'vietnamese'
     && speechSegment?.target?.layerId === 'vietnamese-card';
-  const chineseFade = contentLanguage === 'zh'
-    && ((layerId === 'chinese-card' && speechSegment?.target?.layerId === 'chinese-card' && speechSegment.target?.pinyinVisible === false)
-      || (layerId === 'vocabulary' && speechSegment?.target?.layerId === 'vocabulary'))
-    ? Math.max(0, Math.min(1, Number(context.chineseTextEffectProgress ?? 1)))
-    : 1;
-  const opacity = Math.max(0, Math.min(1, Number(layer.opacity ?? 1) * opacityFor(state, layerId) * (faintChineseLead ? 0.3 : 1) * chineseFade));
+  const opacity = Math.max(0, Math.min(1, Number(layer.opacity ?? 1) * opacityFor(state, layerId) * (faintChineseLead ? 0.3 : 1)));
   const pointerEvents = ['background'].includes(layerId) ? 'none' : ['facebook-logo', 'youtube-logo'].includes(layerId) ? 'all' : 'visiblePainted';
   const groupStart = `<g id="layer-${xml(layerId)}" data-layer-id="${xml(layerId)}" opacity="${opacity}" pointer-events="${pointerEvents}">`;
   if (layerId === 'pinyin') {
@@ -776,12 +771,11 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
     if (id === 'title') return state === 'intro';
     if (id === 'scene-number' || id === 'vietnamese-card') return ['vietnamese', 'bilingual', 'vocabulary', 'transition'].includes(state);
     if (id === 'english-card') return ['bilingual', 'vocabulary', 'transition'].includes(state);
-    if (id === 'chinese-card') return ['bilingual', 'vocabulary', 'transition'].includes(state)
-      || (sceneScript.contentLanguage === 'zh' && ['inline-meaning', 'inline-keyphrase'].includes(chinesePresentationStyle(sceneScript)) && state === 'vietnamese');
+    if (id === 'chinese-card') return ['bilingual', 'vocabulary', 'transition'].includes(state);
     if (id === 'pinyin') return ['bilingual', 'vocabulary'].includes(state)
       && (speechSegment?.target?.layerId !== 'chinese-card' || speechSegment.target?.pinyinVisible !== false);
     if (id === 'vocabulary') return ['vocabulary', 'transition'].includes(state);
-    if (id === 'cta') return state === 'cta';
+    if (id === 'cta') return sceneScript.contentLanguage !== 'zh' && state === 'cta';
     if (getLayer(template, id)?.kind === 'text') return ['vietnamese', 'bilingual', 'vocabulary'].includes(state);
     return false;
   });

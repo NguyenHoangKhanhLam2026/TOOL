@@ -78,8 +78,8 @@ export function assertDistinctFromHistory(script, history, threshold = 0.82) {
   return script;
 }
 
-export function validateScript(raw, { contentLanguage = 'en' } = {}) {
-  if (contentLanguage === 'zh') return validateChineseScript(raw);
+export function validateScript(raw, { contentLanguage = 'en', requireChineseScenes = true } = {}) {
+  if (contentLanguage === 'zh') return validateChineseScript(raw, { requireScenes: requireChineseScenes });
   const script = typeof raw === 'string' ? JSON.parse(raw) : raw;
   const errors = [];
   if (!['en', 'ja', 'zh'].includes(contentLanguage)) throw new Error('Unsupported content language.');
@@ -151,9 +151,38 @@ function pinyinSyllables(value) {
   return String(value || '').toLocaleLowerCase('zh-CN').match(/[aeiouüvāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]+/gu) || [];
 }
 
-function validateChineseScript(raw) {
+function pinyinErhuaCount(value, chinese) {
+  const erhuaHanzi = [...String(chinese || '').matchAll(/(?<=\p{Script=Han})儿/gu)].length;
+  const erhuaSyllables = [...String(value || '').toLocaleLowerCase('zh-CN').matchAll(/[a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüv]+r(?=$|[\s,，.。!?！？;；:：·])/gu)]
+    .filter(([syllable]) => normalizePinyin(syllable) !== 'er').length;
+  return Math.min(erhuaHanzi, erhuaSyllables);
+}
+
+function normalizePinyin(value) {
+  const toneMap = {
+    ā: 'a', á: 'a', ǎ: 'a', à: 'a', ē: 'e', é: 'e', ě: 'e', è: 'e',
+    ī: 'i', í: 'i', ǐ: 'i', ì: 'i', ō: 'o', ó: 'o', ǒ: 'o', ò: 'o',
+    ū: 'u', ú: 'u', ǔ: 'u', ù: 'u', ǖ: 'v', ǘ: 'v', ǚ: 'v', ǜ: 'v', ü: 'v'
+  };
+  return [...String(value || '').toLocaleLowerCase('zh-CN')]
+    .map((character) => toneMap[character] ?? character)
+    .join('')
+    .replace(/[^a-zv]/gu, '');
+}
+
+function normalizeChinese(value) {
+  return String(value || '').normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu, '');
+}
+
+export function containsChineseFollowCta(value) {
+  return /(?:\b(?:follow|subscribe)\b|theo\s*dõi|đăng\s*ký(?:\s*(?:kênh|channel|trang|page))?|关注(?:我|我们|本频道|频道|账号|一下)|订阅(?:我|我们|本频道|频道|账号))/iu.test(String(value || ''));
+}
+
+function validateChineseScript(raw, { requireScenes = true } = {}) {
   const script = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (!script || typeof script !== 'object' || Array.isArray(script)) throw new Error('Kịch bản tiếng Trung không phải đối tượng JSON.');
+  const originalId = script.id;
+  const originalCreatedAt = script.createdAt;
   script.contentLanguage = 'zh';
   const errors = [];
   for (const key of ['topic', 'category', 'level', 'title', 'hook', 'thumbnailTitle']) {
@@ -192,15 +221,23 @@ function validateChineseScript(raw) {
       if (String(lesson?.grammarNote || '').trim()) errors.push(`${prefix}: grammarNote phải để trống trong kiểu numbered-scenario.`);
     }
     if (!hanziCount) errors.push(`${prefix} phải có câu bằng chữ Hán giản thể.`);
+    if (!termHanziCount) errors.push(`${prefix}: cụm trọng tâm phải có ít nhất một chữ Hán.`);
     if (/[A-Za-z]{2,}/u.test(chinese)) errors.push(`${prefix} không được chèn từ tiếng Anh hoặc Pinyin.`);
     if (!term || !chinese.includes(term)) errors.push(`${prefix}: cụm chữ Hán trọng tâm phải xuất hiện nguyên văn trong câu.`);
     if (traditionalCharacters.test(chinese)) errors.push(`${prefix} có ký tự phồn thể; yêu cầu dùng chữ Hán giản thể.`);
     if (/[\u3400-\u9fff]/u.test(pinyin) || !/^[\p{Script=Latin}\p{M}\d\s'’.,!?;:·-]+$/u.test(pinyin)) errors.push(`${prefix}: Pinyin phải dùng ký tự Latin, không chèn chữ Hán.`);
     if (!/[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]|[1-5]/u.test(pinyin)) errors.push(`${prefix}: Pinyin cần thể hiện dấu thanh hoặc số thanh điệu.`);
-    if (hanziCount && pinyinSyllables(pinyin).length !== hanziCount) errors.push(`${prefix}: số âm tiết Pinyin (${pinyinSyllables(pinyin).length}) phải khớp số chữ Hán (${hanziCount}).`);
+    const sentencePinyinSyllables = pinyinSyllables(pinyin).length;
+    const expectedSentenceSyllables = hanziCount - pinyinErhuaCount(pinyin, chinese);
+    if (hanziCount && sentencePinyinSyllables !== expectedSentenceSyllables) errors.push(`${prefix}: số âm tiết Pinyin ước tính (${sentencePinyinSyllables}) không khớp số chữ Hán sau khi tính âm 儿 hóa (${expectedSentenceSyllables}).`);
     if (!/^[\p{Script=Latin}\p{M}\d\s'’.,!?;:·-]+$/u.test(termPinyin) || /[\u3400-\u9fff]/u.test(termPinyin)) errors.push(`${prefix}: Pinyin của cụm trọng tâm không hợp lệ.`);
     if (!/[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]|[1-5]/u.test(termPinyin)) errors.push(`${prefix}: Pinyin của cụm trọng tâm cần thể hiện dấu thanh hoặc số thanh điệu.`);
-    if (termHanziCount && pinyinSyllables(termPinyin).length !== termHanziCount) errors.push(`${prefix}: số âm tiết Pinyin của cụm trọng tâm phải khớp ${termHanziCount} chữ Hán.`);
+    const termPinyinSyllables = pinyinSyllables(termPinyin).length;
+    const expectedTermSyllables = termHanziCount - pinyinErhuaCount(termPinyin, term);
+    if (termHanziCount && termPinyinSyllables !== expectedTermSyllables) errors.push(`${prefix}: số âm tiết Pinyin ước tính của cụm trọng tâm không khớp số chữ Hán sau khi tính âm 儿 hóa.`);
+    if (normalizePinyin(termPinyin) && !normalizePinyin(pinyin).includes(normalizePinyin(termPinyin))) {
+      errors.push(`${prefix}: Pinyin của cụm trọng tâm phải khớp với một đoạn trong Pinyin toàn câu (không tính dấu thanh).`);
+    }
     return {
       ...lesson,
       index: index + 1,
@@ -215,8 +252,12 @@ function validateChineseScript(raw) {
       grammarNote: String(lesson?.grammarNote || '').trim()
     };
   });
+  const normalizedLessonLines = lessons.map((lesson) => normalizeChinese(lesson.chinese)).filter(Boolean);
+  if (new Set(normalizedLessonLines).size !== normalizedLessonLines.length) errors.push('Các câu tiếng Trung trong cùng một kịch bản không được lặp lại.');
+  const ctaSurfaces = [script.title, script.hook, script.thumbnailTitle, script.caption, ...lessons.flatMap((lesson) => [lesson?.chinese, lesson?.vietnamese, lesson?.term, lesson?.meaningVi, lesson?.noteVi, lesson?.grammarNote])];
+  if (ctaSurfaces.some(containsChineseFollowCta)) errors.push('Nội dung tiếng Trung không được có lời kêu gọi follow, theo dõi hoặc đăng ký kênh.');
   const scenes = Array.isArray(script.scenes) ? script.scenes : [];
-  if (scenes.length < 2 || scenes.length > 4 || scenes.some((scene) => typeof scene?.description !== 'string' || !scene.description.trim())) errors.push('Kịch bản cần 2 đến 4 mô tả cảnh đời thường bằng tiếng Việt.');
+  if (requireScenes && (scenes.length < 2 || scenes.length > 4 || scenes.some((scene) => typeof scene?.description !== 'string' || !scene.description.trim()))) errors.push('Kịch bản cần 2 đến 4 mô tả cảnh đời thường bằng tiếng Việt.');
   if (errors.length) throw new Error(errors.join(' '));
   script.presentationStyle = presentationStyle;
   script.lessons = lessons;
@@ -234,7 +275,10 @@ function validateChineseScript(raw) {
   for (const [index, dialogue] of lessons.entries()) {
     const dialogueIndex = index;
     const turnId = `zh-lesson-${index + 1}`;
-    const explanation = [dialogue.meaningVi, dialogue.noteVi, dialogue.grammarNote].filter(Boolean).join('. ');
+    const explanation = [dialogue.meaningVi, dialogue.noteVi, dialogue.grammarNote]
+      .map((part) => String(part || '').trim().replace(/[.!?。！？\s]+$/u, ''))
+      .filter(Boolean)
+      .join('. ');
     const targetDirection = standardMandarinDirection + punctuationDirection(dialogue.chinese);
     speechSegments.push(
       { turnId, segmentId: `zh-vietnamese-source-${index + 1}`, speakerId: 'vi-default', language: 'vi', text: dialogue.vietnamese, state: 'vietnamese', pauseAfterSeconds: 0.85, target: { layerId: 'vietnamese-card', dialogueIndex } },
@@ -248,11 +292,9 @@ function validateChineseScript(raw) {
       speechSegments.push({ turnId, segmentId: `zh-practice-${index + 1}`, speakerId: 'zh-default', language: 'zh', text: dialogue.term, ttsDirection: targetDirection + `像带领观众跟读一样，清楚、自信地说出重点短语；音节分明但保持连贯，目标词稍微加重并提高音量，最后自然收轻。按拼音“${dialogue.termPinyin}”准确发音，不要添加其他词。`, state: 'bilingual', pauseAfterSeconds: 0.5, target: { layerId: 'chinese-card', dialogueIndex, pinyinVisible: true, pinyin: dialogue.termPinyin } });
     }
   }
-  const ctaIndex = Math.max(0, lessons.length - 1);
-  speechSegments.push({ segmentId: 'zh-cta-vi', speakerId: 'vi-default', language: 'vi', text: 'Theo dõi Cô Nơ Tiếng Trung để luyện nói mỗi ngày nhé.', state: 'cta', target: { layerId: 'cta', dialogueIndex: ctaIndex } });
-  script.speechSegments = speechSegments;
-  script.createdAt = new Date().toISOString();
-  script.id = crypto.randomUUID();
+  script.speechSegments = speechSegments.filter((segment) => segment.state !== 'cta' && segment.target?.layerId !== 'cta');
+  script.createdAt = originalCreatedAt || new Date().toISOString();
+  script.id = originalId || crypto.randomUUID();
   script.contentHash = contentHash(script);
   return script;
 }
@@ -283,5 +325,5 @@ function contentItems(script) {
   return [...(Array.isArray(script?.dialogues) ? script.dialogues : []), ...speechSegments(script)];
 }
 function isChineseCta(item) {
-  return item?.target?.layerId === 'cta' || item?.segmentId === 'zh-cta-vi';
+  return item?.target?.layerId === 'cta' || item?.segmentId === 'zh-cta-vi' || containsChineseFollowCta(item?.text);
 }

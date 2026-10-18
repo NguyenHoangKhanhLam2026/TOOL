@@ -1,8 +1,10 @@
 import { insertVideo, updateVideo, log, getSettings, getScript, getVideo, findVideoByScriptId, updateJobPayload } from '../database/db.mjs';
-import { createScript } from '../ai/script-service.mjs';
+import { createScript, reviewChineseScript } from '../ai/script-service.mjs';
+import { validateScript } from '../ai/validator.mjs';
+import { validateChineseCaption } from '../ai/caption-service.mjs';
 import { formatCaption } from '../ai/hashtag-utils.mjs';
 import { synthesizeLocalAiScript } from '../tts/local-ai-tts.mjs';
-import { renderVideo } from '../../packages/video-engine/render.mjs';
+import { assertChineseRenderQuality, renderVideo } from '../../packages/video-engine/render.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -21,10 +23,12 @@ export async function createVideoJob(job) {
   let scriptId = job.payload.scriptId;
   let provider = job.payload.provider;
   let script;
+  let loadedChineseScript = false;
   if (scriptId) {
     script = getScript(scriptId);
     if (!script) throw new Error('Kịch bản đã lưu cho job không còn tồn tại.');
     provider ||= script.provider;
+    loadedChineseScript = script.contentLanguage === 'zh';
   } else {
     const generated = await createScript(job.payload.topicId || null, {
       allowLocalTemplate: Boolean(job.payload.allowLocalTemplate),
@@ -42,6 +46,18 @@ export async function createVideoJob(job) {
       updateVideo(existingVideo.id, { status: 'ready', last_error: null });
     }
     return { videoId: existingVideo.id, scriptId, provider, videoPath: existingVideo.video_path, thumbnailPath: existingVideo.thumbnail_path, duration: Number(existingVideo.duration_seconds), recovered: true };
+  }
+  if (loadedChineseScript) {
+    script = validateScript(script, { contentLanguage: 'zh', requireChineseScenes: false });
+    const captionBody = String(script.caption || '')
+      .replace(/#[\p{L}\p{N}_]+/gu, '')
+      .replace(/[ \t]+\n/gu, '\n')
+      .replace(/\n{3,}/gu, '\n\n')
+      .trim();
+    const captionIssue = validateChineseCaption(captionBody);
+    if (captionIssue) throw new Error(`Kịch bản tiếng Trung đã lưu không qua kiểm tra caption trước khi render: ${captionIssue}`);
+    script.caption = captionBody;
+    await reviewChineseScript(script);
   }
   const videoId = existingVideo?.id || insertVideo(scriptId, 'processing');
   if (!job.payload.videoId) updateJobPayload(job.id, { videoId });
@@ -63,6 +79,7 @@ export async function createVideoJob(job) {
       onAlignmentWarning: (warning) => log('WARN', 'WORD_HIGHLIGHT_ALIGNMENT', JSON.stringify({ videoId, ...warning }), job.id),
       highlightSettings: settings
     });
+    assertChineseRenderQuality(script, result);
     // Rendering is complete once renderVideo returns a usable MP4. Persist that
     // fact before writing auxiliary manifests so a later retry cannot render it
     // again because an unrelated sidecar write failed.

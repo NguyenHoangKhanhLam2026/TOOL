@@ -479,6 +479,32 @@ function removeGeneratedVideoFiles(videoId) {
   return removed;
 }
 
+function clearPublishedAudioCacheIfIdle() {
+  const temporaryRoot = path.resolve(PATHS.temporary);
+  const cacheRoot = path.resolve(temporaryRoot, 'audio-cache');
+  if (path.dirname(cacheRoot) !== temporaryRoot || path.basename(cacheRoot) !== 'audio-cache') {
+    throw new Error('Đường dẫn cache âm thanh không hợp lệ khi dọn tệp đã đăng.');
+  }
+
+  // Serialize the idle check and cache removal with claimJob so a new render
+  // cannot start using shared audio cache files between those two operations.
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const activeVideoJob = db.prepare("SELECT 1 FROM jobs WHERE type='create_video' AND status='running' LIMIT 1").get();
+    if (activeVideoJob) {
+      db.exec('COMMIT');
+      return { cleaned: false, removed: false };
+    }
+    const removed = fs.existsSync(cacheRoot);
+    if (removed) fs.rmSync(cacheRoot, { recursive: true, force: true });
+    db.exec('COMMIT');
+    return { cleaned: true, removed };
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 export function archivePublishedVideo(videoId) {
   const video = db.prepare('SELECT status,published_id,archived_at FROM videos WHERE id=?').get(videoId);
   if (!video || video.status !== 'published' || !video.published_id) return false;
@@ -487,8 +513,11 @@ export function archivePublishedVideo(videoId) {
     .run(stamp, stamp, videoId);
   if (Number(result.changes) !== 1) return false;
   try {
+    const audioCache = clearPublishedAudioCacheIfIdle();
+    if (audioCache.removed) log('INFO', 'PUBLISHED_AUDIO_CACHE_DELETED', `Đã xóa cache giọng đọc dùng chung sau khi đăng video ${videoId}.`);
+    if (!audioCache.cleaned) log('INFO', 'PUBLISHED_AUDIO_CACHE_CLEANUP_DEFERRED', `Đã dọn tệp riêng của video ${videoId}; sẽ xóa cache giọng đọc sau khi các job tạo video đang chạy hoàn tất.`);
     if (removeGeneratedVideoFiles(videoId)) log('INFO', 'PUBLISHED_VIDEO_FILES_DELETED', `Đã xóa tệp video ${videoId} sau khi xác nhận đăng thành công.`);
-    db.prepare('UPDATE videos SET published_files_cleanup_pending=0,updated_at=? WHERE id=?').run(new Date().toISOString(), videoId);
+    db.prepare('UPDATE videos SET published_files_cleanup_pending=?,updated_at=? WHERE id=?').run(audioCache.cleaned ? 0 : 1, new Date().toISOString(), videoId);
   } catch (error) {
     log('WARN', 'PUBLISHED_VIDEO_FILES_DELETE_FAILED', `Đã đăng video ${videoId} nhưng chưa dọn được tệp cục bộ: ${error.message}`);
   }
@@ -501,6 +530,9 @@ export function cleanupArchivedPublishedVideoFiles() {
   for (const { id } of rows) {
     try {
       if (removeGeneratedVideoFiles(id)) removed += 1;
+      const audioCache = clearPublishedAudioCacheIfIdle();
+      if (!audioCache.cleaned) continue;
+      if (audioCache.removed) log('INFO', 'PUBLISHED_AUDIO_CACHE_DELETED', 'Đã xóa cache giọng đọc dùng chung sau khi dọn các video đã đăng.');
       db.prepare('UPDATE videos SET published_files_cleanup_pending=0,updated_at=? WHERE id=?').run(new Date().toISOString(), id);
     }
     catch (error) { log('WARN', 'PUBLISHED_VIDEO_FILES_DELETE_FAILED', `Chưa dọn được tệp video đã đăng ${id}: ${error.message}`); }

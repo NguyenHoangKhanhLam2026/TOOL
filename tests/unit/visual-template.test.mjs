@@ -44,6 +44,26 @@ test('scene renderer selects the right dialogue states and escapes script text',
   assert.match(escaped, /&lt;script&gt;/);
 });
 
+test('Chinese preview reveals its text with the Chinese voice and omits the follow CTA state', async () => {
+  const template = readVisualTemplate({ contentLanguage: 'zh' });
+  const chineseScript = {
+    contentLanguage: 'zh', presentationStyle: 'inline-meaning', title: 'Nói lời chào',
+    dialogues: [{ vietnamese: 'Xin chào bạn.', chinese: '你好。', pinyin: 'Nǐ hǎo.', term: '你好', termPinyin: 'nǐ hǎo', meaningVi: 'xin chào' }]
+  };
+  const vietnamese = await buildSceneSvg({ template, script: chineseScript, state: 'vietnamese', index: 0 });
+  const chinese = await buildSceneSvg({ template, script: chineseScript, state: 'bilingual', index: 0 });
+  const firstChineseRead = await buildSceneSvg({
+    template, script: chineseScript, state: 'bilingual', index: 0,
+    speechSegment: { segmentId: 'first-read', text: '你好。', target: { layerId: 'chinese-card', pinyinVisible: false } },
+    chineseTextEffectProgress: 0
+  });
+  const cta = await buildSceneSvg({ template, script: chineseScript, state: 'cta', index: 0 });
+  assert.doesNotMatch(vietnamese, /data-layer-id="chinese-card"|data-layer-id="pinyin"/);
+  assert.match(chinese, /data-layer-id="chinese-card"/);
+  assert.match(firstChineseRead, /<g id="layer-chinese-card"[^>]+opacity="1"/);
+  assert.doesNotMatch(cta, /data-layer-id="cta"/);
+});
+
 test('scene rasterizes as portrait PNG and wraps long Vietnamese dialogue', async () => {
   const template = readVisualTemplate();
   const png = await rasterizeScene({ template, script, state: 'bilingual', index: 0 });

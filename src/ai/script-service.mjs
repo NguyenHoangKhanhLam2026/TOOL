@@ -3,6 +3,7 @@ import { db, getSettings, pickTopic, insertScript, log } from '../database/db.mj
 import { chatgptStatus, generateWithChatGPT } from './chatgpt-plan.mjs';
 import { assertDistinctFromHistory, validateScript } from './validator.mjs';
 import { generateCaption } from './caption-service.mjs';
+import { assertChineseReviewResponse, buildChineseReviewPrompt } from './chinese-quality.mjs';
 import fs from 'node:fs';
 
 const SCRIPT_PROMPT = fs.readFileSync(new URL('../../packages/ai-engine/prompts/generate-script.md', import.meta.url), 'utf8');
@@ -41,7 +42,7 @@ function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopic
     }[presentationStyle];
     return `Create a practical Vietnamese–Simplified Chinese learning video for a beginner. Return valid JSON only, matching this schema: ${JSON.stringify(schema)}\n` +
       `Presentation style: ${presentationStyle}. ${styleInstructions}\n` +
-      `Requirements: return exactly ${lessonCount} items in lessons. Each lessons[].chinese value must be a single short spoken sentence, with no newline or second sentence; obey the Hanzi limit for its presentation style. Use natural Simplified Chinese only and never insert Pinyin there. Provide tone-marked Hanyu Pinyin for every full Chinese sentence and key phrase; syllable counts must match Hanzi counts. Make every Vietnamese translation faithful, and explain only verified meanings and usage within the style word limits. Write Chinese as natural spoken dialogue, not a textbook definition. Use punctuation that matches sentence intent, including a question mark for genuine questions. Never put Pinyin, pronunciation notes, bracketed stage directions, or voice instructions inside text to be spoken. Do not generate English learning content, Japanese, Traditional Chinese, or invented facts. Provide 2–4 relevant scene descriptions in Vietnamese. Keep title, hook, explanation, and thumbnail text in Vietnamese.\n` +
+      `Requirements: return exactly ${lessonCount} items in lessons. Each lessons[].chinese value must be a single short spoken sentence, with no newline or second sentence; obey the Hanzi limit for its presentation style. Use natural Simplified Chinese only and never insert Pinyin there. Provide standard Hanyu Pinyin for every full Chinese sentence and key phrase, mark lexical tones, allow unmarked neutral tones, and count syllables with the normal 儿化 exception where 儿 joins the preceding syllable. Make every Vietnamese translation faithful, and explain only verified meanings and usage within the style word limits. Write Chinese as natural spoken dialogue, not a textbook definition. Use punctuation that matches sentence intent, including a question mark for genuine questions. Never put Pinyin, pronunciation notes, bracketed stage directions, or voice instructions inside text to be spoken. Do not include any follow, subscribe, or follow-the-channel call to action in the title, hook, spoken content, or caption. The video must end when the final lesson speech ends. Do not generate English learning content, Japanese, Traditional Chinese, or invented facts. Provide 2–4 relevant scene descriptions in Vietnamese. Keep title, hook, explanation, and thumbnail text in Vietnamese.\n` +
       `Avoid Chinese phrases and lesson angles similar to these saved Chinese lessons: ${recent.join(' | ') || 'none'}.` +
       (autoTopic ? `\nTreat the selected topic as a broad seed and invent a fresh specific situation. Avoid previous angles: ${previousTopics.slice(0, 50).join(' | ') || 'none'}.` : '');
   }
@@ -76,6 +77,12 @@ function parseJSON(text) {
   const end = clean.lastIndexOf('}');
   if (start < 0 || end < start) throw new Error('Provider không trả về JSON.');
   return JSON.parse(clean.slice(start, end + 1));
+}
+
+export async function reviewChineseScript(script) {
+  assertChineseReviewResponse(await generateWithChatGPT(buildChineseReviewPrompt(script)));
+  log('INFO', 'ZH_SCRIPT_QA_PASSED', `Kịch bản và caption tiếng Trung đã qua kiểm tra nội dung, dịch nghĩa và Pinyin.`);
+  return script;
 }
 
 export async function createScript(topicId, { allowLocalTemplate = false, contentLanguage = 'en', presentationStyle = null } = {}) {
@@ -118,6 +125,12 @@ export async function createScript(topicId, { allowLocalTemplate = false, conten
       try {
         candidate = validateScript(parseJSON(await call(repairPrompt)), { contentLanguage });
         assertDistinctFromHistory(candidate, history);
+        if (contentLanguage === 'zh') {
+          const caption = await generateCaption(candidate);
+          candidate.caption = caption.caption;
+          candidate.hashtags = caption.hashtags;
+          await reviewChineseScript(candidate);
+        }
         script = candidate;
         provider = name;
         break;
@@ -142,12 +155,14 @@ export async function createScript(topicId, { allowLocalTemplate = false, conten
     provider = 'local-template';
   }
   if (!script) throw new Error(`Kh\u00f4ng t\u1ea1o \u0111\u01b0\u1ee3c k\u1ecbch b\u1ea3n m\u1edbi kh\u00f4ng tr\u00f9ng. H\u00e3y ki\u1ec3m tra k\u1ebft n\u1ed1i ChatGPT Plan r\u1ed3i th\u1eed l\u1ea1i. ${errors.join(' | ')}`);
-  try {
-    const caption = await generateCaption(script);
-    script.caption = caption.caption;
-    script.hashtags = caption.hashtags;
-  } catch (error) {
-    log('WARN', 'CAPTION_GENERATION_FALLBACK', `Caption generation failed: ${error.message}`);
+  if (contentLanguage !== 'zh') {
+    try {
+      const caption = await generateCaption(script);
+      script.caption = caption.caption;
+      script.hashtags = caption.hashtags;
+    } catch (error) {
+      log('WARN', 'CAPTION_GENERATION_FALLBACK', `Caption generation failed: ${error.message}`);
+    }
   }
   const scriptId = insertScript(script, topic.id, provider);
   return { scriptId, provider, script };

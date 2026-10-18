@@ -4,7 +4,7 @@ import {
   buildAudioTimeline, buildHighlightIntervals, createSpeechSegments, findActiveHighlight,
   mapWordBoundariesToTokens, prepareSpeechText, tokenizeText
 } from '../../packages/audio-highlight/highlight-engine.mjs';
-import { fitVocabularyHold, resolveSpeechTarget } from '../../packages/video-engine/render.mjs';
+import { assertChineseRenderQuality, filterChineseCtaAudioFiles, fitVocabularyHold, resolveSpeechTarget } from '../../packages/video-engine/render.mjs';
 
 const ticks = (seconds) => Math.round(seconds * 10_000_000);
 const boundary = (text, start, duration = 0.12) => ({ text, offsetTicks: ticks(start), durationTicks: ticks(duration) });
@@ -143,6 +143,69 @@ test('explicit speech segments are not tied to the bilingual template or a fixed
   assert.equal(segments[0].target.layerId, 'custom-copy');
   assert.deepEqual(segments.map((segment) => segment.language), ['en', 'vi']);
   assert.deepEqual(segments.map((segment) => segment.voiceName), ['en-GB-SoniaNeural', 'vi-VN-NamMinhNeural']);
+});
+
+test('Chinese re-renders discard legacy CTA segments and do not append a new one', () => {
+  const segments = createSpeechSegments({
+    contentLanguage: 'zh',
+    speechSegments: [
+      { segmentId: 'zh-lesson', speakerId: 'zh-default', language: 'zh', text: '你好。', state: 'bilingual', target: { layerId: 'chinese-card' } },
+      { segmentId: 'zh-cta-vi', speakerId: 'vi-default', language: 'vi', text: 'Theo dõi kênh nhé.', state: 'cta', target: { layerId: 'cta' } }
+    ]
+  }, { contentLanguage: 'zh' });
+  assert.deepEqual(segments.map((segment) => segment.segmentId), ['zh-lesson']);
+  assert.equal(segments.some((segment) => segment.state === 'cta' || segment.target.layerId === 'cta'), false);
+});
+
+test('Chinese rendering excludes legacy CTA audio even when the audio metadata is incomplete', () => {
+  const script = {
+    contentLanguage: 'zh',
+    speechSegments: [{ segmentId: 'saved-cta-id', state: 'cta' }]
+  };
+  const files = [
+    { segmentId: 'lesson' },
+    { segmentId: 'saved-cta-id' },
+    { segmentId: 'zh-cta-vi' },
+    { segmentId: 'legacy-target', target: { layerId: 'cta' } },
+    { segmentId: 'legacy-state', state: 'cta' }
+  ];
+  assert.deepEqual(filterChineseCtaAudioFiles(script, files).map((item) => item.segmentId), ['lesson']);
+  assert.strictEqual(filterChineseCtaAudioFiles({ contentLanguage: 'en' }, files), files);
+});
+
+test('Chinese render gate requires the complete script order and an exact content ending', () => {
+  const script = { contentLanguage: 'zh', speechSegments: [
+    { segmentId: 'lesson-vi', state: 'vietnamese', language: 'vi', text: 'Xin chào.' },
+    { segmentId: 'lesson-zh', state: 'bilingual', language: 'zh', text: '你好。' }
+  ] };
+  const result = {
+    duration: 4,
+    audioManifest: [
+      { segmentId: 'lesson-vi', language: 'vi', text: 'Xin chào.' },
+      { segmentId: 'lesson-zh', language: 'zh', text: '你好。' }
+    ],
+    renderManifest: {
+      timeline: [
+        { type: 'silence', state: 'intro', start: 0, end: 1 },
+        { type: 'speech', state: 'vietnamese', segmentId: 'lesson-vi', start: 1, end: 2.5 },
+        { type: 'speech', state: 'bilingual', segmentId: 'lesson-zh', start: 2.5, end: 4 },
+        { type: 'silence', state: 'cta', start: 4, end: 4 }
+      ],
+      durationSeconds: 4,
+      synchronization: { checked: true, driftSeconds: 0.01 }
+    }
+  };
+  assert.strictEqual(assertChineseRenderQuality(script, result), result);
+  assert.throws(() => assertChineseRenderQuality(script, { ...result, duration: 4.2 }), /phần đuôi/);
+  assert.throws(() => assertChineseRenderQuality(script, {
+    ...result,
+    renderManifest: { ...result.renderManifest, timeline: [...result.renderManifest.timeline, { type: 'speech', state: 'cta', segmentId: 'cta', start: 4, end: 5 }] }
+  }), /kêu gọi theo dõi/);
+  assert.throws(() => assertChineseRenderQuality(script, {
+    ...result,
+    audioManifest: [result.audioManifest[0], { ...result.audioManifest[1], text: '再见。' }]
+  }), /không khớp kịch bản/);
+  assert.deepEqual(assertChineseRenderQuality({ contentLanguage: 'en' }, {}), {});
 });
 
 test('a generic template selects a compatible text layer when the default card is absent', () => {

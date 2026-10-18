@@ -390,7 +390,11 @@ export function createSpeechSegments(script, settings = {}) {
   }
 
   if (!segments.length) throw new Error('Kịch bản không có đoạn văn bản nào để đọc.');
-  appendCtaSpeech(settings, segments);
+  if (normalizeLanguage(script?.contentLanguage || settings.contentLanguage || 'en') === 'zh') {
+    for (let index = segments.length - 1; index >= 0; index -= 1) {
+      if (segments[index].state === 'cta' || segments[index].target?.layerId === 'cta') segments.splice(index, 1);
+    }
+  } else appendCtaSpeech(settings, segments);
   segments.forEach((segment, index) => { segment.order = index; });
 
   const ids = new Set();
