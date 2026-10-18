@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { KOKORO_MODEL_DIR, KOKORO_MODEL_MARKER, KOKORO_MODEL_PATH, KOKORO_PYTHON_BIN, KOKORO_VOICES_PATH, PATHS, ROOT } from '../config.mjs';
-import { alignSpeechBatchLocally } from './edge-tts.mjs';
+import { alignSpeechBatchLocally } from './local-alignment.mjs';
 import { mapWordBoundariesToTokens } from '../../packages/audio-highlight/highlight-engine.mjs';
 import { describeSpawnError } from '../utils/process-errors.mjs';
 

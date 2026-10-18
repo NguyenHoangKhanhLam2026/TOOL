@@ -2,27 +2,8 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
-const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], logs: [], jobs: [], filter: 'all', overview: null, settings: null, system: null, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0 };
+const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], logs: [], jobs: [], filter: 'all', languageFilter: 'all', overview: null, settings: null, system: null, facebookPages: { profiles: [], routes: {} }, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0, contentLanguageSavePromise: Promise.resolve(), contentLanguageRevision: 0, cosyVoiceUploadedProfileId: '', cosyVoiceActiveProfileId: '' };
 let previewAudio = null;
-const EN_US_VOICES = [
-  { id: 'en-US-AvaNeural', name: 'Ava', gender: 'Nữ' },
-  { id: 'en-US-AndrewNeural', name: 'Andrew', gender: 'Nam' },
-  { id: 'en-US-EmmaNeural', name: 'Emma', gender: 'Nữ' },
-  { id: 'en-US-BrianNeural', name: 'Brian', gender: 'Nam' },
-  { id: 'en-US-AnaNeural', name: 'Ana', gender: 'Nữ' },
-  { id: 'en-US-AndrewMultilingualNeural', name: 'AndrewMultilingual', gender: 'Nam' },
-  { id: 'en-US-AriaNeural', name: 'Aria', gender: 'Nữ' },
-  { id: 'en-US-AvaMultilingualNeural', name: 'AvaMultilingual', gender: 'Nữ' },
-  { id: 'en-US-BrianMultilingualNeural', name: 'BrianMultilingual', gender: 'Nam' },
-  { id: 'en-US-ChristopherNeural', name: 'Christopher', gender: 'Nam' },
-  { id: 'en-US-EmmaMultilingualNeural', name: 'EmmaMultilingual', gender: 'Nữ' },
-  { id: 'en-US-EricNeural', name: 'Eric', gender: 'Nam' },
-  { id: 'en-US-GuyNeural', name: 'Guy', gender: 'Nam' },
-  { id: 'en-US-JennyNeural', name: 'Jenny', gender: 'Nữ' },
-  { id: 'en-US-MichelleNeural', name: 'Michelle', gender: 'Nữ' },
-  { id: 'en-US-RogerNeural', name: 'Roger', gender: 'Nam' },
-  { id: 'en-US-SteffanNeural', name: 'Steffan', gender: 'Nam' }
-];
 const HIGHLIGHT_PREVIEW_TEXT = {
   vi: 'Xin chào, hôm nay mình cùng luyện nói tiếng Anh nhé.',
   en: 'Hello, let us practice English together today.'
@@ -81,9 +62,13 @@ function statusClass(status, video = null) {
   return 'neutral';
 }
 
+function isFacebookScheduleAccepted(video) {
+  return video?.status === 'scheduled' && video?.facebook_schedule_state === 'scheduled';
+}
+
 function pipelineErrorMessage(video) {
   const error = String(video.pipeline?.error || video.last_error || 'Có lỗi trong quá trình tạo video.');
-  if (error.includes('NoAudioReceived')) return 'Edge TTS không trả âm thanh. Thử lại hoặc đổi giọng đọc.';
+  if (error.includes('NoAudioReceived')) return 'Nhà cung cấp giọng đọc không trả âm thanh. Kiểm tra model và thử lại.';
   return error.split(/\r?\n/).find(Boolean)?.slice(0, 220) || 'Có lỗi trong quá trình tạo video.';
 }
 
@@ -92,6 +77,10 @@ function videoProgressMarkup(video) {
   const steps = video.pipeline.steps.map((step) => `<div class="pipeline-step ${step.status}" title="${escapeHtml(step.label)}: ${step.status === 'done' ? 'Đã hoàn tất' : step.status === 'error' ? 'Bị lỗi' : step.status === 'active' ? 'Đang thực hiện' : 'Đang chờ'}"><span class="pipeline-light"></span><span>${escapeHtml(step.label)}</span></div>`).join('');
   const error = video.pipeline.error ? `<p class="pipeline-error">${escapeHtml(pipelineErrorMessage(video))}</p>` : '';
   return `<div class="video-pipeline" aria-label="Tiến trình tạo video">${steps}</div>${error}`;
+}
+function contentGroupLabel(language) {
+  const groups = { en: 'Nội dung tiếng Anh', zh: 'Nội dung tiếng Trung', ja: 'Nội dung tiếng Nhật' };
+  return groups[String(language || 'en').toLowerCase()] || groups.en;
 }
 function videoCard(video, compact = false) {
   const thumb = video.thumbnail_path ? `<img src="/api/videos/${encodeURIComponent(video.id)}/thumbnail" alt="Thumbnail ${escapeHtml(video.topic)}" loading="lazy" />` : `<span class="video-placeholder">${escapeHtml(video.topic || 'Video mới')}<small>${video.status === 'processing' ? 'Đang tạo các đoạn đọc và render…' : video.last_error ? escapeHtml(video.last_error) : 'Chưa có bản render'}</small></span>`;
@@ -109,9 +98,9 @@ function videoCard(video, compact = false) {
     !compact ? `<button class="mini-action danger-action" data-delete-video-id="${escapeHtml(video.id)}" ${facebookScheduling ? 'disabled title="Hãy hủy lịch trên Facebook trước khi xóa video trong ứng dụng"' : ['processing', 'script_ready', 'publishing'].includes(video.status) ? 'disabled title="Không thể xóa khi video đang được tạo hoặc đăng"' : ''}>Xóa</button>` : ''
   ].filter(Boolean).join('');
   const caption = escapeHtml(video.captionText || video.caption || '');
-  const category = video.category || video.provider || 'Video học tiếng Anh';
+  const category = contentGroupLabel(video.content_language || video.contentLanguage);
   if (compact) return `<article class="${cardClass}"><a class="video-thumb" href="${video.video_path ? `/api/videos/${encodeURIComponent(video.id)}/file` : '#'}" ${video.video_path ? 'target="_blank"' : ''}>${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></a><div class="video-info"><h3>${escapeHtml(video.topic || video.title)}</h3><p>${caption}</p><div class="video-meta"><span class="video-category">${escapeHtml(category)}</span><div class="video-actions">${actions}</div></div></div></article>`;
-  return `<article class="${cardClass}"><div class="video-thumb">${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></div><div class="library-main"><h3>${escapeHtml(video.title || video.topic)}</h3><p class="library-caption">${caption}</p><div class="row-meta"><span>${escapeHtml(video.category || 'Chưa phân nhóm')}</span><span>•</span><span>${dateText(video.created_at, { dateStyle: 'medium' })}</span><span>•</span><span>${escapeHtml(video.provider || 'AI')}</span>${video.duration_seconds ? `<span>•</span><span>${Number(video.duration_seconds).toFixed(1)} giây</span>` : ''}</div>${video.facebook_error ? `<p class="inline-status">${escapeHtml(video.facebook_error)}</p>` : video.last_error && !video.pipeline?.error ? `<p class="inline-status">${escapeHtml(video.last_error)}</p>` : ''}${videoProgressMarkup(video)}</div><span class="state-pill ${statusClass(video.status, video)}">${escapeHtml(statusName(video.status, video))}</span><div class="row-actions">${actions}</div></article>`;
+  return `<article class="${cardClass}"><div class="video-thumb">${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></div><div class="library-main"><h3>${escapeHtml(video.title || video.topic)}</h3><p class="library-caption">${caption}</p><div class="row-meta"><span>${escapeHtml(category)}</span><span>•</span><span>${dateText(video.created_at, { dateStyle: 'medium' })}</span><span>•</span><span>${escapeHtml(video.provider || 'AI')}</span>${video.duration_seconds ? `<span>•</span><span>${Number(video.duration_seconds).toFixed(1)} giây</span>` : ''}</div>${video.facebook_error ? `<p class="inline-status">${escapeHtml(video.facebook_error)}</p>` : video.last_error && !video.pipeline?.error ? `<p class="inline-status">${escapeHtml(video.last_error)}</p>` : ''}${videoProgressMarkup(video)}</div><span class="state-pill ${statusClass(video.status, video)}">${escapeHtml(statusName(video.status, video))}</span><div class="row-actions">${actions}</div></article>`;
 }
 
 function renderOverview() {
@@ -121,7 +110,7 @@ function renderOverview() {
   $('#metric-ready').textContent = data.counts.ready;
   $('#metric-scheduled').textContent = data.counts.scheduled;
   $('#metric-published').textContent = data.counts.published;
-  $('#library-count').textContent = data.counts.videos;
+  $('#library-count').textContent = data.counts.library ?? data.counts.videos;
   $('#worker-label').textContent = data.system.worker ? 'Worker đang hoạt động' : 'Worker đang tắt';
   $('#worker-pill').classList.toggle('offline', !data.system.worker);
   $('#worker-note').hidden = data.system.worker;
@@ -131,10 +120,12 @@ function renderOverview() {
   const historyWarning = historyBytes >= 100 * 1024 * 1024 ? ' C\u1ea3nh b\u00e1o: l\u1ecbch s\u1eed \u0111\u00e3 v\u01b0\u1ee3t 100 MB.' : '';
   $('#content-history-note').textContent = `\u0110\u1ec3 tr\u1ed1ng ch\u1ee7 \u0111\u1ec1, AI t\u1ef1 ch\u1ecdn. \u0110ang gi\u1eef ${history.count} k\u1ecbch b\u1ea3n ch\u1ed1ng tr\u00f9ng (${historySize} v\u0103n b\u1ea3n); x\u00f3a MP4 kh\u00f4ng x\u00f3a l\u1ecbch s\u1eed.${historyWarning}`;
   const ready = (ok) => `<span class="status-indicator ${ok ? 'ok' : ''}"></span>`;
-  const ttsKey = data.settings.ttsProvider === 'vieneu' ? 'vieneuTts' : 'edgeTts';
+  const overviewTtsProvider = providerForContentLanguage(data.settings.contentLanguage || 'en', data.settings);
+  const ttsKey = ({ vieneu: 'vieneuTts', 'vieneu-sbv2': 'styleBertVits2Tts', 'vieneu-cosyvoice3': 'cosyVoice3Tts' })[overviewTtsProvider] || 'vieneuTts';
   const ttsError = data.system.tools.errors?.[ttsKey];
   const ffmpegError = data.system.tools.errors?.ffmpeg;
-  const ttsStatus = ttsError ? `Không khởi chạy được (${ttsError})` : (data.settings.ttsProvider === 'vieneu' ? (data.system.tools.vieneuTts ? 'VieNeu local sẵn sàng' : 'Chưa cài VieNeu') : (data.system.tools.edgeTts ? 'Microsoft Edge TTS sẵn sàng' : 'Thiếu edge-tts'));
+  const ttsNames = { vieneu: 'VieNeu + Kokoro', 'vieneu-sbv2': 'VieNeu + Style-Bert-VITS2', 'vieneu-cosyvoice3': 'VieNeu + CosyVoice 3.0' };
+  const ttsStatus = ttsError ? `Không khởi chạy được (${ttsError})` : (data.system.tools[ttsKey] ? `${ttsNames[overviewTtsProvider]} sẵn sàng` : `${ttsNames[overviewTtsProvider]} chưa sẵn sàng`);
   const ffmpegStatus = ffmpegError ? `FFmpeg không khởi chạy được (${ffmpegError})` : (data.system.tools.ffmpeg ? 'FFmpeg' : 'Thiếu FFmpeg');
   const rows = [
     ['SQLite', data.system.database, data.system.database ? 'Đang lưu dữ liệu local' : 'Chưa khởi tạo database'],
@@ -145,17 +136,23 @@ function renderOverview() {
   ];
   $('#status-grid').innerHTML = rows.map(([name, ok, detail]) => `<div class="status-card">${ready(ok)}<div class="status-copy"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(detail)}</small></div></div>`).join('');
   const videos = data.videos || [];
-  $('#recent-videos').innerHTML = videos.length ? videos.slice(0, 3).map((video) => videoCard(video, true)).join('') : `<div class="empty-state" style="grid-column:1/-1"><strong>Thư viện đang chờ video đầu tiên</strong>Khi AI, Edge TTS và FFmpeg sẵn sàng, tạo video từ chủ đề phía trên.</div>`;
+  $('#recent-videos').innerHTML = videos.length ? videos.slice(0, 3).map((video) => videoCard(video, true)).join('') : data.counts.videos
+    ? `<div class="empty-state" style="grid-column:1/-1"><strong>Video đã được chuyển sang lịch đăng</strong>Theo dõi các bài đang chờ Facebook đăng trong mục Lịch đăng.</div>`
+    : `<div class="empty-state" style="grid-column:1/-1"><strong>Thư viện đang chờ video đầu tiên</strong>Khi AI, model giọng đọc và FFmpeg sẵn sàng, tạo video từ chủ đề phía trên.</div>`;
   state.system = data.system;
   state.settings = data.settings;
+  const savedLanguage = ['en', 'ja', 'zh'].includes(data.settings.contentLanguage) ? data.settings.contentLanguage : 'en';
+  if (document.activeElement !== $('#content-language')) $('#content-language').value = savedLanguage;
+  const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
+  if (heroCopy) heroCopy.textContent = contentLanguageDescription(savedLanguage);
   renderToolChecks(data.system.tools);
   $$('.mini-action,[data-publish-id],[data-schedule-id],[data-approve-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
 }
 
 function renderToolChecks(tools = {}) {
-  const labels = { python: 'Python', edgeTts: 'Microsoft Edge TTS', vieneuTts: 'VieNeu local', kokoroTts: 'Kokoro local', ffmpeg: 'FFmpeg', ffprobe: 'FFprobe' };
+  const labels = { python: 'Python căn chỉnh', vieneuTts: 'VieNeu local', kokoroTts: 'Kokoro local', styleBertVits2Tts: 'Style-Bert-VITS2 Nhật', cosyVoice3Tts: 'CosyVoice 3.0 Trung', ffmpeg: 'FFmpeg', ffprobe: 'FFprobe' };
   $('#tool-checks').innerHTML = Object.entries(labels).map(([key, name]) => {
-    const supported = !['vieneuTts', 'kokoroTts'].includes(key) || Object.hasOwn(tools, key);
+    const supported = !['vieneuTts', 'kokoroTts', 'styleBertVits2Tts', 'cosyVoice3Tts'].includes(key) || Object.hasOwn(tools, key);
     const error = tools.errors?.[key];
     const status = !supported ? 'cần khởi động lại app' : tools[key] ? 'sẵn sàng' : error ? `không khởi chạy được (${error})` : 'chưa có';
     return `<span class="tool-chip"><span class="status-indicator ${supported && tools[key] ? 'ok' : ''}"></span>${name} ${status}</span>`;
@@ -174,9 +171,18 @@ function renderTopics() {
 
 function renderLibrary() {
   const all = state.videos;
-  const matches = state.filter === 'failed' ? all.filter((v) => ['failed', 'publish_failed'].includes(v.status)) : state.filter === 'all' ? all : all.filter((v) => v.status === state.filter);
+  const production = all.filter((v) => !isFacebookScheduleAccepted(v));
+  const statusMatches = state.filter === 'failed' ? production.filter((v) => ['failed', 'publish_failed'].includes(v.status))
+    : state.filter === 'all' ? production
+      : state.filter === 'scheduled' ? all.filter((v) => v.status === 'scheduled')
+        : production.filter((v) => v.status === state.filter);
+  const languageFilter = $('#content-language-filter')?.value || 'all';
+  const matches = statusMatches.filter((video) => languageFilter === 'all' || (video.content_language || video.contentLanguage || 'en') === languageFilter);
   $('#video-count').textContent = `${matches.length} VIDEO`;
-  $('#library-list').innerHTML = matches.length ? matches.map((video) => videoCard(video)).join('') : `<div class="empty-state"><strong>Chưa có video trong mục này</strong>${state.filter === 'all' ? 'Tạo video đầu tiên từ bảng Tổng quan.' : 'Video sẽ xuất hiện tại đây sau khi trạng thái thay đổi.'}</div>`;
+  const emptyCopy = state.filter === 'all' && all.length && all.every(isFacebookScheduleAccepted)
+    ? 'Các video đã được chuyển sang mục Lịch đăng. Chọn tab “Đã lên lịch” để xem lại.'
+    : state.filter === 'all' ? 'Tạo video đầu tiên từ bảng Tổng quan.' : 'Video sẽ xuất hiện tại đây sau khi trạng thái thay đổi.';
+  $('#library-list').innerHTML = matches.length ? matches.map((video) => videoCard(video)).join('') : `<div class="empty-state"><strong>Chưa có video trong mục này</strong>${emptyCopy}</div>`;
   $$('.library-row [data-script-id],.library-row [data-retry-video-id],.library-row [data-approve-id],.library-row [data-schedule-id],.library-row [data-publish-id],.library-row [data-delete-video-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
 }
 
@@ -219,7 +225,7 @@ async function loadVideos() {
   state.videos = result.videos;
   renderLibrary();
   if (state.view === 'schedule') renderSchedules();
-  $('#library-count').textContent = state.videos.length;
+  $('#library-count').textContent = state.videos.filter((video) => !isFacebookScheduleAccepted(video)).length;
 }
 
 async function loadSchedules() {
@@ -240,59 +246,111 @@ function selectSavedVoice(select, voice) {
   if (value) select.value = value;
 }
 
-function renderEnglishVoices() {
-  const selectedId = $('#en-voice').value || 'en-US-JennyNeural';
-  const selection = $('#en-voice-selection');
-  const list = $('#en-voice-list');
-  const voices = EN_US_VOICES.some((voice) => voice.id === selectedId)
-    ? EN_US_VOICES
-    : [{ id: selectedId, name: selectedId, gender: 'đã lưu' }, ...EN_US_VOICES];
-  selection.textContent = `Đang chọn ${selectedId}`;
-  list.replaceChildren();
-  const fragment = document.createDocumentFragment();
-  for (const voice of voices) {
-    const item = document.createElement('div');
-    item.className = 'english-voice-item';
-    const choose = document.createElement('button');
-    choose.type = 'button';
-    choose.className = `english-voice-choice${voice.id === selectedId ? ' is-selected' : ''}`;
-    choose.dataset.selectEnglishVoice = voice.id;
-    choose.setAttribute('aria-pressed', String(voice.id === selectedId));
-    choose.textContent = `${voice.name} · ${voice.gender}`;
-    const preview = document.createElement('button');
-    preview.type = 'button';
-    preview.className = 'english-voice-preview';
-    preview.dataset.previewEnglishVoice = voice.id;
-    preview.setAttribute('aria-label', `Nghe thử ${voice.name}, giọng ${voice.gender.toLowerCase()}`);
-    preview.title = `Nghe thử ${voice.name}`;
-    preview.textContent = '▶';
-    item.append(choose, preview);
-    fragment.append(item);
-  }
-  list.append(fragment);
-}
-
-function syncEnglishRateControls(rate) {
-  const input = $('#en-rate');
-  if (rate !== undefined) input.value = rate;
-  const match = String(input.value).match(/^([+-])(\d{1,3})%$/);
-  if (!match) return;
-  const slider = $('#en-rate-slider');
-  slider.value = Math.max(Number(slider.min), Math.min(Number(slider.max), 100 + (match[1] === '-' ? -1 : 1) * Number(match[2])));
-  $('#en-rate-label').textContent = `${(Number(slider.value) / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
-}
-
-function setEnglishRateFromSlider() {
-  const speed = Number($('#en-rate-slider').value);
-  const percent = speed - 100;
-  $('#en-rate').value = `${percent > 0 ? '+' : ''}${percent}%`;
-  $('#en-rate-label').textContent = `${(speed / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
-}
-
 function updateTtsProviderPanels() {
-  const vieneuSelected = $('#tts-provider').value === 'vieneu';
-  $('#edge-tts-settings').hidden = vieneuSelected;
-  $('#vieneu-tts-settings').hidden = !vieneuSelected;
+  const provider = $('#tts-provider').value;
+  $('#vieneu-tts-settings').hidden = provider !== 'vieneu';
+  $('#sbv2-tts-settings').hidden = provider !== 'vieneu-sbv2';
+  $('#cosyvoice-tts-settings').hidden = provider !== 'vieneu-cosyvoice3';
+  renderTtsProviderMenu();
+}
+
+function renderTtsProviderMenu() {
+  const select = $('#tts-provider');
+  const selected = select.selectedOptions[0] || select.options[0];
+  $('#tts-provider-value').textContent = selected?.textContent || 'Chọn model giọng đọc';
+  $('#tts-provider-options').innerHTML = Array.from(select.options, (option) => {
+    const isSelected = option.value === select.value;
+    return `<button class="tts-provider-option" type="button" role="option" data-tts-provider="${escapeHtml(option.value)}" aria-selected="${isSelected}"><span>${escapeHtml(option.textContent)}</span>${isSelected ? '<span class="tts-provider-option-check" aria-hidden="true">✓</span>' : ''}</button>`;
+  }).join('');
+}
+
+function closeTtsProviderMenu({ restoreFocus = false } = {}) {
+  $('#tts-provider-options').hidden = true;
+  $('#tts-provider-trigger').setAttribute('aria-expanded', 'false');
+  if (restoreFocus) $('#tts-provider-trigger').focus();
+}
+
+function contentLanguageForProvider(provider, currentLanguage) {
+  if (provider === 'vieneu') return 'en';
+  if (provider === 'vieneu-sbv2') return 'ja';
+  if (provider === 'vieneu-cosyvoice3') return 'zh';
+  return currentLanguage;
+}
+
+function providerSettingKey(language) {
+  return language === 'ja' ? 'japaneseTtsProvider' : language === 'zh' ? 'chineseTtsProvider' : 'ttsProvider';
+}
+
+function selectTtsProvider(provider) {
+  const currentLanguage = $('#content-language').value;
+  const language = contentLanguageForProvider(provider, currentLanguage);
+  const key = providerSettingKey(language);
+  $('#tts-provider').value = provider;
+  state.settings = { ...(state.settings || {}), [key]: provider };
+  state.settingsDirty = true;
+  state.settingsRevision += 1;
+  updateTtsProviderPanels();
+  if (language !== currentLanguage) {
+    $('#content-language').value = language;
+    void changeContentLanguage();
+  }
+}
+
+function toggleTtsProviderMenu() {
+  const menu = $('#tts-provider-options');
+  const trigger = $('#tts-provider-trigger');
+  const opening = menu.hidden;
+  menu.hidden = !opening;
+  trigger.setAttribute('aria-expanded', String(opening));
+  if (opening) {
+    const selectedOption = menu.querySelector('[aria-selected="true"]');
+    (selectedOption || menu.querySelector('[role="option"]'))?.focus();
+  }
+}
+
+function providerForContentLanguage(language, settings = {}) {
+  if (language === 'ja') return settings.japaneseTtsProvider || 'vieneu-sbv2';
+  if (language === 'zh') return settings.chineseTtsProvider || 'vieneu-cosyvoice3';
+  return 'vieneu';
+}
+
+function syncTtsProviderForContentLanguage(language, settings = state.settings || {}) {
+  const provider = providerForContentLanguage(language, settings);
+  for (const option of $('#tts-provider').options) option.hidden = false;
+  $('#tts-provider').value = provider;
+  updateTtsProviderPanels();
+}
+
+function contentLanguageDescription(language) {
+  if (language === 'ja') return 'Ba câu giao tiếp thực tế. Giọng đọc tiếng Việt và tiếng Nhật Style-Bert-VITS2.';
+  if (language === 'zh') return 'Ba câu giao tiếp thực tế. Giọng đọc tiếng Việt và tiếng Trung CosyVoice 3.0.';
+  return 'Ba câu giao tiếp thật. Giọng đọc Việt – Anh. Một video dọc sẵn sàng đăng lên Facebook.';
+}
+
+async function changeContentLanguage() {
+  const language = $('#content-language').value;
+  const oldSettings = state.settings || {};
+  const revision = ++state.contentLanguageRevision;
+  syncTtsProviderForContentLanguage(language, oldSettings);
+  const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
+  if (heroCopy) heroCopy.textContent = contentLanguageDescription(language);
+  state.contentLanguageSavePromise = state.contentLanguageSavePromise.catch(() => false).then(() => api('/api/settings', {
+    method: 'POST', body: JSON.stringify({ contentLanguage: language })
+  })).then((saved) => {
+    const pendingSettings = state.settingsDirty ? state.settings || {} : {};
+    state.settings = { ...saved, ...pendingSettings, contentLanguage: saved.contentLanguage };
+    return true;
+  })
+    .catch((error) => {
+      if (revision === state.contentLanguageRevision) {
+        $('#content-language').value = oldSettings.contentLanguage || 'en';
+        syncTtsProviderForContentLanguage(oldSettings.contentLanguage || 'en', oldSettings);
+        if (heroCopy) heroCopy.textContent = contentLanguageDescription(oldSettings.contentLanguage || 'en');
+        toast('Không lưu được cặp ngôn ngữ', true, error.message);
+      }
+      return false;
+    });
+  return state.contentLanguageSavePromise;
 }
 
 function updateVieNeuSpeedLabel(language) {
@@ -305,8 +363,232 @@ function updateKokoroSpeedLabel() {
   $('#kokoro-en-speed-label').textContent = `${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
 }
 
+function updateModelSpeedLabel(inputId, labelId) {
+  const value = Number($(`#${inputId}`).value) || 1;
+  $(`#${labelId}`).textContent = `${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
+}
+
+function syncLocalVietnameseVoice(source) {
+  const value = $(source).value;
+  for (const id of ['vieneu-vi-voice', 'sbv2-vi-voice', 'cosyvoice-vi-voice']) $(`#${id}`).value = value;
+}
+
+function syncLocalVietnameseSpeed(source) {
+  const value = $(source).value;
+  const controls = [
+    ['vieneu-vi-speed', 'vieneu-vi-speed-label'],
+    ['sbv2-vi-speed', 'sbv2-vi-speed-label'],
+    ['cosyvoice-vi-speed', 'cosyvoice-vi-speed-label']
+  ];
+  for (const [inputId, labelId] of controls) {
+    $(`#${inputId}`).value = value;
+    updateModelSpeedLabel(inputId, labelId);
+  }
+}
+
+function mergeCosyVoiceProfiles(savedProfiles = [], availableProfiles = []) {
+  const profiles = new Map((Array.isArray(availableProfiles) ? availableProfiles : []).map((profile) => [profile.id, profile]));
+  for (const profile of Array.isArray(savedProfiles) ? savedProfiles : []) {
+    const available = profiles.get(profile.id);
+    profiles.set(profile.id, available?.automatic
+      ? { ...available, ...profile, referenceText: available.referenceText, ready: available.ready, automatic: true }
+      : { ...available, ...profile });
+  }
+  return [...profiles.values()];
+}
+
+function updateCosyVoiceProfileDetails(profile) {
+  const details = $('#cosyvoice-profile-details');
+  const rename = $('#cosyvoice-rename-profile');
+  const remove = $('#cosyvoice-delete-profile');
+  const referenceText = $('#cosyvoice-reference-text');
+  const referenceFile = $('#cosyvoice-reference-file');
+  const customFields = $('#cosyvoice-custom-profile-fields');
+  rename.disabled = !profile;
+  remove.disabled = !profile;
+  rename.hidden = Boolean(profile?.automatic);
+  remove.hidden = Boolean(profile?.automatic);
+  customFields.hidden = !profile || Boolean(profile.automatic);
+  referenceText.readOnly = Boolean(profile?.automatic);
+  referenceFile.disabled = Boolean(profile?.automatic);
+  if (!profile) {
+    details.textContent = 'Chọn giọng tham chiếu đã lưu hoặc thêm WAV riêng.';
+    return;
+  }
+  if (profile.automatic) {
+    details.textContent = `${profile.genderLabel || (profile.gender === 'female' ? 'Nữ' : 'Nam')} · WAV đã lưu trên máy · ${profile.source || 'AISHELL-3'}.`;
+  } else {
+    details.textContent = profile.ready ? 'WAV tham chiếu thủ công · transcript do người dùng cung cấp.' : 'Hồ sơ thủ công mới · thêm WAV và transcript chính xác.';
+  }
+}
+
+function renderCosyVoiceProfileOptions(selectedId = $('#cosyvoice-profile').value) {
+  const select = $('#cosyvoice-profile');
+  const profiles = state.settings?.cosyVoiceProfiles || [];
+  select.innerHTML = '<option value="">Chưa chọn giọng tham chiếu</option>' + profiles.map((profile) => {
+    const description = profile.automatic ? `${profile.genderLabel || (profile.gender === 'female' ? 'Nữ' : 'Nam')} · AISHELL-3` : (profile.ready ? 'WAV đã lưu' : 'chưa hoàn tất mẫu');
+    return `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name || 'Giọng chưa đặt tên')} · ${escapeHtml(description)}</option>`;
+  }).join('');
+  select.value = selectedId;
+  updateCosyVoiceProfileDetails(profiles.find((profile) => profile.id === selectedId) || null);
+}
+
+function createCosyVoiceProfile() {
+  const profiles = state.settings?.cosyVoiceProfiles || [];
+  if (profiles.filter((profile) => !profile.automatic).length >= 12) { toast('Đã đủ 12 hồ sơ giọng WAV thủ công', true, 'Xóa một hồ sơ thủ công cũ trước khi thêm giọng khác.'); return; }
+  const id = `voice-${crypto.randomUUID()}`;
+  state.settings.cosyVoiceProfiles = [...profiles, { id, name: 'Giọng mới', referenceText: '', ready: false }];
+  state.settings.cosyVoiceProfileId = id;
+  state.cosyVoiceUploadedProfileId = '';
+  state.cosyVoiceActiveProfileId = id;
+  $('#cosyvoice-profile-name').value = 'Giọng mới';
+  $('#cosyvoice-reference-text').value = '';
+  $('#cosyvoice-reference-file').value = '';
+  renderCosyVoiceProfileOptions(id);
+  $('#cosyvoice-reference-status').textContent = 'Chọn WAV mẫu cho giọng mới';
+  state.settingsDirty = true;
+  state.settingsRevision += 1;
+}
+
+function selectCosyVoiceProfile(id) {
+  const profile = (state.settings?.cosyVoiceProfiles || []).find((item) => item.id === id);
+  state.settings.cosyVoiceProfileId = id;
+  state.cosyVoiceActiveProfileId = id;
+  $('#cosyvoice-profile-name').value = profile?.name || '';
+  $('#cosyvoice-reference-text').value = profile?.referenceText || '';
+  $('#cosyvoice-reference-file').value = '';
+  $('#cosyvoice-reference-status').textContent = profile?.ready ? `${profile.name} · WAV đã lưu` : profile ? 'Hồ sơ chưa đủ WAV mẫu hoặc bản chép' : 'Chưa chọn giọng tham chiếu';
+  updateCosyVoiceProfileDetails(profile || null);
+  state.settingsDirty = true;
+  state.settingsRevision += 1;
+}
+
+function syncActiveCosyVoiceProfileDraft() {
+  const id = state.cosyVoiceActiveProfileId;
+  if (!id) return;
+  const profiles = state.settings?.cosyVoiceProfiles || [];
+  state.settings.cosyVoiceProfiles = profiles.map((profile) => profile.id === id ? {
+    ...profile, name: $('#cosyvoice-profile-name').value.trim(),
+    referenceText: profile.automatic ? profile.referenceText : $('#cosyvoice-reference-text').value.trim()
+  } : profile);
+}
+
+async function renameCosyVoiceProfile() {
+  const id = $('#cosyvoice-profile').value;
+  const name = $('#cosyvoice-profile-name').value.trim();
+  if (!id || !name) return;
+  try {
+    await api(`/api/tts/cosyvoice-profiles/${encodeURIComponent(id)}/rename`, { method: 'POST', body: JSON.stringify({ name }) });
+    state.settings.cosyVoiceProfiles = (state.settings.cosyVoiceProfiles || []).map((profile) => profile.id === id ? { ...profile, name } : profile);
+    state.settings.cosyVoiceProfileName = name;
+    renderCosyVoiceProfileOptions(id);
+    $('#cosyvoice-profile-name').value = name;
+    toast('Đã đổi tên giọng Trung', false, name);
+  } catch (error) { toast('Không đổi được tên giọng', true, error.message); }
+}
+
+function applyCosyVoiceLibraryStatus(status, { mergeProfiles = true } = {}) {
+  const job = status?.job || {};
+  const installedProfiles = Array.isArray(status?.profiles) ? status.profiles : [];
+  if (mergeProfiles && state.settings) {
+    const selectedId = $('#cosyvoice-profile').value || state.settings.cosyVoiceProfileId || '';
+    state.settings.cosyVoiceProfiles = mergeCosyVoiceProfiles(state.settings.cosyVoiceProfiles, installedProfiles);
+    renderCosyVoiceProfileOptions(selectedId);
+  }
+  const installed = Number(status?.installed ?? installedProfiles.length);
+  const running = Boolean(job.running);
+  const expected = Number(status?.expected || 6);
+  const maintenanceHidden = !running && Boolean(status?.complete || installed >= expected);
+  $('#cosyvoice-library-actions').hidden = maintenanceHidden;
+  $('#cosyvoice-library-status').hidden = maintenanceHidden;
+  $('#cosyvoice-library-status').textContent = running
+    ? `${job.message || 'Đang cài thư viện…'} · ${installed}/${expected} giọng đã cài.`
+    : `${job.message || 'AISHELL-3 · Apache-2.0.'} · ${installed}/${expected} giọng hợp lệ.`;
+  $('#cosyvoice-download-library').disabled = running || installed >= expected;
+  $('#cosyvoice-check-library').disabled = running;
+  $('#cosyvoice-retry-library').hidden = running || installed >= expected;
+  $('#cosyvoice-cancel-library').hidden = !running;
+  if (Array.isArray(job.failed) && job.failed.length) {
+    const failures = job.failed.map((item) => `${item.name || item.stage}: ${item.message}`).join(' · ');
+    $('#cosyvoice-library-status').textContent += ` Lỗi: ${failures}`;
+  }
+}
+
+async function refreshCosyVoiceLibraryStatus() {
+  const status = await api('/api/tts/cosyvoice-library');
+  applyCosyVoiceLibraryStatus(status);
+  return status;
+}
+
+async function monitorCosyVoiceLibraryInstall() {
+  let finalStatus;
+  while (true) {
+    finalStatus = await refreshCosyVoiceLibraryStatus();
+    if (!finalStatus.job?.running) break;
+    await new Promise((resolve) => setTimeout(resolve, 900));
+  }
+  if (finalStatus.job?.status === 'complete') toast('Đã cài thư viện giọng Trung', false, `${finalStatus.installed}/6 mẫu AISHELL-3 đã sẵn sàng.`);
+  else if (finalStatus.job?.status === 'partial') toast('Đã cài một phần thư viện giọng', true, `${finalStatus.installed}/6 mẫu hợp lệ; có thể bấm Tải lại giọng lỗi.`);
+  else if (finalStatus.job?.status === 'failed') toast('Không tải được thư viện giọng Trung', true, finalStatus.job.message);
+}
+
+async function startCosyVoiceLibraryInstall() {
+  const button = $('#cosyvoice-download-library');
+  button.disabled = true;
+  try {
+    const result = await api('/api/tts/cosyvoice-library/install', { method: 'POST', body: '{}' });
+    applyCosyVoiceLibraryStatus(result);
+    await monitorCosyVoiceLibraryInstall();
+  } catch (error) {
+    toast('Không thể tải thư viện giọng', true, error.message);
+    button.disabled = false;
+    await refreshCosyVoiceLibraryStatus().catch(() => {});
+  }
+}
+
+async function checkCosyVoiceLibrary() {
+  const button = $('#cosyvoice-check-library');
+  button.disabled = true;
+  try {
+    const status = await api('/api/tts/cosyvoice-library/check', { method: 'POST', body: '{}' });
+    applyCosyVoiceLibraryStatus(status);
+    toast('Đã kiểm tra thư viện giọng', false, `${status.valid}/6 mẫu hợp lệ.`);
+  } catch (error) { toast('Không kiểm tra được thư viện', true, error.message); }
+  finally { button.disabled = false; }
+}
+
+async function cancelCosyVoiceLibraryInstall() {
+  try {
+    await api('/api/tts/cosyvoice-library/cancel', { method: 'POST', body: '{}' });
+    await refreshCosyVoiceLibraryStatus();
+  } catch (error) { toast('Không hủy được lượt tải', true, error.message); }
+}
+
+async function deleteCosyVoiceProfile() {
+  const id = $('#cosyvoice-profile').value;
+  if (!id) return;
+  const profile = (state.settings?.cosyVoiceProfiles || []).find((item) => item.id === id);
+  if (!confirm(`Xóa hồ sơ giọng “${profile?.name || id}” và tệp WAV đã lưu trên máy này?`)) return;
+  try {
+    await api(`/api/tts/cosyvoice-profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    state.settings.cosyVoiceProfiles = (state.settings.cosyVoiceProfiles || []).filter((item) => item.id !== id);
+    if (state.settings.cosyVoiceProfileId === id) state.settings.cosyVoiceProfileId = '';
+    if (state.cosyVoiceActiveProfileId === id) state.cosyVoiceActiveProfileId = '';
+    state.cosyVoiceUploadedProfileId = '';
+    renderCosyVoiceProfileOptions('');
+    $('#cosyvoice-profile-name').value = '';
+    $('#cosyvoice-reference-text').value = '';
+    $('#cosyvoice-reference-file').value = '';
+    $('#cosyvoice-reference-status').textContent = 'Chưa chọn giọng tham chiếu';
+    state.settingsDirty = true;
+    state.settingsRevision += 1;
+    toast('Đã xóa hồ sơ giọng Trung', false, 'Bấm Lưu cài đặt để xác nhận lựa chọn giọng hiện tại.');
+  } catch (error) { toast('Không xóa được hồ sơ giọng', true, error.message); }
+}
+
 function markSettingsDirty(event) {
   const target = event.target;
+  if (target?.closest('.facebook-pages-extension')) return;
   if (!target?.matches('input, select, textarea') || target.disabled) return;
   state.settingsDirty = true;
   state.settingsRevision += 1;
@@ -320,8 +602,12 @@ function syncBackgroundEffectPreview() {
 }
 
 async function loadSettings() {
-  const [settings, system, backgroundEffects] = await Promise.all([api('/api/settings'), api('/api/system'), api('/api/background-effects')]);
-  state.settings = settings; state.system = system;
+  const [settings, system, backgroundEffects, libraryStatus, facebookPages] = await Promise.all([
+    api('/api/settings'), api('/api/system'), api('/api/background-effects'), api('/api/tts/cosyvoice-library').catch(() => null), api('/api/facebook/pages')
+  ]);
+  state.settings = { ...settings, cosyVoiceProfiles: mergeCosyVoiceProfiles(settings.cosyVoiceProfiles, system.cosyVoice3?.profiles || []) };
+  state.system = system;
+  if (libraryStatus) applyCosyVoiceLibraryStatus(libraryStatus, { mergeProfiles: false });
   const backgroundEffectSelect = $('#background-effect');
   if (Array.isArray(backgroundEffects) && backgroundEffectSelect.dataset.catalogLoaded !== 'true') {
     backgroundEffectSelect.innerHTML = backgroundEffects.map((effect) => `<option value="${escapeHtml(effect.id)}">${escapeHtml(effect.label)} · ${escapeHtml(effect.description)}</option>`).join('');
@@ -334,11 +620,11 @@ async function loadSettings() {
   state.backgroundEffectDensity = Number(settings.backgroundEffectDensity ?? 28);
   state.backgroundEffectSpeed = Number(settings.backgroundEffectSpeed ?? 58);
   state.backgroundEffectOpacity = Number(settings.backgroundEffectOpacity ?? 32);
-  $('#tts-provider').value = settings.ttsProvider || 'edge';
-  updateTtsProviderPanels();
-  selectSavedVoice($('#vi-voice'), settings.viVoice);
-  $('#en-voice').value = settings.enVoice || 'en-US-JennyNeural';
+  $('#content-language').value = settings.contentLanguage || 'en';
+  syncTtsProviderForContentLanguage(settings.contentLanguage || 'en', settings);
   selectSavedVoice($('#vieneu-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
+  selectSavedVoice($('#sbv2-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
+  selectSavedVoice($('#cosyvoice-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
   const kokoroVoices = system.kokoro?.voices;
   if (Array.isArray(kokoroVoices) && kokoroVoices.length) {
     const select = $('#kokoro-en-voice');
@@ -349,7 +635,34 @@ async function loadSettings() {
   }
   $('#kokoro-en-voice').value = settings.kokoroEnVoice || 'af_heart';
   $('#vieneu-vi-speed').value = settings.vieneuViSpeed ?? 1;
+  $('#sbv2-vi-speed').value = settings.vieneuViSpeed ?? 1;
+  $('#cosyvoice-vi-speed').value = settings.vieneuViSpeed ?? 1;
   $('#kokoro-en-speed').value = settings.kokoroEnSpeed ?? 1;
+  $('#sbv2-voice').value = settings.styleBertVits2Voice || 'jvnv-F1-jp';
+  $('#sbv2-style').value = settings.styleBertVits2Style || 'Neutral';
+  $('#sbv2-speed').value = settings.styleBertVits2Speed ?? 1;
+  const cosyVoiceStatus = system.cosyVoice3 || {};
+  const cosyProfiles = state.settings.cosyVoiceProfiles || [];
+  const selectedCosyProfileId = settings.cosyVoiceProfileId || '';
+  const selectedCosyProfile = cosyProfiles.find((profile) => profile.id === selectedCosyProfileId)
+    || cosyProfiles.find((profile) => profile.id === 'legacy')
+    || null;
+  renderCosyVoiceProfileOptions(selectedCosyProfile?.id || '');
+  state.cosyVoiceActiveProfileId = selectedCosyProfile?.id || '';
+  $('#cosyvoice-profile-name').value = selectedCosyProfile?.name || settings.cosyVoiceProfileName || '';
+  $('#cosyvoice-reference-text').value = selectedCosyProfile?.referenceText || settings.cosyVoiceReferenceText || '';
+  state.settings.cosyVoiceProfileId = selectedCosyProfile?.id || '';
+  updateVieNeuSpeedLabel('vi');
+  updateModelSpeedLabel('sbv2-vi-speed', 'sbv2-vi-speed-label');
+  updateModelSpeedLabel('cosyvoice-vi-speed', 'cosyvoice-vi-speed-label');
+  updateModelSpeedLabel('sbv2-speed', 'sbv2-speed-label');
+  const sbv2Status = system.styleBertVits2 || {};
+  const installedJapaneseVoices = (sbv2Status.voices || []).filter((voice) => voice.installed).length;
+  $('#sbv2-status').textContent = `${sbv2Status.installed ? `Style-Bert-VITS2 Nhật sẵn sàng · ${installedJapaneseVoices}/4 giọng` : `Style-Bert-VITS2 Nhật chưa sẵn sàng · ${installedJapaneseVoices}/4 giọng đã cài`} · ${sbv2Status.device || 'CPU'} · RAM trống ${sbv2Status.freeRamMb ?? '?'} MB · cần tối thiểu ${sbv2Status.minimumRamMb ?? 4096} MB.`;
+  $('#sbv2-status').classList.toggle('is-warning', !sbv2Status.installed || Number(sbv2Status.freeRamMb) < Number(sbv2Status.minimumRamMb));
+  $('#cosyvoice-reference-status').textContent = selectedCosyProfile?.ready ? `${selectedCosyProfile.name} · WAV đã lưu` : selectedCosyProfile ? 'Hồ sơ này chưa có WAV mẫu' : `${cosyProfiles.length} giọng đã lưu · chưa chọn`;
+  $('#cosyvoice-status').textContent = `${cosyVoiceStatus.installed ? `CosyVoice 3.0 sẵn sàng · ${cosyProfiles.filter((profile) => profile.ready).length} giọng đã lưu` : 'CosyVoice 3.0 chưa cài'} · ${cosyVoiceStatus.device || 'CPU'} · RAM trống ${cosyVoiceStatus.freeRamMb ?? '?'} MB · cần ${cosyVoiceStatus.minimumRamMb ?? 3072} MB.`;
+  $('#cosyvoice-status').classList.toggle('is-warning', !cosyVoiceStatus.installed || !cosyVoiceStatus.referenceReady || Number(cosyVoiceStatus.freeRamMb) < Number(cosyVoiceStatus.minimumRamMb));
   $('#local-tts-min-free-ram').value = settings.localTtsMinFreeRamMb ?? 2560;
   $('#local-tts-min-remaining-ram').value = settings.localTtsMinRemainingRamMb ?? 1024;
   updateVieNeuSpeedLabel('vi');
@@ -374,8 +687,6 @@ async function loadSettings() {
     ? 'Server chưa báo trạng thái TTS local; hãy khởi động lại app để nạp phiên bản mới.'
     : `${modelStatus}${managerStatus}${setupNotice}${alignerNotice} TTS local được nạp theo từng ngôn ngữ; worker phải thoát trước khi chuyển model.`;
   $('#local-tts-status').classList.toggle('is-warning', !vieneuStatusSupported || !vieneuStatus.installed || !kokoroStatus.installed || Boolean(alignerNotice));
-  renderEnglishVoices();
-  syncEnglishRateControls(settings.enRate);
   $('#highlight-enabled').checked = settings.highlightEnabled !== false;
   $('#highlight-mode').value = settings.highlightMode || 'word';
   $('#highlight-color').value = settings.highlightColor || '#FF8066';
@@ -404,6 +715,7 @@ async function loadSettings() {
   $('#auto-state').textContent = settings.autoGenerationEnabled || settings.autoPublishEnabled ? 'Đang bật' : 'Đang tắt';
   $('#auto-state').className = `state-pill ${(settings.autoGenerationEnabled || settings.autoPublishEnabled) ? 'ok' : 'neutral'}`;
   $('#test-facebook').textContent = settings.facebookAdapter === 'mock' ? 'Thử Mock' : 'Kiểm tra Page';
+  renderFacebookPages(facebookPages);
   renderToolChecks(system.tools);
 }
 
@@ -421,7 +733,13 @@ async function generateVideo() {
   setGenerateButtonBusy(true);
   let jobQueued = false;
   try {
-    const result = await api('/api/generate', { method: 'POST', body: JSON.stringify({ topicId: $('#topic-select').value || null, allowLocalTemplate: $('#local-template').checked }) });
+    await state.contentLanguageSavePromise;
+    const result = await api('/api/generate', { method: 'POST', body: JSON.stringify({
+      topicId: $('#topic-select').value || null,
+      allowLocalTemplate: $('#local-template').checked,
+      contentLanguage: $('#content-language').value,
+      ttsProvider: $('#tts-provider').value
+    }) });
     jobQueued = true;
     toast('Đã thêm video vào hàng đợi', false, 'Worker sẽ xử lý kịch bản, giọng đọc và render.');
     watchJob(result.jobId);
@@ -550,6 +868,8 @@ async function handleVideoAction(event) {
   if (button.dataset.scriptId) {
     try {
       const { script } = await api(`/api/scripts/${encodeURIComponent(button.dataset.scriptId)}`);
+      const targetField = script.contentLanguage === 'ja' ? 'japanese' : script.contentLanguage === 'zh' ? 'chinese' : 'english';
+      script.dialogues = script.dialogues.map((line) => ({ ...line, english: line[targetField] || line.english }));
       $('#dialog-content').innerHTML = `<article class="script-detail"><div class="eyebrow">${escapeHtml(script.category)} · ${escapeHtml(script.level)}</div><h2>${escapeHtml(script.title)}</h2><p>${escapeHtml(script.hook)} · Nguồn: ${escapeHtml(script.provider)}</p><div class="dialog-lines">${script.dialogues.map((line) => `<div class="dialog-line"><span class="line-num">CÂU 0${line.index}</span><p>${escapeHtml(line.vietnamese)}</p><p class="en-line">${escapeHtml(line.english)}</p><small><strong>${escapeHtml(line.term)}</strong> · ${escapeHtml(line.meaningVi)}. ${escapeHtml(line.noteVi)}</small></div>`).join('')}</div><div class="dialog-caption"><strong>Caption</strong><br>${escapeHtml(script.captionText || script.caption)}</div></article>`;
       $('#detail-dialog').showModal();
     } catch (error) { toast('Không mở được kịch bản', true, error.message); }
@@ -585,12 +905,47 @@ async function handleVideoAction(event) {
 async function saveSettings() {
   const button = $('#save-settings'); button.disabled = true;
   const revisionAtSave = state.settingsRevision;
+  const contentLanguage = $('#content-language').value;
+  const ttsProvider = $('#tts-provider').value;
+  const ttsProviderKey = contentLanguage === 'ja' ? 'japaneseTtsProvider' : contentLanguage === 'zh' ? 'chineseTtsProvider' : 'ttsProvider';
+  const cosyVoiceProfileId = $('#cosyvoice-profile').value;
+  const cosyVoiceProfiles = (state.settings?.cosyVoiceProfiles || []).filter((profile) => profile.ready && String(profile.name || '').trim() && String(profile.referenceText || '').trim()).map((profile) => ({ ...profile }));
+  if (cosyVoiceProfileId) {
+    const name = $('#cosyvoice-profile-name').value.trim();
+    const referenceText = $('#cosyvoice-reference-text').value.trim();
+    const savedProfile = cosyVoiceProfiles.find((profile) => profile.id === cosyVoiceProfileId);
+    if (!savedProfile && state.cosyVoiceUploadedProfileId !== cosyVoiceProfileId) {
+      button.disabled = false;
+      toast('Hồ sơ giọng Trung chưa có WAV', true, 'Tải WAV mẫu lên trước khi lưu hồ sơ.');
+      return;
+    }
+    if (!name || !referenceText) {
+      button.disabled = false;
+      toast('Thiếu thông tin giọng Trung', true, 'Nhập tên giọng và bản chép chính xác của WAV mẫu.');
+      return;
+    }
+    const updatedProfile = {
+      ...savedProfile, id: cosyVoiceProfileId, name,
+      referenceText: savedProfile.automatic ? savedProfile.referenceText : referenceText
+    };
+    const index = cosyVoiceProfiles.findIndex((profile) => profile.id === cosyVoiceProfileId);
+    if (index >= 0) cosyVoiceProfiles[index] = updatedProfile;
+    else cosyVoiceProfiles.push(updatedProfile);
+  }
   const payload = {
-    ttsProvider: $('#tts-provider').value,
-    viVoice: $('#vi-voice').value.trim(), enVoice: $('#en-voice').value.trim(), enRate: $('#en-rate').value.trim(),
+    [ttsProviderKey]: ttsProvider,
+    contentLanguage,
     vieneuViVoice: $('#vieneu-vi-voice').value, kokoroEnVoice: $('#kokoro-en-voice').value,
     vieneuViSpeed: Number($('#vieneu-vi-speed').value),
     kokoroEnSpeed: Number($('#kokoro-en-speed').value),
+    styleBertVits2Voice: $('#sbv2-voice').value,
+    styleBertVits2Style: $('#sbv2-style').value,
+    styleBertVits2Speed: Number($('#sbv2-speed').value),
+    cosyVoiceProfile: 'custom',
+    cosyVoiceProfileId,
+    cosyVoiceProfileName: $('#cosyvoice-profile-name').value.trim(),
+    cosyVoiceReferenceText: $('#cosyvoice-reference-text').value.trim(),
+    cosyVoiceProfiles,
     localTtsMinFreeRamMb: Number($('#local-tts-min-free-ram').value),
     localTtsMinRemainingRamMb: Number($('#local-tts-min-remaining-ram').value),
     highlightEnabled: $('#highlight-enabled').checked,
@@ -610,7 +965,7 @@ async function saveSettings() {
   };
   try {
     const result = await api('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
-    if (result.ttsProvider !== payload.ttsProvider) {
+    if (result[ttsProviderKey] !== ttsProvider) {
       throw new Error('Server không xác nhận nhà cung cấp giọng đọc đã chọn. App có thể đang chạy phiên bản cũ; hãy khởi động lại app rồi lưu lại.');
     }
     if (Number(result.backgroundEffectDensity) !== payload.backgroundEffectDensity
@@ -642,6 +997,93 @@ async function saveFacebook() {
   finally { button.disabled = false; }
 }
 
+function renderFacebookPages(data = state.facebookPages) {
+  if (!data) return;
+  state.facebookPages = data;
+  const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+  const routableProfiles = profiles.filter((profile) => !profile.draft);
+  for (const language of ['en', 'zh', 'ja']) {
+    const select = $(`#facebook-route-${language}`);
+    if (!select) continue;
+    const emptyLabel = language === 'en' ? 'Dùng Page hiện tại (nếu có)' : 'Chưa gán Page';
+    const options = `<option value="">${emptyLabel}</option>${routableProfiles.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.label)} · ${escapeHtml(profile.pageId)}</option>`).join('')}`;
+    select.innerHTML = options;
+    const fallback = language === 'en' && profiles.some((profile) => profile.id === 'legacy') ? 'legacy' : '';
+    select.value = data.routes?.[language] || fallback;
+  }
+  const host = $('#facebook-pages-list');
+  if (!host) return;
+  const extraProfiles = profiles.filter((profile) => !profile.legacy && !profile.draft);
+  const drafts = [...host.querySelectorAll('[data-page-profile-draft="true"]')].map((card) => ({
+    id: '', label: card.querySelector('[data-page-label]')?.value || '',
+    pageId: card.querySelector('[data-page-id]')?.value || '',
+    pageToken: card.querySelector('[data-page-token]')?.value || '', draft: true
+  }));
+  const requestedDraftCount = profiles.filter((profile) => profile.draft).length;
+  while (drafts.length < requestedDraftCount) drafts.push({ id: '', label: '', pageId: '', draft: true });
+  host.innerHTML = [...extraProfiles, ...drafts].map((profile) => {
+    const isDraft = profile.draft === true;
+    const id = isDraft ? '' : profile.id;
+    const statusText = isDraft ? 'Nhập Page ID và token để thêm Page.' : `${profile.pageName ? `Facebook Page: ${profile.pageName} · ` : ''}${profile.tokenSaved ? 'Token đã lưu' : 'Chưa có token'} · ${profile.connectionVerified ? 'Đã xác minh' : 'Chưa xác minh'}`;
+    return `<article class="facebook-profile-form" data-profile-id="${escapeHtml(id)}" ${isDraft ? 'data-page-profile-draft="true"' : ''}>
+      <label>Tên cấu hình Page<input data-page-label maxlength="80" value="${escapeHtml(profile.label || '')}" placeholder="Ví dụ: Page tiếng Trung"></label>
+      <label>Facebook Page ID<input data-page-id inputmode="numeric" value="${escapeHtml(profile.pageId || '')}" placeholder="ID Page"></label>
+      <label>Page Access Token<input data-page-token type="password" autocomplete="new-password" value="${escapeHtml(profile.pageToken || '')}" placeholder="${profile.tokenSaved ? 'Để trống nếu giữ token hiện tại' : 'Nhập token của Page này'}"></label>
+      <div class="facebook-profile-actions"><button class="button button-outline button-small" data-save-page>${isDraft ? 'Lưu Page' : 'Lưu'}</button><button class="button button-quiet button-small" data-test-page ${isDraft ? 'disabled' : ''}>Kiểm tra</button>${isDraft ? '<button class="button button-quiet button-small" data-cancel-page>Hủy</button>' : '<button class="button button-quiet button-small" data-delete-page>Xóa</button>'}</div>
+      <p class="facebook-profile-status">${escapeHtml(statusText)}</p>
+    </article>`;
+  }).join('');
+}
+
+async function refreshFacebookPages() {
+  renderFacebookPages(await api('/api/facebook/pages'));
+}
+
+async function saveAdditionalFacebookPage(card) {
+  const button = card.querySelector('[data-save-page]');
+  button.disabled = true;
+  const payload = {
+    id: card.dataset.profileId || undefined,
+    label: card.querySelector('[data-page-label]').value.trim(),
+    pageId: card.querySelector('[data-page-id]').value.trim(),
+    pageToken: card.querySelector('[data-page-token]').value.trim()
+  };
+  try {
+    const result = await api('/api/facebook/pages', { method: 'POST', body: JSON.stringify(payload) });
+    card.removeAttribute('data-page-profile-draft');
+    card.dataset.profileId = result.profile.id;
+    card.querySelector('[data-page-token]').value = '';
+    await refreshFacebookPages();
+    toast('Đã lưu Facebook Page', false, `${result.profile.label} · token được lưu cục bộ.`);
+  } catch (error) {
+    const status = card.querySelector('.facebook-profile-status');
+    status.textContent = error.message;
+    status.classList.add('error');
+    toast('Không lưu được Facebook Page', true, error.message);
+  } finally { button.disabled = false; }
+}
+
+async function testAdditionalFacebookPage(card) {
+  const profileId = card.dataset.profileId;
+  if (!profileId) return;
+  const status = card.querySelector('.facebook-profile-status');
+  status.textContent = 'Đang kiểm tra Page…';
+  status.classList.remove('error');
+  try {
+    const result = await api('/api/facebook/pages/test', { method: 'POST', body: JSON.stringify({ profileId }) });
+    toast('Kết nối Facebook thành công', false, result.pageName || result.pageId);
+    await refreshFacebookPages();
+  } catch (error) { status.textContent = error.message; status.classList.add('error'); }
+}
+
+async function changeFacebookPageRoute(select) {
+  try {
+    await api('/api/facebook/pages/route', { method: 'POST', body: JSON.stringify({ contentLanguage: select.dataset.routeLanguage, profileId: select.value || null }) });
+    await refreshFacebookPages();
+    toast('Đã lưu Page theo ngôn ngữ');
+  } catch (error) { toast('Không lưu được Page theo ngôn ngữ', true, error.message); await refreshFacebookPages(); }
+}
+
 async function testFacebook() {
   const resultEl = $('#facebook-result'); resultEl.textContent = 'Đang kiểm tra…';
   try {
@@ -653,21 +1095,30 @@ async function testFacebook() {
 }
 
 async function previewVoice(language, chosenVoice = '', button = null) {
-  const text = language === 'vi' ? 'Xin chào, bạn có thể giúp mình được không?' : 'Could you help me with this?';
-  const provider = $('#tts-provider').value;
+  const previewTexts = { vi: 'Xin chào, bạn có thể giúp mình được không?', en: 'Could you help me with this?', ja: 'すみません、手伝っていただけますか。', zh: '你好，欢迎来到我们的中文学习频道。今天我们一起学习中文。' };
+  const provider = language === 'ja' ? 'vieneu-sbv2' : language === 'zh' ? 'vieneu-cosyvoice3' : 'vieneu';
+  const text = previewTexts[language] || previewTexts.en;
   const voice = chosenVoice || (provider === 'vieneu'
     ? (language === 'vi' ? $('#vieneu-vi-voice').value : $('#kokoro-en-voice').value)
-    : (language === 'vi' ? $('#vi-voice').value : $('#en-voice').value));
+    : provider === 'vieneu-sbv2' ? $('#sbv2-voice').value
+      : 'cosyvoice3-reference');
   const payload = { language, text, voice, ttsProvider: provider };
   if (provider === 'vieneu') payload.speed = Number(language === 'vi' ? $('#vieneu-vi-speed').value : $('#kokoro-en-speed').value);
-  else payload.rate = language === 'vi' ? '+0%' : $('#en-rate').value.trim();
+  else if (provider === 'vieneu-sbv2') { payload.speed = Number($('#sbv2-speed').value); }
+  else if (provider === 'vieneu-cosyvoice3') {
+    payload.cosyVoiceProfileId = $('#cosyvoice-profile').value;
+    payload.cosyVoiceProfileName = $('#cosyvoice-profile-name').value.trim();
+    payload.cosyVoiceReferenceText = $('#cosyvoice-reference-text').value.trim();
+  }
+  else payload.speed = 1;
   if (button) button.disabled = true;
   try {
     const result = await api('/api/tts/preview', { method: 'POST', body: JSON.stringify(payload) });
     if (previewAudio) { previewAudio.pause(); previewAudio.currentTime = 0; }
     previewAudio = new Audio(new URL(result.url, window.location.href).href);
     await previewAudio.play();
-    toast(`Đang phát giọng ${language === 'vi' ? 'tiếng Việt' : 'tiếng Anh'}`, false, result.voice);
+    const languageName = { vi: 'tiếng Việt', en: 'tiếng Anh', ja: 'tiếng Nhật', zh: 'tiếng Trung' }[language] || language;
+    toast(`Đang phát giọng ${languageName}`, false, result.voice);
   } catch (error) { toast('Không tạo được bản nghe thử', true, error.message); }
   finally { if (button) button.disabled = false; }
 }
@@ -689,13 +1140,13 @@ async function previewHighlight() {
   try {
     const language = $('#highlight-preview-language').value;
     const text = $('#highlight-preview-source').value.trim();
-    const provider = $('#tts-provider').value;
+    const provider = language === 'ja' ? 'vieneu-sbv2' : language === 'zh' ? 'vieneu-cosyvoice3' : 'vieneu';
     const voice = provider === 'vieneu'
       ? (language === 'vi' ? $('#vieneu-vi-voice').value : $('#kokoro-en-voice').value)
-      : (language === 'vi' ? $('#vi-voice').value : $('#en-voice').value);
+      : provider === 'vieneu-sbv2' ? $('#sbv2-voice').value : 'cosyvoice3-reference';
     const previewSettings = provider === 'vieneu'
       ? { speed: Number(language === 'vi' ? $('#vieneu-vi-speed').value : $('#kokoro-en-speed').value) }
-      : { rate: language === 'vi' ? '+0%' : $('#en-rate').value.trim() };
+      : { speed: provider === 'vieneu-sbv2' ? Number($('#sbv2-speed').value) : 1 };
     const result = await api('/api/tts/preview', { method: 'POST', body: JSON.stringify({ language, text, voice, ttsProvider: provider, ...previewSettings, withWordBoundaries: true, highlightMode: $('#highlight-mode').value }) });
     const host = $('#highlight-preview-words');
     host.replaceChildren();
@@ -801,13 +1252,109 @@ function setupEvents() {
   $$('[data-generate]').forEach((button) => button.addEventListener('click', () => { setView('overview'); $('#generate-button').focus(); }));
   $('#generate-button').addEventListener('click', generateVideo);
   $$('.filter-tab').forEach((button) => button.addEventListener('click', () => { state.filter = button.dataset.filter; $$('.filter-tab').forEach((tab) => tab.classList.toggle('active', tab === button)); renderLibrary(); }));
-  $('#en-rate-slider').addEventListener('input', setEnglishRateFromSlider);
-  $('#en-rate').addEventListener('input', () => syncEnglishRateControls());
-  $('#tts-provider').addEventListener('change', updateTtsProviderPanels);
+  $('#content-language').addEventListener('change', changeContentLanguage);
+  $('#content-language-filter').addEventListener('change', (event) => { state.languageFilter = event.currentTarget.value; renderLibrary(); });
+  renderTtsProviderMenu();
+  $('#tts-provider-trigger').addEventListener('click', toggleTtsProviderMenu);
+  $('#tts-provider-options').addEventListener('click', (event) => {
+    const option = event.target.closest('[data-tts-provider]');
+    if (!option) return;
+    $('#tts-provider').value = option.dataset.ttsProvider;
+    $('#tts-provider').dispatchEvent(new Event('change', { bubbles: true }));
+    closeTtsProviderMenu({ restoreFocus: true });
+  });
+  $('#tts-provider-options').addEventListener('keydown', (event) => {
+    const options = Array.from($('#tts-provider-options').querySelectorAll('[role="option"]'));
+    const currentIndex = options.indexOf(document.activeElement);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeTtsProviderMenu({ restoreFocus: true });
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+        : (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+      options[nextIndex]?.focus();
+    } else if (event.key === 'Tab') {
+      setTimeout(() => {
+        if (!$('#tts-provider-combobox').contains(document.activeElement)) closeTtsProviderMenu();
+      }, 0);
+    }
+  });
+  $('#tts-provider').addEventListener('change', () => selectTtsProvider($('#tts-provider').value));
+  document.addEventListener('pointerdown', (event) => {
+    if (!$('#tts-provider-combobox').contains(event.target)) closeTtsProviderMenu();
+  });
   $('#vieneu-vi-speed').addEventListener('input', () => updateVieNeuSpeedLabel('vi'));
+  for (const id of ['vieneu-vi-voice', 'sbv2-vi-voice', 'cosyvoice-vi-voice']) {
+    $(`#${id}`).addEventListener('change', () => syncLocalVietnameseVoice(`#${id}`));
+  }
+  for (const id of ['vieneu-vi-speed', 'sbv2-vi-speed', 'cosyvoice-vi-speed']) {
+    $(`#${id}`).addEventListener('input', () => syncLocalVietnameseSpeed(`#${id}`));
+  }
   $('#preview-vieneu-vi').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
   $('#preview-vieneu-en').addEventListener('click', (event) => previewVoice('en', '', event.currentTarget));
+  $('#preview-vieneu-vi-sbv2').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
+  $('#preview-vieneu-vi-cosyvoice').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
+  $('#preview-ja').addEventListener('click', (event) => previewVoice('ja', '', event.currentTarget));
+  $('#preview-zh').addEventListener('click', (event) => previewVoice('zh', '', event.currentTarget));
+  $('#cosyvoice-new-profile').addEventListener('click', createCosyVoiceProfile);
+  $('#cosyvoice-rename-profile').addEventListener('click', renameCosyVoiceProfile);
+  $('#cosyvoice-delete-profile').addEventListener('click', deleteCosyVoiceProfile);
+  $('#cosyvoice-download-library').addEventListener('click', startCosyVoiceLibraryInstall);
+  $('#cosyvoice-retry-library').addEventListener('click', startCosyVoiceLibraryInstall);
+  $('#cosyvoice-check-library').addEventListener('click', checkCosyVoiceLibrary);
+  $('#cosyvoice-cancel-library').addEventListener('click', cancelCosyVoiceLibraryInstall);
+  $('#cosyvoice-profile').addEventListener('change', (event) => {
+    syncActiveCosyVoiceProfileDraft();
+    selectCosyVoiceProfile(event.currentTarget.value);
+  });
+  $('#cosyvoice-profile-name').addEventListener('input', syncActiveCosyVoiceProfileDraft);
+  $('#cosyvoice-reference-text').addEventListener('input', syncActiveCosyVoiceProfileDraft);
+  $('#cosyvoice-reference-file').addEventListener('change', async (event) => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    const profileId = $('#cosyvoice-profile').value;
+    if ((state.settings?.cosyVoiceProfiles || []).find((profile) => profile.id === profileId)?.automatic) {
+      event.currentTarget.value = '';
+      toast('Giọng AISHELL-3 không sửa WAV gốc', true, 'Bạn có thể đổi tên; transcript và dữ liệu nguồn được giữ nguyên.');
+      return;
+    }
+    if (!profileId) {
+      event.currentTarget.value = '';
+      toast('Chọn hoặc thêm hồ sơ giọng trước', true, 'WAV sẽ được lưu trong hồ sơ đang chọn.');
+      return;
+    }
+    const status = $('#cosyvoice-reference-status');
+    status.textContent = 'Đang lưu WAV mẫu vào hồ sơ giọng…';
+    try {
+      const response = await fetch(`/api/tts/cosyvoice-reference?profileId=${encodeURIComponent(profileId)}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: file });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `Server returned ${response.status}.`);
+      const profiles = state.settings.cosyVoiceProfiles || [];
+      const current = profiles.find((profile) => profile.id === profileId);
+      const updated = {
+        ...current,
+        id: profileId, name: $('#cosyvoice-profile-name').value.trim(),
+        referenceText: $('#cosyvoice-reference-text').value.trim(), ready: true
+      };
+      state.settings.cosyVoiceProfiles = current ? profiles.map((profile) => profile.id === profileId ? updated : profile) : [...profiles, updated];
+      state.settings.cosyVoiceProfileId = profileId;
+      state.cosyVoiceUploadedProfileId = profileId;
+      state.cosyVoiceActiveProfileId = profileId;
+      renderCosyVoiceProfileOptions(profileId);
+      status.textContent = `${file.name} · ${(result.bytes / 1024 / 1024).toFixed(1)} MB · đã lưu trên máy · bấm Lưu cài đặt`;
+      state.settingsDirty = true;
+      state.settingsRevision += 1;
+      toast('Đã lưu WAV mẫu', false, 'Bấm Lưu cài đặt để lưu tên và bản chép của hồ sơ.');
+    } catch (error) {
+      status.textContent = 'Không lưu được WAV mẫu.';
+      toast('Không lưu được giọng mẫu', true, error.message);
+    }
+  });
   $('#kokoro-en-speed').addEventListener('input', updateKokoroSpeedLabel);
+  $('#sbv2-speed').addEventListener('input', () => updateModelSpeedLabel('sbv2-speed', 'sbv2-speed-label'));
+  $('#sbv2-vi-speed').addEventListener('input', () => updateModelSpeedLabel('sbv2-vi-speed', 'sbv2-vi-speed-label'));
+  $('#cosyvoice-vi-speed').addEventListener('input', () => updateModelSpeedLabel('cosyvoice-vi-speed', 'cosyvoice-vi-speed-label'));
   $('#highlight-color').addEventListener('input', updateHighlightPreviewStyle);
   $('#highlight-padding').addEventListener('input', updateHighlightPreviewStyle);
   $('#highlight-radius').addEventListener('input', updateHighlightPreviewStyle);
@@ -861,18 +1408,31 @@ function setupEvents() {
   $('#view-settings').addEventListener('change', markSettingsDirty);
   $('#save-facebook').addEventListener('click', saveFacebook);
   $('#test-facebook').addEventListener('click', testFacebook);
-  $('#preview-vi').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
-  $('#en-voice-list').addEventListener('click', (event) => {
-    const preview = event.target.closest('[data-preview-english-voice]');
-    if (preview) { previewVoice('en', preview.dataset.previewEnglishVoice, preview); return; }
-    const choose = event.target.closest('[data-select-english-voice]');
-    if (choose) {
-      $('#en-voice').value = choose.dataset.selectEnglishVoice;
-      state.settingsDirty = true;
-      state.settingsRevision += 1;
-      renderEnglishVoices();
+  $('#add-facebook-page').addEventListener('click', () => {
+    const host = $('#facebook-pages-list');
+    const existingDrafts = [...host.querySelectorAll('[data-page-profile-draft="true"]')].map((card) => ({
+      id: '', draft: true,
+      label: card.querySelector('[data-page-label]')?.value || '',
+      pageId: card.querySelector('[data-page-id]')?.value || '',
+      pageToken: card.querySelector('[data-page-token]')?.value || ''
+    }));
+    const savedProfiles = (state.facebookPages?.profiles || []).filter((profile) => !profile.draft);
+    renderFacebookPages({ ...(state.facebookPages || {}), profiles: [...savedProfiles, ...existingDrafts, { id: '', label: '', pageId: '', draft: true }] });
+    $('#facebook-pages-list [data-page-profile-draft="true"] [data-page-label]')?.focus();
+  });
+  $('#facebook-pages-list').addEventListener('click', async (event) => {
+    const card = event.target.closest('.facebook-profile-form');
+    if (!card) return;
+    if (event.target.closest('[data-save-page]')) return saveAdditionalFacebookPage(card);
+    if (event.target.closest('[data-test-page]')) return testAdditionalFacebookPage(card);
+    if (event.target.closest('[data-cancel-page]')) { card.remove(); return; }
+    if (event.target.closest('[data-delete-page]')) {
+      if (!confirm('Xóa cấu hình Page và token đã lưu trên máy này? Lịch chưa hoàn tất đang dùng Page này sẽ chặn thao tác xóa.')) return;
+      try { await api(`/api/facebook/pages/${encodeURIComponent(card.dataset.profileId)}`, { method: 'DELETE' }); toast('Đã xóa cấu hình Page'); await refreshFacebookPages(); }
+      catch (error) { card.querySelector('.facebook-profile-status').textContent = error.message; card.querySelector('.facebook-profile-status').classList.add('error'); }
     }
   });
+  for (const language of ['en', 'zh', 'ja']) $(`#facebook-route-${language}`).addEventListener('change', (event) => changeFacebookPageRoute(event.currentTarget));
   $('#add-topic').addEventListener('click', addTopic);
   $('#schedule-form').addEventListener('submit', createSchedule);
   $('#view-schedule').addEventListener('click', deletePublishedSchedule);

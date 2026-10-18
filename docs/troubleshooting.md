@@ -4,9 +4,9 @@
 
 Chạy `npm run worker` trong terminal riêng hoặc mở lại `start.bat`. Worker có thể dừng nếu terminal đóng.
 
-## `Thiếu edge-tts`
+## Model TTS local chưa sẵn sàng
 
-Chạy `setup.ps1`. Kiểm tra `%PROJECT%\.venv\Scripts\python.exe -c "import edge_tts"`. Nếu dùng Python khác, khai báo biến môi trường `PYTHON` trước khi chạy server và worker.
+Cài model cần dùng bằng `npm run setup:vieneu`, `npm run setup:kokoro` hoặc `npm run setup:multilingual-tts`. Edge TTS đã được gỡ khỏi ứng dụng. Nếu highlight không căn được từ, cài thêm stable-ts bằng `npm run setup:alignment`.
 
 ## `FFmpeg/ffprobe chưa cài`
 

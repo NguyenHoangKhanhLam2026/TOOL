@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { ROOT, PATHS, VIENEU_PYTHON_BIN, VIENEU_MODEL_DIR, VIENEU_MODEL_MARKER, VIENEU_ONNX_DIR, VIENEU_CODEC_DIR, VIENEU_HF_HOME } from '../config.mjs';
 import { createSpeechSegments, mapWordBoundariesToTokens, prepareSpeechText } from '../../packages/audio-highlight/highlight-engine.mjs';
-import { alignSpeechBatchLocally } from './edge-tts.mjs';
+import { alignSpeechBatchLocally } from './local-alignment.mjs';
 import { describeSpawnError } from '../utils/process-errors.mjs';
 
 export const VIENEU_VOICES = Object.freeze([

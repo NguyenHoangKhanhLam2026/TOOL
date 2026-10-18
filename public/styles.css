@@ -12,3 +12,17 @@
 .dialog-caption { white-space: pre-line; }
 .background-effect-note{margin:9px 0 0;max-width:760px;line-height:1.55}
 .background-effect-preview{grid-column:1/-1;width:100%;overflow:hidden;border:1px solid #e9e7df;border-radius:16px;background:#f5f1e8;box-shadow:0 8px 24px rgba(46,57,48,.04)}.background-effect-preview iframe{display:block;width:100%;height:820px;border:0}@media(max-width:850px){.background-effect-preview iframe{height:1380px}}
+.facebook-pages-extension{margin-top:22px;padding-top:18px;border-top:1px solid var(--line,#e9e5dc)}
+.facebook-pages-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;color:var(--ink,#22364a)}
+.facebook-page-routes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.facebook-page-routes label,.facebook-profile-form label{display:grid;gap:6px;font-size:12px;color:var(--muted,#65717d)}
+.facebook-page-routes select,.facebook-profile-form input{min-width:0;width:100%;box-sizing:border-box}
+.facebook-pages-list{display:grid;gap:10px}
+.facebook-profile-form{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(150px,1fr) minmax(200px,1.4fr) auto;align-items:end;gap:10px;padding:12px;border:1px solid var(--line,#e9e5dc);border-radius:14px;background:#fffdfa}
+.facebook-profile-actions{display:flex;gap:6px;align-items:center}
+.facebook-profile-status{grid-column:1/-1;margin:0;font-size:12px;color:var(--muted,#65717d)}
+.facebook-profile-status.error{color:#b4473c}
+.facebook-pages-note{margin:10px 0 0;font-size:11px;color:var(--muted,#65717d)}
+.content-language-filter{display:inline-flex;align-items:center;gap:7px;margin-left:auto;font-size:11px;color:#69777b;white-space:nowrap}
+.content-language-filter select{max-width:145px;border:1px solid #e5e0d6;border-radius:9px;padding:8px 10px;background:#fffdfa;color:#263244;font:inherit}
+@media(max-width:720px){.facebook-page-routes{grid-template-columns:1fr}.facebook-profile-form{grid-template-columns:1fr}.facebook-profile-status{grid-column:auto}}

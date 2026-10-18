@@ -9,7 +9,7 @@ Bot là tiến trình Windows độc lập, chạy nền khi mở tool bằng `s
 - Nếu executable vẫn bị Windows hoặc môi trường chạy chặn, bot giữ nguyên job lỗi, ghi nguyên nhân vào `data/logs/spawn-eperm-bot.log` và không lặp vô hạn.
 - Nếu tool đang mở, không tạo thêm server hoặc worker trùng.
 - Nếu worker dừng nhưng server còn mở, khởi chạy worker còn thiếu.
-- Chỉ nhận dạng lỗi spawn có dạng Node.js thực sự trả về, không nhầm dòng giải thích “không phải lỗi spawn EPERM” của Edge TTS HTTP 403.
+- Chỉ nhận dạng lỗi spawn có dạng Node.js thực sự trả về; lỗi từ một worker TTS không bị coi nhầm là lỗi spawn nếu tiến trình đã khởi chạy.
 
 ## Cách dùng
 
@@ -18,4 +18,4 @@ Bot là tiến trình Windows độc lập, chạy nền khi mở tool bằng `s
 - Kiểm tra và sửa một job lỗi hiện có: `tools/FIX-SPAWN-EPERM.bat`.
 - Mở tool nếu tool chưa chạy: `node tools/spawn-eperm-bot.mjs --start`.
 
-Bot bổ sung PATH/PYTHON trong phiên khởi chạy và có thể nạp lại worker sau khi phép thử spawn thành công. Bot không thể vượt chính sách chặn tiến trình của Windows/antivirus, cũng không thể sửa lỗi từ dịch vụ TTS bên ngoài. Nếu thấy HTTP 403 từ Edge TTS, mã ứng dụng đã chạy được nhưng nhà cung cấp từ chối phiên kết nối; bot không lặp lại job.
+Bot bổ sung PATH/PYTHON trong phiên khởi chạy và có thể nạp lại worker sau khi phép thử spawn thành công. Bot không thể vượt chính sách chặn tiến trình của Windows/antivirus hoặc tự sửa lỗi bên trong một model TTS.

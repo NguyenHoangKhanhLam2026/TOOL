@@ -3,22 +3,25 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { ROOT, PORT, HOST, PATHS, PYTHON_BIN, FFMPEG_BIN, FFPROBE_BIN } from './config.mjs';
+import { ROOT, PORT, HOST, PATHS, PYTHON_BIN, FFMPEG_BIN, FFPROBE_BIN, COSYVOICE_REFERENCE_PATH, COSYVOICE_PROFILES_DIR } from './config.mjs';
 import {
   db, getSettings, saveSettings, getOverview, listTopics, listVideos, listJobs,
-  listPublishHistory, listSchedules, listPublishedSchedules, deletePublishedSchedule, queueJob, createSchedule, approveVideoAndCreateRandomSchedule, queueFacebookSchedule, log, getScript, updateVideo, addTopic, deleteVideo
+  listPublishHistory, listSchedules, listPublishedSchedules, deletePublishedSchedule, queueJob, createSchedule, approveVideoAndCreateRandomSchedule, queueFacebookSchedule, log, getScript, updateVideo, addTopic, deleteVideo,
+  listFacebookPageProfiles, getFacebookPageProfile, getFacebookPageForLanguage, facebookPageProfileHasActiveWork, saveFacebookPageProfile, setFacebookPageVerification, setFacebookPageRoute, clearFacebookPageRoute, getFacebookPageRoutes, deleteFacebookPageProfile
 } from './database/db.mjs';
 import { providerStatus } from './ai/script-service.mjs';
 import { beginChatGPTSignIn, completeChatGPTSignIn, chatgptStatus, disconnectChatGPT } from './ai/chatgpt-plan.mjs';
-import { facebookTokenSaved, saveFacebookToken, clearFacebookToken, MetaGraphAdapter } from '../packages/facebook-engine/meta-graph-adapter.mjs';
+import { facebookTokenSaved, saveFacebookToken, clearFacebookToken, facebookPageTokenPath, MetaGraphAdapter } from '../packages/facebook-engine/meta-graph-adapter.mjs';
 import { MockFacebookAdapter } from '../packages/facebook-engine/mock-adapter.mjs';
 import { zonedLocalToDate } from './scheduler/time.mjs';
-import { alignSpeechLocally, synthesizeSpeech } from './tts/edge-tts.mjs';
+import { alignSpeechLocally } from './tts/local-alignment.mjs';
 import { synthesizeVieNeuPreview, vieneuModelStatus, VIENEU_VOICES } from './tts/vieneu-tts.mjs';
 import { KOKORO_VOICES, kokoroModelStatus, synthesizeKokoroPreview } from './tts/kokoro-tts.mjs';
 import { getLocalTtsManagerStatus, withLocalTtsModel } from './tts/local-model-manager.mjs';
+import { styleBertVits2Status, cosyVoice3Status, STYLE_BERT_VITS2_VOICES, synthesizeMultilingualSegments } from './tts/multilingual-local-tts.mjs';
+import { cancelCosyVoiceLibraryInstall, cosyVoiceLibraryStatus, deleteCosyVoiceLibraryProfile, isCosyVoiceLibraryId, renameCosyVoiceLibraryProfile, startCosyVoiceLibraryInstall } from './tts/cosyvoice-voice-library.mjs';
 import { buildHighlightIntervals, mapWordBoundariesToTokens, normalizeLanguage, prepareSpeechText } from '../packages/audio-highlight/highlight-engine.mjs';
-import { BRANDING_DIR, buildSceneSvg, rasterizeScene, readVisualTemplate, saveVisualTemplate, getDesignPrompts } from '../packages/video-engine/visual-template-engine.mjs';
+import { BRANDING_DIR, buildSceneSvg, rasterizeScene, readVisualTemplate, saveVisualTemplate, resetChineseVisualTemplate, getDesignPrompts } from '../packages/video-engine/visual-template-engine.mjs';
 import { BACKGROUND_EFFECTS } from '../packages/video-engine/background-effects.mjs';
 import { deleteAsset, listAssets, resetBrandAssets, saveUploadedAsset, setDefaultAsset } from '../packages/video-engine/asset-manager.mjs';
 
@@ -71,10 +74,22 @@ function sameOrigin(req) {
   } catch { return false; }
 }
 
-function latestPreviewScript(scriptId = '') {
+function latestPreviewScript(scriptId = '', contentLanguage = '') {
   if (scriptId) return getScript(scriptId) || null;
-  const row = db.prepare("SELECT script_id FROM videos WHERE script_id IS NOT NULL ORDER BY created_at DESC LIMIT 1").get();
+  const row = contentLanguage
+    ? db.prepare('SELECT s.id AS script_id FROM scripts s JOIN videos v ON v.script_id=s.id WHERE s.content_language=? ORDER BY v.created_at DESC LIMIT 1').get(contentLanguage)
+    : db.prepare("SELECT script_id FROM videos WHERE script_id IS NOT NULL ORDER BY created_at DESC LIMIT 1").get();
   return row ? getScript(row.script_id) : null;
+}
+
+function visualPreviewScript(contentLanguage = 'en', scriptId = '') {
+  const existing = latestPreviewScript(scriptId, contentLanguage);
+  if (existing || contentLanguage !== 'zh') return existing || latestPreviewScript(scriptId) || undefined;
+  return {
+    id: 'zh-visual-preview', contentLanguage: 'zh', title: 'Làm quen bằng tiếng Trung', topic: 'Chào hỏi',
+    dialogues: [{ index: 1, vietnamese: 'Xin chào, rất vui được gặp bạn.', chinese: '你好，很高兴认识你。', pinyin: 'Nǐ hǎo, hěn gāoxìng rènshi nǐ.', term: '很高兴', termPinyin: 'hěn gāoxìng', meaningVi: 'rất vui', noteVi: 'Dùng để thể hiện niềm vui khi làm quen hoặc gặp ai đó.' }],
+    speechSegments: []
+  };
 }
 
 const websocketClients = new Set();
@@ -120,6 +135,28 @@ function publicSettings() {
   return { ...settings, allowPaidAiApi: false, facebookTokenSaved: facebookTokenSaved(), chatgpt: chatgptStatus() };
 }
 
+function hasVerifiedFacebookPageProfile() {
+  const ids = ['legacy', ...listFacebookPageProfiles().map((profile) => profile.id)];
+  return ids.some((id) => {
+    const profile = getFacebookPageProfile(id);
+    return Boolean(profile?.connectionVerified && facebookTokenSaved(profile.tokenFile));
+  });
+}
+
+function isFacebookPageReady(profile) {
+  return Boolean(profile?.pageId && profile.connectionVerified && facebookTokenSaved(profile.tokenFile));
+}
+
+function contentLanguageForVideo(videoId) {
+  return db.prepare('SELECT s.content_language FROM scripts s JOIN videos v ON v.script_id=s.id WHERE v.id=?').get(videoId)?.content_language || 'en';
+}
+
+function facebookPageForVideo(videoId, schedule = null) {
+  const profileId = schedule?.target_page_profile_id || schedule?.targetPageProfileId;
+  const profile = profileId ? getFacebookPageProfile(profileId) : getFacebookPageForLanguage(contentLanguageForVideo(videoId));
+  return profile ? { ...profile, pageId: schedule?.target_page_id || schedule?.targetPageId || profile.pageId } : null;
+}
+
 function runCommand(command, args, timeoutMs) {
   return new Promise((resolve) => {
     let child;
@@ -157,13 +194,16 @@ async function systemStatus() {
   const settings = getSettings();
   const vieneu = vieneuModelStatus(settings);
   const kokoro = kokoroModelStatus(settings);
+  const styleBertVits2 = styleBertVits2Status();
+  const cosyVoice3 = cosyVoice3Status(settings);
   const localTts = getLocalTtsManagerStatus();
-  const [python, edgeTts, alignment, vieneuPython, kokoroPython, ffmpeg, ffprobe] = await Promise.all([
+  const [python, alignment, vieneuPython, kokoroPython, sbv2Python, cosyVoicePython, ffmpeg, ffprobe] = await Promise.all([
     runCommand(PYTHON_BIN, ['--version'], 6000),
-    runCommand(PYTHON_BIN, ['-c', 'import edge_tts'], 6000),
     runCommand(PYTHON_BIN, ['-c', "import importlib.util; print('yes' if importlib.util.find_spec('stable_whisper') else 'no')"], 6000),
     vieneu.installed ? runCommand(vieneu.python, ['--version'], 6000) : null,
     kokoro.installed ? runCommand(kokoro.python, ['--version'], 6000) : null,
+    styleBertVits2.installed ? runCommand(styleBertVits2.python, ['-c', "from importlib.metadata import version; from packaging.version import Version; from transformers.utils import is_torch_available; import pkg_resources, pyopenjtalk; torch=Version(version('torch').split('+')[0]); torchaudio=Version(version('torchaudio').split('+')[0]); numpy=Version(version('numpy')); assert torch >= Version('2.6.0'); assert torchaudio == torch; assert numpy < Version('2'); assert is_torch_available()"], 6000) : null,
+    cosyVoice3.installed ? runCommand(cosyVoice3.python, ['--version'], 6000) : null,
     checkTool(FFMPEG_BIN, ['-version']),
     checkTool(FFPROBE_BIN, ['-version'])
   ]);
@@ -185,24 +225,28 @@ async function systemStatus() {
       ffmpeg: ffmpeg.ready,
       ffprobe: ffprobe.ready,
       python: python.status === 0,
-      edgeTts: edgeTts.status === 0,
       vieneuTts: Boolean(vieneu.ready && vieneuPython && !vieneuPython.error && vieneuPython.status === 0),
       kokoroTts: Boolean(kokoro.ready && kokoroPython && !kokoroPython.error && kokoroPython.status === 0),
+      styleBertVits2Tts: Boolean(styleBertVits2.ready && sbv2Python && !sbv2Python.error && sbv2Python.status === 0),
+      cosyVoice3Tts: Boolean(cosyVoice3.ready && cosyVoicePython && !cosyVoicePython.error && cosyVoicePython.status === 0),
       localWordAlignment,
       errors: {
         python: python.error?.code || (python.status === 0 ? null : 'EXIT'),
-        edgeTts: edgeTts.error?.code || (edgeTts.status === 0 ? null : 'EXIT'),
         ffmpeg: ffmpeg.errorCode,
         ffprobe: ffprobe.errorCode,
         vieneuTts: vieneuPython?.error?.code || (vieneuPython && vieneuPython.status !== 0 ? 'EXIT' : null),
-        kokoroTts: kokoroPython?.error?.code || (kokoroPython && kokoroPython.status !== 0 ? 'EXIT' : null)
+        kokoroTts: kokoroPython?.error?.code || (kokoroPython && kokoroPython.status !== 0 ? 'EXIT' : null),
+        styleBertVits2Tts: sbv2Python?.error?.code || (sbv2Python && sbv2Python.status !== 0 ? 'EXIT' : null),
+        cosyVoice3Tts: cosyVoicePython?.error?.code || (cosyVoicePython && cosyVoicePython.status !== 0 ? 'EXIT' : null)
       }
     },
     vieneu,
     kokoro: { ...kokoro, voices: KOKORO_VOICES },
+    styleBertVits2,
+    cosyVoice3,
     localTts,
     aiReady: chatgpt.connected,
-    liveFacebookReady: Boolean(settings.facebookConnectionVerified && facebookTokenSaved() && settings.pageId)
+    liveFacebookReady: hasVerifiedFacebookPageProfile()
   };
 }
 
@@ -283,13 +327,22 @@ function attachVideoProgress(videos) {
 async function handleApi(req, res, url) {
   if (req.method !== 'GET' && !sameOrigin(req)) return json(res, 403, { error: 'Yêu cầu không cùng nguồn.' });
   const route = `${req.method} ${url.pathname}`;
-  if (route === 'GET /api/visual-template') return json(res, 200, { template: readVisualTemplate() });
+  if (route === 'GET /api/visual-template') {
+    const contentLanguage = url.searchParams.get('lang') === 'zh' ? 'zh' : 'en';
+    return json(res, 200, { template: readVisualTemplate({ contentLanguage }), contentLanguage });
+  }
   if (route === 'PUT /api/visual-template') {
-    const template = saveVisualTemplate(await readJson(req));
-    broadcast('template:saved', { templateId: template.templateId, version: template.version });
+    const contentLanguage = url.searchParams.get('lang') === 'zh' ? 'zh' : 'en';
+    const template = saveVisualTemplate(await readJson(req), { contentLanguage });
+    broadcast('template:saved', { templateId: template.templateId, version: template.version, contentLanguage });
     return json(res, 200, { template });
   }
   if (route === 'POST /api/visual-template/reset') {
+    if (url.searchParams.get('lang') === 'zh') {
+      const template = resetChineseVisualTemplate();
+      broadcast('template:saved', { templateId: template.templateId, version: template.version, contentLanguage: 'zh', reset: true });
+      return json(res, 200, { template });
+    }
     const result = resetBrandAssets();
     broadcast('template:saved', { templateId: result.template.templateId, version: result.template.version, reset: true });
     broadcast('asset:updated', { reset: true });
@@ -297,15 +350,17 @@ async function handleApi(req, res, url) {
   }
   if (route === 'GET /api/visual-template/preview.svg' || route === 'GET /api/visual-template/preview.png') {
     const state = url.searchParams.get('state') || 'vietnamese';
-    const index = Math.max(0, Math.min(2, Number(url.searchParams.get('index') || 0)));
-    const script = latestPreviewScript(url.searchParams.get('scriptId') || '') || undefined;
+    const contentLanguage = url.searchParams.get('lang') === 'zh' ? 'zh' : 'en';
+    const index = contentLanguage === 'zh' ? 0 : Math.max(0, Math.min(2, Number(url.searchParams.get('index') || 0)));
+    const script = visualPreviewScript(contentLanguage, url.searchParams.get('scriptId') || '');
+    const template = readVisualTemplate({ contentLanguage });
     const settings = getSettings();
     const backgroundEffect = settings.backgroundEffect;
     const backgroundEffectDensity = settings.backgroundEffectDensity;
     const backgroundEffectSpeed = settings.backgroundEffectSpeed;
     const backgroundEffectOpacity = settings.backgroundEffectOpacity;
-    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ script, state, index, embedAssets: false, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state })));
-    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ script, state, index, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state }));
+    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ template, script, state, index, embedAssets: false, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state })));
+    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ template, script, state, index, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state }));
   }
   if (route === 'POST /api/visual-template/render-test') {
     const body = await readJson(req, 100_000);
@@ -313,14 +368,16 @@ async function handleApi(req, res, url) {
     const imagePath = path.join(PATHS.temporary, 'visual-previews', `${id}.png`);
     const videoPath = path.join(PATHS.temporary, 'visual-previews', `${id}.mp4`);
     const settings = getSettings();
-    await rasterizeScene({ state: body.state || 'bilingual', index: Number(body.index || 0), script: latestPreviewScript(body.scriptId || '') || undefined, outputPath: imagePath, backgroundEffect: settings.backgroundEffect, backgroundEffectDensity: settings.backgroundEffectDensity, backgroundEffectSpeed: settings.backgroundEffectSpeed, backgroundEffectOpacity: settings.backgroundEffectOpacity, effectSeed: id });
+    const contentLanguage = body.contentLanguage === 'zh' ? 'zh' : 'en';
+    await rasterizeScene({ template: readVisualTemplate({ contentLanguage }), state: body.state || 'bilingual', index: contentLanguage === 'zh' ? 0 : Number(body.index || 0), script: visualPreviewScript(contentLanguage, body.scriptId || ''), outputPath: imagePath, backgroundEffect: settings.backgroundEffect, backgroundEffectDensity: settings.backgroundEffectDensity, backgroundEffectSpeed: settings.backgroundEffectSpeed, backgroundEffectOpacity: settings.backgroundEffectOpacity, effectSeed: id });
     const jobId = queueJob('render_preview', { previewId: id, imagePath, videoPath, seconds: 5 });
     log('INFO', 'PREVIEW_RENDER_QUEUED', `Đã xếp render thử scene ${body.state || 'bilingual'}.`, jobId);
     return json(res, 202, { id, jobId, status: 'pending', url: `/api/visual-template/test-video/${id}` });
   }
   if (route === 'POST /api/visual-template/render-full') {
     const body = await readJson(req, 100_000);
-    const script = latestPreviewScript(body.scriptId || '');
+    const contentLanguage = body.contentLanguage === 'zh' ? 'zh' : 'en';
+    const script = body.scriptId ? latestPreviewScript(body.scriptId, contentLanguage) : latestPreviewScript('', contentLanguage);
     if (!script) return json(res, 404, { error: 'Chưa có kịch bản đã lưu để render.' });
     const jobId = queueJob('create_video', { scriptId: script.id, provider: script.provider, forceRender: true });
     log('INFO', 'VISUAL_RENDER_QUEUED', `Đã xếp render thương hiệu cho kịch bản ${script.id}.`, jobId);
@@ -364,6 +421,81 @@ async function handleApi(req, res, url) {
   if (route === 'GET /api/overview') return json(res, 200, { ...getOverview(), system: await systemStatus(), providers: providerStatus(), settings: publicSettings(), schedules: listSchedules().slice(0, 8) });
   if (route === 'GET /api/background-effects') return json(res, 200, BACKGROUND_EFFECTS);
   if (route === 'GET /api/settings') return json(res, 200, publicSettings());
+  if (route === 'GET /api/facebook/pages') {
+    const legacy = getFacebookPageProfile('legacy');
+    const profiles = [
+      ...(legacy ? [{ id: legacy.id, label: legacy.label, pageId: legacy.pageId, pageName: null, connectionVerified: legacy.connectionVerified, tokenSaved: facebookTokenSaved(legacy.tokenFile), legacy: true }] : []),
+      ...listFacebookPageProfiles().map((item) => {
+        const profile = getFacebookPageProfile(item.id);
+        return { id: item.id, label: item.label, pageId: item.page_id, pageName: item.page_name, connectionVerified: Boolean(item.connection_verified), tokenSaved: Boolean(profile && facebookTokenSaved(profile.tokenFile)), legacy: false };
+      })
+    ];
+    return json(res, 200, { profiles, routes: getFacebookPageRoutes() });
+  }
+  if (route === 'POST /api/facebook/pages') {
+    const body = await readJson(req);
+    const pageId = String(body.pageId || '').trim();
+    const label = String(body.label || '').trim();
+    if (!/^\d{5,}$/u.test(pageId)) return json(res, 400, { error: 'Facebook Page ID phải gồm ít nhất 5 chữ số.' });
+    if (!label || label.length > 80) return json(res, 400, { error: 'Tên Page cần từ 1 đến 80 ký tự.' });
+    const profileId = String(body.id || crypto.randomUUID());
+    if (!/^[\w-]{8,80}$/u.test(profileId) || profileId === 'legacy') return json(res, 400, { error: 'Facebook Page profile ID không hợp lệ.' });
+    let tokenFile;
+    try { tokenFile = facebookPageTokenPath(profileId); }
+    catch (error) { return json(res, 400, { error: error.message }); }
+    const previous = getFacebookPageProfile(profileId);
+    if (previous && previous.pageId !== pageId && facebookPageProfileHasActiveWork(profileId)) {
+      return json(res, 409, { error: 'Không thể đổi Page ID khi còn lịch chưa hoàn tất đang sử dụng Page này.' });
+    }
+    const hasNewToken = Boolean(String(body.pageToken || '').trim());
+    if (hasNewToken) {
+      try { saveFacebookToken(body.pageToken, tokenFile); }
+      catch (error) { return json(res, 400, { error: error.message }); }
+    } else if (!previous || !facebookTokenSaved(tokenFile)) {
+      return json(res, 400, { error: 'Nhập Page Access Token trước khi lưu Page lần đầu.' });
+    }
+    try {
+      const profile = saveFacebookPageProfile({ id: profileId, label, pageId, tokenFile });
+      if (hasNewToken) setFacebookPageVerification(profile.id, { verified: false });
+      const safe = { id: profile.id, label: profile.label, pageId: profile.pageId, pageName: hasNewToken ? null : profile.pageName, connectionVerified: hasNewToken ? false : profile.connectionVerified, tokenSaved: true, legacy: false };
+      return json(res, 200, { saved: true, profile: safe });
+    } catch (error) { return json(res, error.statusCode || 400, { error: error.message }); }
+  }
+  if (route === 'POST /api/facebook/pages/test') {
+    const body = await readJson(req);
+    const profileId = String(body.profileId || '');
+    const profile = getFacebookPageProfile(profileId);
+    if (!profile || !facebookTokenSaved(profile.tokenFile)) return json(res, 400, { connected: false, error: 'Page chưa có token đã lưu.' });
+    try {
+      const result = await new MetaGraphAdapter(profile.pageId, { tokenFile: profile.tokenFile }).checkConnection();
+      setFacebookPageVerification(profile.id, { verified: true, pageName: result.pageName });
+      log('INFO', 'FACEBOOK_PAGE_PROFILE_OK', `Đã xác minh Page profile ${profile.id} (${result.pageName}); token không được ghi log.`);
+      return json(res, 200, { ...result, profileId: profile.id });
+    } catch (error) {
+      setFacebookPageVerification(profile.id, { verified: false });
+      log('WARN', 'FACEBOOK_PAGE_PROFILE_FAILED', `Không xác minh được Page profile ${profile.id}: ${error.message}`);
+      return json(res, 400, { connected: false, error: error.message });
+    }
+  }
+  if (route === 'POST /api/facebook/pages/route') {
+    const body = await readJson(req);
+    try {
+      const result = String(body.profileId || '').trim()
+        ? setFacebookPageRoute(body.contentLanguage, body.profileId)
+        : clearFacebookPageRoute(body.contentLanguage);
+      return json(res, 200, { route: result });
+    }
+    catch (error) { return json(res, error.statusCode || 400, { error: error.message }); }
+  }
+  const deleteFacebookPageMatch = url.pathname.match(/^\/api\/facebook\/pages\/([\w-]+)$/u);
+  if (req.method === 'DELETE' && deleteFacebookPageMatch) {
+    try {
+      const removed = deleteFacebookPageProfile(decodeURIComponent(deleteFacebookPageMatch[1]));
+      if (!removed) return json(res, 404, { error: 'Không tìm thấy Page cần xóa.' });
+      clearFacebookToken(removed.tokenFile);
+      return json(res, 200, { deleted: true });
+    } catch (error) { return json(res, error.statusCode || 400, { error: error.message }); }
+  }
   if (route === 'POST /api/settings') {
     const body = await readJson(req);
     const next = { ...getSettings(), ...body };
@@ -377,14 +509,50 @@ async function handleApi(req, res, url) {
     if (!Number.isInteger(Number(next.prepareAheadDays)) || Number(next.prepareAheadDays) < 1 || Number(next.prepareAheadDays) > 30) return json(res, 400, { error: 'Số ngày dự phòng phải từ 1 đến 30.' });
     if (!Number.isInteger(Number(next.maxScriptsPerDay)) || Number(next.maxScriptsPerDay) < 1 || Number(next.maxScriptsPerDay) > 30) return json(res, 400, { error: 'Giới hạn kịch bản phải từ 1 đến 30 mỗi ngày.' });
     try { new Intl.DateTimeFormat('en-US', { timeZone: next.timezone }); } catch { return json(res, 400, { error: 'Múi giờ không hợp lệ.' }); }
-    if (!/^[\w-]{2,100}$/.test(String(next.viVoice)) || !/^[\w-]{2,100}$/.test(String(next.enVoice))) return json(res, 400, { error: 'Tên giọng đọc không hợp lệ.' });
-    if (!/^[+-]\d{1,3}%$/.test(String(next.enRate))) return json(res, 400, { error: 'Tốc độ giọng tiếng Anh phải có dạng -8% hoặc +0%.' });
-    if (!['edge', 'vieneu'].includes(next.ttsProvider)) return json(res, 400, { error: 'Chế độ TTS phải là Microsoft Edge TTS hoặc Local AI TTS.' });
+    if (next.ttsProvider !== 'vieneu') return json(res, 400, { error: 'English content uses the VieNeu + Kokoro local TTS provider.' });
+    if (next.japaneseTtsProvider !== 'vieneu-sbv2') return json(res, 400, { error: 'Japanese content uses Style-Bert-VITS2.' });
+    if (next.chineseTtsProvider !== 'vieneu-cosyvoice3') return json(res, 400, { error: 'Chinese content uses CosyVoice 3.0.' });
+    if (!['en', 'ja', 'zh'].includes(String(next.contentLanguage))) return json(res, 400, { error: 'Content language must be English, Japanese, or Chinese.' });
     if (!VIENEU_VOICES.includes(String(next.vieneuViVoice)) || !VIENEU_VOICES.includes(String(next.vieneuEnVoice))) return json(res, 400, { error: 'Giọng VieNeu không nằm trong danh sách được hỗ trợ.' });
     if (!Number.isFinite(Number(next.vieneuViSpeed)) || Number(next.vieneuViSpeed) < 0.75 || Number(next.vieneuViSpeed) > 1.25) return json(res, 400, { error: 'Tốc độ VieNeu tiếng Việt phải từ 0,75x đến 1,25x.' });
     if (!Number.isFinite(Number(next.vieneuEnSpeed)) || Number(next.vieneuEnSpeed) < 0.5 || Number(next.vieneuEnSpeed) > 1.25) return json(res, 400, { error: 'Tốc độ VieNeu tiếng Anh phải từ 0,5x đến 1,25x.' });
     if (!KOKORO_VOICES.some((voice) => voice.id === String(next.kokoroEnVoice))) return json(res, 400, { error: 'Giọng Kokoro tiếng Anh không nằm trong danh sách model.' });
     if (!Number.isFinite(Number(next.kokoroEnSpeed)) || Number(next.kokoroEnSpeed) < 0.5 || Number(next.kokoroEnSpeed) > 1.25) return json(res, 400, { error: 'Tốc độ Kokoro tiếng Anh phải từ 0,5x đến 1,25x.' });
+    if (!STYLE_BERT_VITS2_VOICES.some((voice) => voice.id === String(next.styleBertVits2Voice))) return json(res, 400, { error: 'Unsupported Style-Bert-VITS2 Japanese speaker.' });
+    if (!['Neutral', 'Happy', 'Angry', 'Disgust', 'Fear', 'Sad', 'Surprise'].includes(String(next.styleBertVits2Style))) return json(res, 400, { error: 'Unsupported Japanese speech style.' });
+    if (!Number.isFinite(Number(next.styleBertVits2Speed)) || Number(next.styleBertVits2Speed) < 0.7 || Number(next.styleBertVits2Speed) > 1.4) return json(res, 400, { error: 'Japanese TTS speed must be 0.7x-1.4x.' });
+    if (String(next.cosyVoiceProfile) !== 'custom' || String(next.cosyVoiceProfileName || '').length > 80) return json(res, 400, { error: 'Invalid CosyVoice profile.' });
+    if (String(next.cosyVoiceReferenceText || '').length > 1000) return json(res, 400, { error: 'CosyVoice reference transcript must be at most 1000 characters.' });
+    if (!Array.isArray(next.cosyVoiceProfiles) || next.cosyVoiceProfiles.length > 18) return json(res, 400, { error: 'CosyVoice supports up to 12 manual profiles and 6 AISHELL-3 library voices.' });
+    const profileIds = new Set();
+    let manualProfileCount = 0;
+    const installedLibraryProfiles = new Map(cosyVoiceLibraryStatus().profiles.map((profile) => [profile.id, profile]));
+    const validatedCosyVoiceProfiles = [];
+    for (const profile of next.cosyVoiceProfiles) {
+      const id = String(profile?.id || '');
+      const name = String(profile?.name || '').trim();
+      const referenceText = String(profile?.referenceText || '').trim();
+      if (!/^[a-z0-9][a-z0-9-]{1,63}$/i.test(id) || profileIds.has(id) || !name || name.length > 80 || !referenceText || referenceText.length > 1000) {
+        return json(res, 400, { error: 'Each CosyVoice profile needs a unique ID, a name, and an exact sample transcript.' });
+      }
+      profileIds.add(id);
+      if (isCosyVoiceLibraryId(id)) {
+        const installed = installedLibraryProfiles.get(id);
+        if (!installed || referenceText !== installed.referenceText) return json(res, 400, { error: `AISHELL-3 profile ${id} is not installed or its source transcript was changed.` });
+        validatedCosyVoiceProfiles.push({ ...installed, name });
+      } else {
+        manualProfileCount += 1;
+        validatedCosyVoiceProfiles.push({ id, name, referenceText });
+      }
+    }
+    if (manualProfileCount > 12) return json(res, 400, { error: 'CosyVoice supports up to 12 manual voice profiles.' });
+    next.cosyVoiceProfiles = validatedCosyVoiceProfiles;
+    if (next.cosyVoiceProfileId && !profileIds.has(String(next.cosyVoiceProfileId))) return json(res, 400, { error: 'Select one of the saved CosyVoice profiles.' });
+    if (next.cosyVoiceProfileId) {
+      const activeProfile = next.cosyVoiceProfiles.find((profile) => profile.id === String(next.cosyVoiceProfileId));
+      next.cosyVoiceProfileName = activeProfile.name;
+      next.cosyVoiceReferenceText = activeProfile.referenceText;
+    }
     if (!Number.isInteger(Number(next.localTtsMinFreeRamMb)) || Number(next.localTtsMinFreeRamMb) < 512 || Number(next.localTtsMinFreeRamMb) > 65536) return json(res, 400, { error: 'Ngưỡng RAM trống trước khi nạp phải từ 512 đến 65536 MB.' });
     if (!Number.isInteger(Number(next.localTtsMinRemainingRamMb)) || Number(next.localTtsMinRemainingRamMb) < 256 || Number(next.localTtsMinRemainingRamMb) > 32768) return json(res, 400, { error: 'Ngưỡng RAM dự trữ sau khi nạp phải từ 256 đến 32768 MB.' });
     if (typeof next.highlightEnabled !== 'boolean') return json(res, 400, { error: 'Trạng thái highlight không hợp lệ.' });
@@ -400,14 +568,123 @@ async function handleApi(req, res, url) {
     if (body.autoGenerationEnabled === true && !chatgptStatus().connected) return json(res, 409, { error: 'Hãy kết nối ChatGPT Plan trước khi bật tự tạo.' });
     if (!Number.isInteger(Number(next.backgroundEffectOpacity)) || Number(next.backgroundEffectOpacity) < 10 || Number(next.backgroundEffectOpacity) > 70) return json(res, 400, { error: 'Độ rõ hiệu ứng phải là số nguyên từ 10 đến 70.' });
     const patch = { ...body, ...(migrateRemovedBackgroundEffect ? { backgroundEffect: 'bubbles' } : {}) };
+    patch.cosyVoiceProfiles = validatedCosyVoiceProfiles;
     const currentSettings = getSettings();
     const facebookModeChanged = body.facebookAdapter && body.facebookAdapter !== currentSettings.facebookAdapter;
-    if (body.autoPublishEnabled === true && next.facebookAdapter === 'meta' && !facebookModeChanged && !currentSettings.facebookConnectionVerified) return json(res, 409, { error: 'Hãy kiểm tra Page và token thành công trước khi bật đăng live.' });
+    if (body.autoPublishEnabled === true && next.facebookAdapter === 'meta' && !facebookModeChanged && !hasVerifiedFacebookPageProfile()) return json(res, 409, { error: 'Hãy kiểm tra ít nhất một Page đã được xác minh trước khi bật đăng live.' });
     if (facebookModeChanged) { patch.facebookConnectionVerified = false; patch.autoPublishEnabled = false; }
     for (const key of ['allowPaidAiApi', 'facebookConnectionVerified', 'pageId', 'appName', 'host', 'port', 'timezone', 'videoWidth', 'videoHeight', 'videoFps', 'template']) delete patch[key];
+    for (const profile of validatedCosyVoiceProfiles) {
+      if (isCosyVoiceLibraryId(profile.id)) {
+        const installed = installedLibraryProfiles.get(profile.id);
+        if (installed && installed.name !== profile.name) renameCosyVoiceLibraryProfile(profile.id, profile.name);
+      }
+    }
     const saved = saveSettings(patch);
     log('INFO', 'SETTINGS_SAVED', 'Đã lưu cài đặt ứng dụng.');
     return json(res, 200, { ...saved, allowPaidAiApi: false, facebookTokenSaved: facebookTokenSaved(), chatgpt: chatgptStatus() });
+  }
+  if (route === 'POST /api/tts/cosyvoice-reference') {
+    const audio = await readBuffer(req, 15 * 1024 * 1024);
+    if (audio.length < 44 || audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE') {
+      return json(res, 400, { error: 'CosyVoice voice sample must be a valid WAV file under 15 MB.' });
+    }
+    const profileId = String(url.searchParams.get('profileId') || '');
+    if (profileId && !/^[a-z0-9][a-z0-9-]{1,63}$/i.test(profileId)) return json(res, 400, { error: 'CosyVoice profile ID is invalid.' });
+    if (isCosyVoiceLibraryId(profileId)) return json(res, 400, { error: 'AISHELL-3 voice samples are managed by the library and cannot be overwritten as manual WAV profiles.' });
+    const targetPath = profileId
+      ? path.join(COSYVOICE_PROFILES_DIR, `${profileId}.wav`)
+      : COSYVOICE_REFERENCE_PATH;
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    const tempPath = `${targetPath}.${process.pid}.tmp`;
+    try { fs.writeFileSync(tempPath, audio); fs.renameSync(tempPath, targetPath); }
+    finally { fs.rmSync(tempPath, { force: true }); }
+    log('INFO', 'COSYVOICE_REFERENCE_SAVED', profileId ? `Saved CosyVoice voice profile ${profileId} locally.` : 'Saved the CosyVoice reference audio locally.');
+    return json(res, 200, { saved: true, bytes: audio.length });
+  }
+  if (route === 'GET /api/tts/cosyvoice-library') return json(res, 200, cosyVoiceLibraryStatus());
+  if (route === 'POST /api/tts/cosyvoice-library/check') {
+    const status = cosyVoiceLibraryStatus();
+    return json(res, 200, { ...status, valid: status.profiles.length, missing: status.expected - status.installed });
+  }
+  if (route === 'POST /api/tts/cosyvoice-library/install') {
+    const started = startCosyVoiceLibraryInstall({
+      onProfile: async (profile) => {
+        const currentSettings = getSettings();
+        const profiles = Array.isArray(currentSettings.cosyVoiceProfiles) ? currentSettings.cosyVoiceProfiles : [];
+        const index = profiles.findIndex((item) => item.id === profile.id);
+        const persisted = {
+          id: profile.id, name: profile.name, referenceText: profile.referenceText,
+          automatic: true, source: profile.source, gender: profile.gender,
+          genderLabel: profile.genderLabel, speakerId: profile.speakerId, recordId: profile.recordId,
+          language: profile.language, sampleRate: profile.sampleRate, durationSeconds: profile.durationSeconds,
+          license: profile.license, ready: true
+        };
+        if (index >= 0) profiles[index] = { ...profiles[index], ...persisted };
+        else profiles.push(persisted);
+        saveSettings({ cosyVoiceProfiles: profiles });
+      }
+    });
+    if (!started.started) return json(res, 409, { error: 'Thư viện giọng đang được tải.', ...cosyVoiceLibraryStatus() });
+    log('INFO', 'COSYVOICE_LIBRARY_INSTALL_STARTED', 'Started installing AISHELL-3 Chinese voice profiles locally.');
+    return json(res, 202, { started: true, ...cosyVoiceLibraryStatus() });
+  }
+  if (route === 'POST /api/tts/cosyvoice-library/cancel') {
+    const cancelled = cancelCosyVoiceLibraryInstall();
+    return json(res, cancelled ? 200 : 409, { cancelled, ...cosyVoiceLibraryStatus() });
+  }
+  const deleteCosyVoiceProfileMatch = url.pathname.match(/^\/api\/tts\/cosyvoice-profiles\/([a-z0-9-]+)$/i);
+  if (req.method === 'DELETE' && deleteCosyVoiceProfileMatch) {
+    const profileId = deleteCosyVoiceProfileMatch[1];
+    const profilePath = path.join(COSYVOICE_PROFILES_DIR, `${profileId}.wav`);
+    try {
+      if (isCosyVoiceLibraryId(profileId)) deleteCosyVoiceLibraryProfile(profileId);
+      else fs.rmSync(profilePath, { force: true });
+    }
+    catch (error) { return json(res, 500, { error: `Could not delete the local voice sample: ${error.message}` }); }
+    if (profileId === 'legacy') {
+      try { fs.rmSync(COSYVOICE_REFERENCE_PATH, { force: true }); }
+      catch (error) { return json(res, 500, { error: `Could not delete the older local voice sample: ${error.message}` }); }
+    }
+    const current = getSettings();
+    const selected = String(current.cosyVoiceProfileId || '') === profileId;
+    saveSettings({
+      cosyVoiceProfiles: (current.cosyVoiceProfiles || []).filter((profile) => String(profile.id) !== profileId),
+      ...(selected ? { cosyVoiceProfileId: '', cosyVoiceProfileName: '', cosyVoiceReferenceText: '' } : {})
+    });
+    log('INFO', 'COSYVOICE_PROFILE_DELETED', `Deleted CosyVoice voice profile ${profileId} from this computer.`);
+    return json(res, 200, { deleted: true, profileId });
+  }
+  const renameCosyVoiceProfileMatch = url.pathname.match(/^\/api\/tts\/cosyvoice-profiles\/([a-z0-9-]+)\/rename$/i);
+  if (req.method === 'POST' && renameCosyVoiceProfileMatch) {
+    const profileId = renameCosyVoiceProfileMatch[1];
+    const body = await readJson(req);
+    const name = String(body.name || '').trim();
+    if (!name || name.length > 80) return json(res, 400, { error: 'Tên giọng cần có từ 1 đến 80 ký tự.' });
+    const current = getSettings();
+    const profiles = Array.isArray(current.cosyVoiceProfiles) ? [...current.cosyVoiceProfiles] : [];
+    const index = profiles.findIndex((profile) => String(profile.id) === profileId);
+    if (isCosyVoiceLibraryId(profileId)) {
+      try { renameCosyVoiceLibraryProfile(profileId, name); }
+      catch (error) { return json(res, 400, { error: error.message }); }
+      const installed = cosyVoiceLibraryStatus().profiles.find((profile) => profile.id === profileId);
+      const updated = { ...installed, name };
+      if (index >= 0) profiles[index] = updated;
+      else profiles.push(updated);
+      saveSettings({
+        cosyVoiceProfiles: profiles,
+        ...(String(current.cosyVoiceProfileId || '') === profileId ? { cosyVoiceProfileName: name } : {})
+      });
+    } else {
+      if (index < 0) return json(res, 404, { error: 'Không tìm thấy hồ sơ giọng.' });
+      profiles[index] = { ...profiles[index], name };
+      saveSettings({
+        cosyVoiceProfiles: profiles,
+        ...(String(current.cosyVoiceProfileId || '') === profileId ? { cosyVoiceProfileName: name } : {})
+      });
+    }
+    log('INFO', 'COSYVOICE_PROFILE_RENAMED', `Renamed CosyVoice profile ${profileId}.`);
+    return json(res, 200, { renamed: true, profileId, name });
   }
   if (route === 'GET /api/topics') return json(res, 200, { topics: listTopics(), count: listTopics().length });
   if (route === 'POST /api/topics') {
@@ -473,14 +750,19 @@ async function handleApi(req, res, url) {
   }
   if (route === 'POST /api/facebook/credentials') {
     const body = await readJson(req);
-    if (!/^\d{5,}$/.test(String(body.pageId || ''))) return json(res, 400, { error: 'Facebook Page ID phải gồm ít nhất 5 chữ số.' });
+    const nextPageId = String(body.pageId || '').trim();
+    if (!/^\d{5,}$/u.test(nextPageId)) return json(res, 400, { error: 'Facebook Page ID phải gồm ít nhất 5 chữ số.' });
+    const currentPageId = String(getSettings().pageId || '');
+    if (currentPageId && currentPageId !== nextPageId && facebookPageProfileHasActiveWork('legacy')) {
+      return json(res, 409, { error: 'Không thể đổi Page ID khi còn lịch chưa hoàn tất đang dùng Page hiện tại.' });
+    }
     if (body.pageToken?.trim()) {
       try { saveFacebookToken(body.pageToken); }
       catch (error) { return json(res, 400, { error: error.message }); }
     } else if (!facebookTokenSaved()) return json(res, 400, { error: 'Nhập Page Access Token trước khi lưu lần đầu.' });
-    saveSettings({ pageId: String(body.pageId), facebookConnectionVerified: false, autoPublishEnabled: false });
+    saveSettings({ pageId: nextPageId, facebookConnectionVerified: false, autoPublishEnabled: false });
     log('INFO', 'FACEBOOK_CREDENTIALS_SAVED', 'Đã lưu Facebook Page ID và token cục bộ; giá trị bí mật không được ghi vào log.');
-    return json(res, 200, { saved: true, pageId: String(body.pageId), tokenSaved: true, connectionVerified: false });
+    return json(res, 200, { saved: true, pageId: nextPageId, tokenSaved: true, connectionVerified: false });
   }
   if (route === 'POST /api/facebook/test') {
     const settings = getSettings();
@@ -500,25 +782,35 @@ async function handleApi(req, res, url) {
   if (route === 'POST /api/tts/preview') {
     const body = await readJson(req);
     const text = String(body.text || '').trim();
-    const language = normalizeLanguage(body.language === 'en' ? 'en' : 'vi');
+    const language = normalizeLanguage(body.language || 'vi');
     const settings = getSettings();
+    if (!['vi', 'en', 'ja', 'zh'].includes(language)) return json(res, 400, { error: 'Unsupported preview language.' });
     if (!text || text.length > 2000) return json(res, 400, { error: 'Câu nghe thử phải có từ 1 đến 2000 ký tự.' });
     if (body.highlightMode !== undefined && !['word', 'phrase'].includes(body.highlightMode)) return json(res, 400, { error: 'Kiểu highlight preview không hợp lệ.' });
-    const ttsProvider = body.ttsProvider || settings.ttsProvider;
-    if (!['edge', 'vieneu'].includes(ttsProvider)) return json(res, 400, { error: 'Chế độ TTS không hợp lệ.' });
+    const ttsProvider = body.ttsProvider || (language === 'ja' ? 'vieneu-sbv2' : language === 'zh' ? 'vieneu-cosyvoice3' : 'vieneu');
+    if (!['vieneu', 'vieneu-sbv2', 'vieneu-cosyvoice3'].includes(ttsProvider)) return json(res, 400, { error: 'Invalid TTS provider.' });
+    const providerLanguage = { vieneu: 'en', 'vieneu-sbv2': 'ja', 'vieneu-cosyvoice3': 'zh' }[ttsProvider];
+    const multilingualProvider = ['vieneu-sbv2', 'vieneu-cosyvoice3'].includes(ttsProvider);
+    if (ttsProvider === 'vieneu' && !['vi', 'en'].includes(language)) return json(res, 400, { error: 'VieNeu local mode supports Vietnamese and English.' });
     const configuredVoice = ttsProvider === 'vieneu'
       ? (language === 'vi' ? settings.vieneuViVoice : settings.kokoroEnVoice)
-      : (language === 'vi' ? settings.viVoice : settings.enVoice);
+      : ttsProvider === 'vieneu-sbv2' ? settings.styleBertVits2Voice : 'cosyvoice3-reference';
     const voice = String(body.voice || configuredVoice).trim();
-    const localVoiceValid = language === 'vi' ? VIENEU_VOICES.includes(voice) : KOKORO_VOICES.some((item) => item.id === voice);
-    if (ttsProvider === 'vieneu' ? !localVoiceValid : !/^[a-z]{2,3}-[A-Z]{2,4}-[\w-]{2,100}$/.test(voice)) return json(res, 400, { error: ttsProvider === 'vieneu' ? `Giọng Local AI tiếng ${language === 'vi' ? 'Việt' : 'Anh'} không hợp lệ.` : 'Tên giọng Edge TTS không hợp lệ.' });
-    const speed = Number(body.speed ?? (language === 'vi' ? settings.vieneuViSpeed : settings.kokoroEnSpeed));
+    const localVoiceValid = ttsProvider === 'vieneu'
+      ? (language === 'vi' ? VIENEU_VOICES.includes(voice) : KOKORO_VOICES.some((item) => item.id === voice))
+      : ttsProvider === 'vieneu-sbv2' ? STYLE_BERT_VITS2_VOICES.some((item) => item.id === voice)
+        : voice === 'cosyvoice3-reference';
+    if (!localVoiceValid) return json(res, 400, { error: 'Invalid selected TTS voice.' });
+    const configuredSpeed = ttsProvider === 'vieneu'
+      ? (language === 'vi' ? settings.vieneuViSpeed : settings.kokoroEnSpeed)
+      : ttsProvider === 'vieneu-sbv2' ? settings.styleBertVits2Speed
+        : 1;
+    const speed = ttsProvider === 'vieneu-cosyvoice3' ? 1 : Number(body.speed ?? configuredSpeed);
     if (ttsProvider === 'vieneu' && (!Number.isFinite(speed) || speed < (language === 'vi' ? 0.75 : 0.5) || speed > 1.25)) return json(res, 400, { error: 'Tốc độ nghe thử nằm ngoài giới hạn model.' });
-    const rate = String(body.rate ?? (language === 'vi' ? '+0%' : settings.enRate));
-    if (ttsProvider === 'edge' && !/^[+-]\d{1,3}%$/.test(rate)) return json(res, 400, { error: 'Tốc độ Edge TTS phải có dạng -8% hoặc +0%.' });
+    if (multilingualProvider && (!Number.isFinite(speed) || speed < 0.7 || speed > 1.4)) return json(res, 400, { error: 'TTS preview speed must be 0.7x-1.4x.' });
     const id = crypto.randomUUID();
     const speechText = prepareSpeechText(text, language);
-    const output = path.join(PATHS.temporary, 'voice-previews', `${id}.${ttsProvider === 'vieneu' ? 'wav' : 'mp3'}`);
+    const output = path.join(PATHS.temporary, 'voice-previews', `${id}.wav`);
     const wordTimingsPath = body.withWordBoundaries === true ? `${output}.wordtimings.json` : null;
     try {
       if (ttsProvider === 'vieneu') {
@@ -536,13 +828,39 @@ async function handleApi(req, res, url) {
           await withLocalTtsModel('Kokoro TTS', (lease) => synthesizeKokoroPreview({ text: speechText, language, voice, speed, outputPath: output, timingPath, settings, lease }));
         }
         if (!wordTimingsPath) fs.rmSync(`${output}.wordtimings.json`, { force: true });
-      } else {
-        await synthesizeSpeech(speechText, voice, rate, output, { wordTimingsPath, language });
+      } else if (multilingualProvider) {
+        const modelName = language === 'ja' ? 'Style-Bert-VITS2 Japanese' : 'CosyVoice 3.0 Chinese';
+        const selectedSettings = {
+          ...settings,
+          styleBertVits2Voice: language === 'ja' ? voice : settings.styleBertVits2Voice,
+          styleBertVits2Speed: language === 'ja' ? speed : settings.styleBertVits2Speed,
+          cosyVoiceSpeed: language === 'zh' ? 1 : settings.cosyVoiceSpeed
+        };
+        if (language === 'zh' && body.cosyVoiceProfileId) {
+          const profile = {
+            id: String(body.cosyVoiceProfileId), name: String(body.cosyVoiceProfileName || '').slice(0, 80),
+            referenceText: String(body.cosyVoiceReferenceText || '').slice(0, 1000)
+          };
+          const profiles = Array.isArray(settings.cosyVoiceProfiles) ? [...settings.cosyVoiceProfiles] : [];
+          const profileIndex = profiles.findIndex((item) => item.id === profile.id);
+          if (profileIndex >= 0) profiles[profileIndex] = profile;
+          else profiles.push(profile);
+          selectedSettings.cosyVoiceProfileId = profile.id;
+          selectedSettings.cosyVoiceProfileName = profile.name;
+          selectedSettings.cosyVoiceReferenceText = profile.referenceText;
+          selectedSettings.cosyVoiceProfiles = profiles;
+        }
+        await withLocalTtsModel(modelName, (lease) => synthesizeMultilingualSegments([{
+          segmentId: `preview-${id}`, language, text, speechText, order: 0, rate: speed, outputPath: output
+        }], `preview-${id}`, { provider: ttsProvider, settings: selectedSettings, lease }));
       }
-      if (!wordTimingsPath) return json(res, 200, { url: `/api/tts-preview/${id}`, language, voice });
+      if (!wordTimingsPath) {
+        fs.rmSync(`${output}.wordtimings.json`, { force: true });
+        return json(res, 200, { url: `/api/tts-preview/${id}`, language, voice });
+      }
       const timingData = JSON.parse(fs.readFileSync(wordTimingsPath, 'utf8'));
       let mapped = mapWordBoundariesToTokens(text, timingData.wordBoundaries, `preview-${id}`, { language });
-      let alignmentSource = timingData.source || (timingData.wordBoundaries.length ? (ttsProvider === 'edge' ? 'edge-word-boundary' : language === 'en' ? 'kokoro-word-boundary' : 'vieneu-word-boundary') : null);
+      let alignmentSource = timingData.source || (timingData.wordBoundaries.length ? (multilingualProvider ? `${ttsProvider}-alignment` : language === 'en' ? 'kokoro-word-boundary' : 'vieneu-word-boundary') : null);
       let warning = timingData.warning || null;
       if (!mapped.alignment.reliable) {
         const local = await alignSpeechLocally(output, speechText, language);
@@ -583,9 +901,28 @@ async function handleApi(req, res, url) {
   }
   if (route === 'POST /api/generate') {
     const body = await readJson(req);
+    const contentLanguage = String(body.contentLanguage || getSettings().contentLanguage || 'en');
+    const ttsProvider = String(body.ttsProvider || getSettings().ttsProvider || 'vieneu');
+    if (!['en', 'ja', 'zh'].includes(contentLanguage)) return json(res, 400, { error: 'Content language must be English, Japanese, or Chinese.' });
+    const presentationStyle = contentLanguage === 'zh' ? String(body.presentationStyle || '') : '';
+    if (presentationStyle && !['dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'].includes(presentationStyle)) {
+      return json(res, 400, { error: 'Kiểu trình bày tiếng Trung không hợp lệ.' });
+    }
+    if (!['vieneu', 'vieneu-sbv2', 'vieneu-cosyvoice3'].includes(ttsProvider)) return json(res, 400, { error: 'Invalid TTS provider.' });
+    const providerLanguage = { vieneu: 'en', 'vieneu-sbv2': 'ja', 'vieneu-cosyvoice3': 'zh' }[ttsProvider];
+    if (providerLanguage !== contentLanguage) return json(res, 400, { error: 'Selected local TTS model does not match the chosen content language.' });
     if (body.topicId && !db.prepare('SELECT id FROM topics WHERE id=?').get(body.topicId)) return json(res, 400, { error: 'Chủ đề không tồn tại.' });
     const system = await systemStatus();
     const blockers = [];
+    if (ttsProvider === 'vieneu-sbv2') {
+      if (!system.tools.styleBertVits2Tts) blockers.push('Style-Bert-VITS2 tiếng Nhật chưa sẵn sàng; xem trạng thái model trong Kết nối & cài đặt.');
+      else if (Number(system.styleBertVits2?.freeRamMb) < Number(system.styleBertVits2?.minimumRamMb)) blockers.push(`Style-Bert-VITS2 cần ít nhất ${system.styleBertVits2.minimumRamMb} MB RAM trống trước khi tạo giọng.`);
+    }
+    if (ttsProvider === 'vieneu-cosyvoice3') {
+      if (!system.tools.cosyVoice3Tts) blockers.push('CosyVoice 3.0 tiếng Trung chưa sẵn sàng; xem trạng thái model trong Kết nối & cài đặt.');
+      else if (!system.cosyVoice3?.referenceReady) blockers.push('CosyVoice cần WAV giọng mẫu và bản chép chính xác. Hãy lưu mẫu trong Kết nối & cài đặt trước khi tạo nội dung tiếng Trung.');
+      else if (Number(system.cosyVoice3?.freeRamMb) < Number(system.cosyVoice3?.minimumRamMb)) blockers.push(`CosyVoice 3.0 cần ít nhất ${system.cosyVoice3.minimumRamMb} MB RAM trống trước khi tạo giọng.`);
+    }
     if (!system.worker) blockers.push('Worker nền đang ngoại tuyến. Hãy khởi động worker để xử lý video.');
     if (!system.tools.ffmpeg || !system.tools.ffprobe) {
       const errors = system.tools.errors;
@@ -597,7 +934,7 @@ async function handleApi(req, res, url) {
     if (blockers.length) return json(res, 503, { error: blockers.join(' ') });
     const activeJob = db.prepare("SELECT id FROM jobs WHERE type='create_video' AND status IN ('pending','running') ORDER BY created_at DESC LIMIT 1").get();
     if (activeJob) return json(res, 409, { error: `Đang có video chờ xử lý (${activeJob.id}); chờ job hiện tại xong rồi hãy tạo tiếp.` });
-    const id = queueJob('create_video', { topicId: body.topicId || null, allowLocalTemplate: body.allowLocalTemplate === true });
+    const id = queueJob('create_video', { topicId: body.topicId || null, allowLocalTemplate: body.allowLocalTemplate === true, contentLanguage, ttsProvider, ...(presentationStyle ? { presentationStyle } : {}) });
     log('INFO', 'VIDEO_JOB_QUEUED', 'Đã thêm yêu cầu tạo video vào hàng đợi.', id);
     return json(res, 202, { jobId: id, status: 'pending' });
   }
@@ -613,7 +950,7 @@ async function handleApi(req, res, url) {
     try {
       const schedule = createSchedule(scheduleMatch[1], when.toISOString());
       let facebookScheduleState = 'local';
-      if (settings.facebookAdapter === 'meta' && settings.autoPublishEnabled && settings.facebookConnectionVerified) {
+      if (settings.facebookAdapter === 'meta' && settings.autoPublishEnabled && isFacebookPageReady(getFacebookPageProfile(schedule.targetPageProfileId))) {
         const queued = queueFacebookSchedule(schedule.id);
         if (queued) facebookScheduleState = 'queued';
       }
@@ -627,7 +964,7 @@ async function handleApi(req, res, url) {
     try {
       const schedule = approveVideoAndCreateRandomSchedule(approveMatch[1], settings.timezone, settings.postsPerDay);
       let facebookScheduleState = schedule.facebookScheduleState || 'local';
-      if (settings.facebookAdapter === 'meta' && settings.autoPublishEnabled && settings.facebookConnectionVerified && facebookScheduleState === 'local') {
+      if (settings.facebookAdapter === 'meta' && settings.autoPublishEnabled && isFacebookPageReady(getFacebookPageProfile(schedule.targetPageProfileId)) && facebookScheduleState === 'local') {
         const queued = queueFacebookSchedule(schedule.id);
         if (queued) facebookScheduleState = 'queued';
       }
@@ -644,9 +981,11 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && publishMatch) {
     const body = await readJson(req);
     const settings = getSettings();
-    if (settings.facebookAdapter === 'meta' && (!body.confirmLive || !settings.facebookConnectionVerified)) return json(res, 409, { error: 'Đăng live cần xác nhận rõ ràng và kiểm tra Page thành công.' });
     const video = db.prepare('SELECT id,status,last_error FROM videos WHERE id=?').get(publishMatch[1]);
-    const facebookSchedule = db.prepare('SELECT facebook_schedule_state FROM scheduled_posts WHERE video_id=?').get(publishMatch[1]);
+    const contentLanguage = contentLanguageForVideo(publishMatch[1]);
+    const facebookSchedule = db.prepare('SELECT * FROM scheduled_posts WHERE video_id=?').get(publishMatch[1]);
+    const targetPage = settings.facebookAdapter === 'meta' ? facebookPageForVideo(publishMatch[1], facebookSchedule) : null;
+    if (settings.facebookAdapter === 'meta' && (!body.confirmLive || !isFacebookPageReady(targetPage))) return json(res, 409, { error: `Đăng live cần xác nhận rõ ràng và Page ${contentLanguage.toUpperCase()} đã được kiểm tra thành công.` });
     if (['queued', 'uploading', 'finishing', 'scheduled', 'uncertain'].includes(facebookSchedule?.facebook_schedule_state)) {
       return json(res, 409, { error: 'Video này đã hoặc đang được lên lịch trên Facebook. Hãy kiểm tra Facebook Planner trước khi đăng ngay để tránh tạo bài trùng.' });
     }
@@ -666,7 +1005,10 @@ async function handleApi(req, res, url) {
     if (settings.facebookAdapter === 'meta' && !settings.autoPublishEnabled) {
       // A direct user action permits this single live publish without enabling future auto-publishing.
     }
-    const id = queueJob('publish_video', { videoId: video.id, confirmLive: body.confirmLive === true });
+    const id = queueJob('publish_video', {
+      videoId: video.id, confirmLive: body.confirmLive === true,
+      ...(targetPage ? { targetPageProfileId: targetPage.id, targetPageId: targetPage.pageId } : {})
+    });
     log('INFO', 'PUBLISH_JOB_QUEUED', `Đã đưa video vào hàng đợi đăng ${settings.facebookAdapter}.`, id);
     return json(res, 202, { jobId: id, status: 'pending' });
   }
@@ -693,6 +1035,7 @@ async function handleApi(req, res, url) {
     const video = db.prepare('SELECT id,script_id,status FROM videos WHERE id=?').get(videoRetryMatch[1]);
     if (!video) return json(res, 404, { error: 'Không tìm thấy video cần tạo lại.' });
     if (video.status !== 'failed') return json(res, 409, { error: 'Chỉ có thể tạo lại video đang ở trạng thái lỗi.' });
+    const selectedTts = currentVideoTtsSelection({ scriptId: video.script_id });
 
     const relatedJobs = db.prepare("SELECT id,status,payload_json FROM jobs WHERE type='create_video' ORDER BY created_at DESC").all()
       .map((job) => {
@@ -707,23 +1050,55 @@ async function handleApi(req, res, url) {
     let jobId;
     if (failedJob) {
       const stamp = new Date().toISOString();
-      db.prepare("UPDATE jobs SET status='pending',attempts=0,last_error=NULL,scheduled_at=?,locked_by=NULL,updated_at=? WHERE id=? AND status='failed'")
-        .run(stamp, stamp, failedJob.id);
+      const retryPayload = { ...failedJob.payload, ...selectedTts };
+      db.prepare("UPDATE jobs SET payload_json=?,status='pending',attempts=0,last_error=NULL,scheduled_at=?,locked_by=NULL,updated_at=? WHERE id=? AND status='failed'")
+        .run(JSON.stringify(retryPayload), stamp, stamp, failedJob.id);
       jobId = failedJob.id;
     } else {
-      jobId = queueJob('create_video', { scriptId: video.script_id, videoId: video.id });
+      jobId = queueJob('create_video', { scriptId: video.script_id, videoId: video.id, ...selectedTts });
     }
     log('INFO', 'VIDEO_RETRY_QUEUED', `Đã xếp tạo lại video ${video.id} từ kịch bản đã lưu.`, jobId);
     return json(res, 202, { jobId, status: 'pending' });
   }
   const retryMatch = url.pathname.match(/^\/api\/jobs\/([\w-]+)\/retry$/);
   if (req.method === 'POST' && retryMatch) {
-    const result = db.prepare("UPDATE jobs SET status='pending',attempts=0,last_error=NULL,scheduled_at=?,updated_at=? WHERE id=? AND status='failed'")
-      .run(new Date().toISOString(), new Date().toISOString(), retryMatch[1]);
+    const failedJob = db.prepare("SELECT id,type,payload_json FROM jobs WHERE id=? AND status='failed'").get(retryMatch[1]);
+    if (!failedJob) return json(res, 409, { error: 'Job không ở trạng thái lỗi để chạy lại.' });
+    const stamp = new Date().toISOString();
+    let result;
+    if (failedJob.type === 'create_video') {
+      let payload = null;
+      try { payload = JSON.parse(failedJob.payload_json); } catch { /* Keep malformed legacy payloads untouched. */ }
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        const selectedTts = currentVideoTtsSelection({ scriptId: payload.scriptId, contentLanguageHint: payload.contentLanguage });
+        payload = { ...payload, ...selectedTts };
+        result = db.prepare("UPDATE jobs SET payload_json=?,status='pending',attempts=0,last_error=NULL,scheduled_at=?,updated_at=? WHERE id=? AND status='failed'")
+          .run(JSON.stringify(payload), stamp, stamp, retryMatch[1]);
+      } else {
+        result = db.prepare("UPDATE jobs SET status='pending',attempts=0,last_error=NULL,scheduled_at=?,updated_at=? WHERE id=? AND status='failed'")
+          .run(stamp, stamp, retryMatch[1]);
+      }
+    } else {
+      result = db.prepare("UPDATE jobs SET status='pending',attempts=0,last_error=NULL,scheduled_at=?,updated_at=? WHERE id=? AND status='failed'")
+        .run(stamp, stamp, retryMatch[1]);
+    }
     if (Number(result.changes) !== 1) return json(res, 409, { error: 'Job không ở trạng thái lỗi để chạy lại.' });
     return json(res, 202, { jobId: retryMatch[1], status: 'pending' });
   }
   return json(res, 404, { error: 'Không tìm thấy API.' });
+}
+
+function currentVideoTtsSelection({ scriptId = null, contentLanguageHint = null } = {}) {
+  const settings = getSettings();
+  const script = scriptId ? getScript(scriptId) : null;
+  const languageValue = script?.contentLanguage || contentLanguageHint || settings.contentLanguage || 'en';
+  const contentLanguage = ['en', 'ja', 'zh'].includes(String(languageValue)) ? String(languageValue) : 'en';
+  const ttsProvider = contentLanguage === 'ja'
+    ? settings.japaneseTtsProvider || 'vieneu-sbv2'
+    : contentLanguage === 'zh'
+      ? settings.chineseTtsProvider || 'vieneu-cosyvoice3'
+      : settings.ttsProvider || 'vieneu';
+  return { contentLanguage, ttsProvider };
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]); }

@@ -1,3 +1,3 @@
-# Optional, free local forced-alignment fallback used only when Edge WordBoundary is missing or incomplete.
+# Optional local forced-alignment fallback used when a TTS model does not provide usable word timings.
 # PyTorch/model files can be large; install this only if you want the offline fallback.
 stable-ts==2.19.1

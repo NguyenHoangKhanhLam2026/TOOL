@@ -350,12 +350,7 @@ async function repairRecentSpawnFailure(expectedJobId = null) {
   const message = String(latest?.message || latest?.job?.last_error || '');
   if (!latest) return 'none';
   if (expectedJobId && latest.job?.id !== expectedJobId) return 'none';
-  if (!isSpawnFailure(message)) {
-    if (/WSServerHandshakeError:\s*403|403, message=['"]Invalid response status/i.test(message)) {
-      console.log('[INFO] Lỗi gần nhất là Edge TTS HTTP 403; đây là phản hồi từ dịch vụ TTS, bot không khởi động lại worker cho lỗi này.');
-    }
-    return 'none';
-  }
+  if (!isSpawnFailure(message)) return 'none';
   if (!latest.job || !['failed', 'pending'].includes(latest.job.status)) {
     console.log('[INFO] Job ghi lỗi spawn đã đổi trạng thái; bot không chạy lại job cũ.');
     return 'none';
@@ -474,9 +469,8 @@ async function main() {
   await runAsyncProbe('Node.js (spawn bất đồng bộ như ứng dụng)', process.execPath, ['--version']);
   if (ffmpeg) await runAsyncProbe('FFmpeg (spawn bất đồng bộ)', ffmpeg, ['-version']);
   if (ffprobe) await runAsyncProbe('FFprobe (spawn bất đồng bộ)', ffprobe, ['-version']);
-  if (process.env.PYTHON) {
-    await runAsyncProbe('Python + Edge TTS (spawn bất đồng bộ)', process.env.PYTHON, ['-c', 'import edge_tts']);
-  }
+  const pythonCommand = process.env.PYTHON || localEnv.PYTHON;
+  if (pythonCommand) await runAsyncProbe('Python alignment worker (spawn bất đồng bộ)', pythonCommand, ['--version']);
   for (const [label, envName, relativePath] of [
     ['VieNeu Python (spawn bất đồng bộ)', 'VIENEU_PYTHON', path.join('.venv-vieneu', 'Scripts', 'python.exe')],
     ['Kokoro Python (spawn bất đồng bộ)', 'KOKORO_PYTHON', path.join('.venv-kokoro', 'Scripts', 'python.exe')]

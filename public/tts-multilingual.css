@@ -1,0 +1,20 @@
+.hero-controls{flex-wrap:wrap}
+#content-language-wrap select{min-width:230px}
+#cosyvoice-reference-text{width:100%;min-height:76px;border:1px solid #d5d9e2;border-radius:9px;background:#fff;color:#344054;padding:10px 12px;resize:vertical;outline:none;font:inherit;font-size:11px}
+#cosyvoice-reference-file{height:auto;min-height:40px;padding:8px}
+#cosyvoice-reference-status{font-size:9px;color:#858d83;font-weight:400}
+.cosyvoice-profile-picker{display:flex;align-items:center;gap:8px}
+.cosyvoice-profile-picker select{flex:1;min-width:0}
+.cosyvoice-profile-picker button{white-space:nowrap;min-height:40px}
+.cosyvoice-profile-picker .button-danger{color:#b75d4d;border-color:#efcfc7;background:#fffaf8}
+.cosyvoice-profile-picker button:disabled{opacity:.45;cursor:not-allowed}
+.cosyvoice-profile-details,.cosyvoice-library-status{margin:6px 0 0;color:#858d83;font-size:9px;line-height:1.5}
+.cosyvoice-library-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
+.cosyvoice-library-actions button{min-height:34px}
+.cosyvoice-library-actions[hidden],.cosyvoice-library-status[hidden],.cosyvoice-custom-profile-fields[hidden],.cosyvoice-profile-picker button[hidden]{display:none!important}
+.cosyvoice-custom-profile-fields{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cosyvoice-custom-transcript{grid-column:1/-1}
+#cosyvoice-reference-text:read-only{background:#f7f6f1;color:#59636b}
+.cosyvoice-library-status{min-height:14px}
+.multilingual-model-status{font-size:9px;color:#858d83;line-height:1.55}
+@media(max-width:650px){#content-language-wrap select{min-width:0}}

@@ -12,6 +12,8 @@
     "setup:vieneu": "node scripts/install-vieneu.mjs",
     "setup:kokoro": "node scripts/setup-kokoro.mjs",
     "setup:alignment": "node scripts/setup-alignment.mjs",
+    "setup:multilingual-tts": "node scripts/setup-multilingual-tts.mjs",
+    "setup:sbv2": "node scripts/setup-multilingual-tts.mjs --sbv2-only",
     "smoke:vieneu-highlight": "node scripts/smoke-vieneu-highlight.mjs",
     "smoke:local-ai-tts": "node scripts/smoke-local-ai-tts.mjs",
     "dev": "node src/server.mjs",

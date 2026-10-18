@@ -135,15 +135,16 @@ async function probeAudio(file) {
 export async function renderVideo(script, videoId, audioFiles, {
   onProgress = () => {}, onTimeline = () => {}, onAlignmentWarning = () => {}, highlightSettings = {}
 } = {}) {
-  const template = readVisualTemplate();
+  const template = readVisualTemplate({ contentLanguage: script.contentLanguage || 'en' });
   const tempDir = path.join(PATHS.temporary, videoId);
   const layerDir = path.join(tempDir, 'visual-layers-v2');
   const outDir = path.join(PATHS.output, videoId);
   fs.mkdirSync(layerDir, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
 
-  if (!Array.isArray(audioFiles) || audioFiles.length === 0) throw new Error('Kịch bản không có đoạn audio Edge TTS nào để render.');
+  if (!Array.isArray(audioFiles) || audioFiles.length === 0) throw new Error('Kịch bản không có đoạn audio TTS nào để render.');
   const settings = { ...DEFAULT_HIGHLIGHT_SETTINGS, ...highlightSettings, highlightTransition: 'instant' };
+  if (script.contentLanguage === 'zh') settings.highlightEnabled = false;
   settings.backgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
   settings.backgroundEffectDensity = normalizeBackgroundEffectDensity(settings.backgroundEffectDensity);
   settings.backgroundEffectSpeed = normalizeBackgroundEffectSpeed(settings.backgroundEffectSpeed);
@@ -152,7 +153,14 @@ export async function renderVideo(script, videoId, audioFiles, {
   for (const item of audioFiles) {
     if (!fs.existsSync(item.path)) throw new Error(`Thiếu audio cho đoạn ${item.segmentId || item.index || '?'} (${item.language || 'không rõ ngôn ngữ'}).`);
     const duration = await probeAudio(item.path);
-    durations.push({ ...item, target: resolveSpeechTarget(template, item), duration });
+    const source = script.contentLanguage === 'zh'
+      ? (script.speechSegments || []).find((segment) => String(segment.segmentId || segment.id || '') === String(item.segmentId || item.id || ''))
+      : null;
+    const requestedPause = Number(item.pauseAfterSeconds ?? source?.pauseAfterSeconds);
+    const pauseAfterSeconds = script.contentLanguage === 'zh' && Number.isFinite(requestedPause)
+      ? Math.max(0, Math.min(2, requestedPause))
+      : 0;
+    durations.push({ ...item, target: resolveSpeechTarget(template, item), duration, pauseAfterSeconds });
   }
 
   const ctaItems = durations.filter((item) => item.state === 'cta' || item.target?.layerId === 'cta');
@@ -177,7 +185,7 @@ export async function renderVideo(script, videoId, audioFiles, {
   const ctaSpeechDuration = ctaItems.reduce((sum, item) => sum + item.duration, 0);
   const ctaDuration = Math.max(0, Number(timing.cta) || 0, ctaSpeechDuration);
   timing.cta = ctaDuration;
-  const speechDuration = dialogueDurations.reduce((sum, item) => sum + item.duration, 0);
+  const speechDuration = dialogueDurations.reduce((sum, item) => sum + item.duration + item.pauseAfterSeconds, 0);
   const configuredVocabularyHold = Math.max(0, Number(timing.vocabularyHold) || 0);
   const vocabularyHold = fitVocabularyHold({
     configuredHold: configuredVocabularyHold,
@@ -191,41 +199,52 @@ export async function renderVideo(script, videoId, audioFiles, {
   const sequence = [{ type: 'silence', state: 'intro', index: 0, duration: Number(timing.intro) }];
   let sequenceCursor = Number(timing.intro);
   groups.forEach((group, groupIndex) => {
-    const dialogueItems = group.items.filter((item) => item.target?.layerId !== 'vocabulary' && item.state !== 'vocabulary');
-    const vocabularyItems = group.items.filter((item) => item.target?.layerId === 'vocabulary' || item.state === 'vocabulary');
-    for (const item of dialogueItems) {
-      const requestedIndex = Number(item.target?.dialogueIndex);
-      const index = Array.isArray(script.dialogues) && script.dialogues.length
-        ? Math.max(0, Math.min(script.dialogues.length - 1, Number.isInteger(requestedIndex) ? requestedIndex : groupIndex))
+    if (script.contentLanguage === 'zh') {
+      // Chinese lesson clips keep the generated speech order: Vietnamese source,
+      // Chinese first read, second read, then the spoken explanation/practice.
+      // English retains its existing dialogue/vocabulary grouping below.
+      for (const item of group.items) {
+        const requestedIndex = Number(item.target?.dialogueIndex);
+        const index = Array.isArray(script.dialogues) && script.dialogues.length
+          ? Math.max(0, Math.min(script.dialogues.length - 1, Number.isInteger(requestedIndex) ? requestedIndex : groupIndex))
+          : groupIndex;
+        const state = ['vietnamese', 'bilingual', 'vocabulary'].includes(item.state)
+          ? item.state
+          : item.target?.layerId === 'vietnamese-card' ? 'vietnamese' : 'bilingual';
+        sequence.push({ ...item, type: 'speech', state, index, target: { ...(item.target || {}), dialogueIndex: index }, duration: item.duration });
+        sequenceCursor += item.duration;
+        if (item.pauseAfterSeconds > 0.0001) {
+          sequence.push({ type: 'silence', state, index, duration: item.pauseAfterSeconds });
+          sequenceCursor += item.pauseAfterSeconds;
+        }
+      }
+    } else {
+      const dialogueItems = group.items.filter((item) => item.target?.layerId !== 'vocabulary' && item.state !== 'vocabulary');
+      const vocabularyItems = group.items.filter((item) => item.target?.layerId === 'vocabulary' || item.state === 'vocabulary');
+      for (const item of dialogueItems) {
+        const requestedIndex = Number(item.target?.dialogueIndex);
+        const index = Array.isArray(script.dialogues) && script.dialogues.length
+          ? Math.max(0, Math.min(script.dialogues.length - 1, Number.isInteger(requestedIndex) ? requestedIndex : groupIndex))
+          : groupIndex;
+        const state = ['vietnamese', 'bilingual', 'vocabulary'].includes(item.state)
+          ? item.state
+          : item.target?.layerId === 'vietnamese-card' ? 'vietnamese' : 'bilingual';
+        sequence.push({ ...item, type: 'speech', state, index, target: { ...(item.target || {}), dialogueIndex: index }, duration: item.duration });
+        sequenceCursor += item.duration;
+      }
+      const requestedIndex = Number(group.items[0]?.target?.dialogueIndex);
+      const index = Array.isArray(script.dialogues) && script.dialogues.length && Number.isInteger(requestedIndex)
+        ? Math.max(0, Math.min(script.dialogues.length - 1, requestedIndex))
         : groupIndex;
-      const state = ['vietnamese', 'bilingual', 'vocabulary'].includes(item.state)
-        ? item.state
-        : item.target?.layerId === 'vietnamese-card' ? 'vietnamese' : 'bilingual';
-      sequence.push({
-        ...item,
-        type: 'speech',
-        state,
-        index,
-        target: { ...(item.target || {}), dialogueIndex: index },
-        duration: item.duration
-      });
-      sequenceCursor += item.duration;
+      for (const item of vocabularyItems) {
+        sequence.push({ ...item, type: 'speech', state: 'vocabulary', index, target: { ...(item.target || {}), dialogueIndex: index }, duration: item.duration });
+        sequenceCursor += item.duration;
+      }
     }
     const requestedIndex = Number(group.items[0]?.target?.dialogueIndex);
     const index = Array.isArray(script.dialogues) && script.dialogues.length && Number.isInteger(requestedIndex)
       ? Math.max(0, Math.min(script.dialogues.length - 1, requestedIndex))
       : groupIndex;
-    for (const item of vocabularyItems) {
-      sequence.push({
-        ...item,
-        type: 'speech',
-        state: 'vocabulary',
-        index,
-        target: { ...(item.target || {}), dialogueIndex: index },
-        duration: item.duration
-      });
-      sequenceCursor += item.duration;
-    }
     const transitionStart = transitionFrames > 0
       ? alignUpToFrame(sequenceCursor + vocabularyHold)
       : sequenceCursor + vocabularyHold;
@@ -253,6 +272,7 @@ export async function renderVideo(script, videoId, audioFiles, {
   const audioTimeline = buildAudioTimeline(sequence);
   const total = audioTimeline.duration;
   if (total < 4 || total > 60) throw new Error(`Timeline dài ${total.toFixed(1)} giây; video Reels phải từ 4 đến 60 giây.`);
+  const chinesePresentationStyle = String(script.presentationStyle || script.dialogues?.[0]?.presentationStyle || 'inline-meaning');
 
   const highlightTimeline = [];
   const visualPlan = [];
@@ -271,7 +291,7 @@ export async function renderVideo(script, videoId, audioFiles, {
       addVisual(entry, entry.duration);
       continue;
     }
-    const enabled = settings.highlightEnabled !== false;
+    const enabled = settings.highlightEnabled !== false && script.contentLanguage !== 'zh';
     if (!enabled) {
       addVisual(entry, entry.duration);
       continue;
@@ -352,11 +372,19 @@ export async function renderVideo(script, videoId, audioFiles, {
   onTimeline(timeline);
 
   const persistentLayers = ['background', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'footer'];
+  const targetCardLayer = script.contentLanguage === 'zh' ? 'chinese-card' : 'english-card';
+  const pinyinLayer = script.contentLanguage === 'zh' ? ['pinyin'] : [];
+  const inlineChinesePresentation = script.contentLanguage === 'zh'
+    && ['inline-meaning', 'inline-keyphrase'].includes(chinesePresentationStyle);
+  const hasExplicitPinyinSequence = script.contentLanguage === 'zh' && durations.some((item) =>
+    item.target?.layerId === 'chinese-card' && typeof item.target.pinyinVisible === 'boolean'
+  );
+  let pinyinVisibleForTimeline = !hasExplicitPinyinSequence;
   const stateLayers = {
     intro: [...persistentLayers, 'title'],
-    vietnamese: [...persistentLayers, 'scene-number', 'vietnamese-card'],
-    bilingual: [...persistentLayers, 'scene-number', 'vietnamese-card', 'english-card'],
-    vocabulary: [...persistentLayers, 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary'],
+    vietnamese: [...persistentLayers, 'scene-number', 'vietnamese-card', ...(inlineChinesePresentation ? [targetCardLayer] : [])],
+    bilingual: [...persistentLayers, 'scene-number', 'vietnamese-card', targetCardLayer, ...pinyinLayer],
+    vocabulary: [...persistentLayers, 'scene-number', 'vietnamese-card', targetCardLayer, ...pinyinLayer, 'vocabulary'],
     transition: [],
     cta: [...persistentLayers, 'cta']
   };
@@ -367,10 +395,11 @@ export async function renderVideo(script, videoId, audioFiles, {
     backgroundBaseFile = path.join(layerDir, 'background-base.png');
     await rasterizeScene({ template, script, state: 'intro', index: 0, outputPath: backgroundBaseFile, includeLayers: ['background'] });
   }
+  const pinyinAnimationElapsed = new Map();
+  const chineseLayerAnimationElapsed = new Map();
   for (let index = 0; index < visualPlan.length; index += 1) {
     const visual = visualPlan[index];
     const entry = visual.entry;
-    const file = path.join(layerDir, `highlight-${String(index + 1).padStart(5, '0')}-${entry.state}.png`);
     const sceneIndex = Math.max(0, Math.min(totalCount - 1, Number(entry.index || 0)));
     if (entry.state === 'transition') {
       imageEntries.push({ file: null, duration: visual.duration, transition: true });
@@ -381,26 +410,69 @@ export async function renderVideo(script, videoId, audioFiles, {
     const speechSegment = entry.type === 'speech'
       ? { ...entry, target: { ...(entry.target || {}), dialogueIndex: sceneIndex } }
       : null;
+    if (script.contentLanguage === 'zh' && speechSegment?.target?.layerId === 'chinese-card'
+      && typeof speechSegment.target.pinyinVisible === 'boolean') {
+      pinyinVisibleForTimeline = speechSegment.target.pinyinVisible;
+    }
     const sceneDialogue = script.dialogues?.[sceneIndex];
     if (speechSegment && !sceneDialogue?.vietnamese && !sceneDialogue?.english) {
       includeLayers = includeLayers.filter((layerId) => !['vietnamese-card', 'english-card'].includes(layerId) || layerId === speechSegment.target.layerId);
     }
     if (speechSegment?.target?.layerId && !includeLayers.includes(speechSegment.target.layerId)) includeLayers.push(speechSegment.target.layerId);
-    if (settings.backgroundEffect === 'none') {
-      await rasterizeScene({
-        template, script, state: entry.state, index: sceneIndex, outputPath: file,
-        includeBackground: true, includeLayers, highlight: visual.highlight,
-        highlightSettings: settings, speechSegment, totalCount
-      });
-      imageEntries.push({ file, duration: visual.duration });
-    } else {
-      const foregroundFile = path.join(layerDir, `foreground-${String(index + 1).padStart(5, '0')}-${entry.state}.png`);
-      await rasterizeScene({
-        template, script, state: entry.state, index: sceneIndex, outputPath: foregroundFile,
-        includeBackground: false, includeLayers: includeLayers.filter((layerId) => layerId !== 'background'),
-        highlight: visual.highlight, highlightSettings: settings, speechSegment, totalCount
-      });
-      imageEntries.push({ file: foregroundFile, duration: visual.duration, foreground: true });
+    if (script.contentLanguage === 'zh' && !pinyinVisibleForTimeline) includeLayers = includeLayers.filter((layerId) => layerId !== 'pinyin');
+    const pinyinLayer = template.layers.find((layer) => layer.id === 'pinyin');
+    const animatedPinyin = script.contentLanguage === 'zh' && pinyinLayer?.visible !== false
+      && pinyinLayer?.appearanceEffect !== 'none' && speechSegment?.target?.layerId === 'chinese-card'
+      && speechSegment.target?.pinyinVisible !== false;
+    const animationKey = String(speechSegment?.segmentId || '');
+    const elapsed = animationKey ? (pinyinAnimationElapsed.get(animationKey) || 0) : 0;
+    const fadeLayer = speechSegment?.target?.layerId === 'vocabulary'
+      || (speechSegment?.target?.layerId === 'chinese-card' && speechSegment.target?.pinyinVisible === false);
+    const layerElapsed = animationKey ? (chineseLayerAnimationElapsed.get(animationKey) || 0) : 0;
+    const animatedPinyinDuration = animatedPinyin ? Math.min(visual.duration, Math.max(0, 0.2 - elapsed)) : 0;
+    const animatedLayerDuration = script.contentLanguage === 'zh' && fadeLayer
+      ? Math.min(visual.duration, Math.max(0, 0.2 - layerElapsed))
+      : 0;
+    const animatedDuration = Math.max(animatedPinyinDuration, animatedLayerDuration);
+    const requests = [];
+    if (animatedDuration > 0.0001) {
+      const frames = Math.max(1, Math.ceil(animatedDuration * OUTPUT_FRAME_RATE));
+      for (let frame = 0; frame < frames; frame += 1) {
+        const duration = animatedDuration / frames;
+        const progressed = duration * (frame + 1);
+        requests.push({
+          duration,
+          pinyinProgress: animatedPinyin ? Math.min(1, (elapsed + progressed) / 0.2) : 1,
+          layerProgress: animatedLayerDuration ? Math.min(1, (layerElapsed + progressed) / 0.2) : 1,
+          frame
+        });
+      }
+      if (animatedPinyinDuration > 0.0001) pinyinAnimationElapsed.set(animationKey, elapsed + animatedPinyinDuration);
+      if (animatedLayerDuration > 0.0001) chineseLayerAnimationElapsed.set(animationKey, layerElapsed + animatedLayerDuration);
+    }
+    const remaining = Math.max(0, visual.duration - animatedDuration);
+    if (remaining > 0.0001 || !requests.length) requests.push({ duration: remaining || visual.duration, pinyinProgress: 1, layerProgress: 1, frame: 'rest' });
+    for (const request of requests) {
+      const suffix = request.frame === 'rest' ? '' : `-py${request.frame}`;
+      const frameFile = path.join(layerDir, `highlight-${String(index + 1).padStart(5, '0')}-${entry.state}${suffix}.png`);
+      if (settings.backgroundEffect === 'none') {
+        await rasterizeScene({
+          template, script, state: entry.state, index: sceneIndex, outputPath: frameFile,
+          includeBackground: true, includeLayers, highlight: visual.highlight,
+          highlightSettings: settings, speechSegment, totalCount,
+          pinyinEffectProgress: request.pinyinProgress, chineseTextEffectProgress: request.layerProgress
+        });
+        imageEntries.push({ file: frameFile, duration: request.duration });
+      } else {
+        const foregroundFile = path.join(layerDir, `foreground-${String(index + 1).padStart(5, '0')}-${entry.state}${suffix}.png`);
+        await rasterizeScene({
+          template, script, state: entry.state, index: sceneIndex, outputPath: foregroundFile,
+          includeBackground: false, includeLayers: includeLayers.filter((layerId) => layerId !== 'background'),
+          highlight: visual.highlight, highlightSettings: settings, speechSegment, totalCount,
+          pinyinEffectProgress: request.pinyinProgress, chineseTextEffectProgress: request.layerProgress
+        });
+        imageEntries.push({ file: foregroundFile, duration: request.duration, foreground: true });
+      }
     }
     visualCursor += visual.duration;
     if (index % Math.max(1, Math.floor(visualPlan.length / 20)) === 0) onProgress(0.02 + 0.18 * ((index + 1) / visualPlan.length));
@@ -587,7 +659,7 @@ function concatFileLine(file) {
 export function resolveSpeechTarget(template, item) {
   const target = item.target && typeof item.target === 'object' ? item.target : {};
   const requestedLayer = template.layers.find((layer) => layer.id === target.layerId);
-  const requestedIsText = requestedLayer?.kind === 'text' || requestedLayer?.kind === 'cta' || ['vietnamese-card', 'english-card', 'vocabulary'].includes(requestedLayer?.id);
+  const requestedIsText = requestedLayer?.kind === 'text' || requestedLayer?.kind === 'cta' || ['vietnamese-card', 'english-card', 'chinese-card', 'vocabulary'].includes(requestedLayer?.id);
   if (requestedLayer && requestedLayer.visible !== false && requestedIsText) return target;
 
   const language = normalizeLanguage(item.language);

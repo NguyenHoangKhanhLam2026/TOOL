@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { PATHS, ROOT } from '../../src/config.mjs';
-import { defaultDialogueSegmentId, tokenizeText } from '../audio-highlight/highlight-engine.mjs';
+import { defaultDialogueSegmentId, normalizeLanguage, tokenizeText } from '../audio-highlight/highlight-engine.mjs';
 import { normalizeBackgroundEffectSpeed, normalizeBackgroundEffectDensity, normalizeBackgroundEffectOpacity, renderBackgroundEffectMarkup } from './background-effects.mjs';
 
 export const BRANDING_DIR = path.join(ROOT, 'assets', 'branding');
 export const TEMPLATE_PATH = path.join(BRANDING_DIR, 'visual-template.json');
+export const CHINESE_TEMPLATE_PATH = path.join(BRANDING_DIR, 'visual-template-zh.json');
 export const TEMPLATE_VERSION = 2;
 const FONT_DIR = path.join(BRANDING_DIR, 'fonts');
 const FONT_CONFIG_DIR = path.join(PATHS.temporary, 'fontconfig');
@@ -22,9 +23,113 @@ const { default: sharp } = await import('sharp');
 const REQUIRED_LAYER_IDS = ['background', 'logo', 'facebook-logo', 'youtube-logo', 'title', 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary', 'character', 'footer', 'cta'];
 const VALID_SCENES = new Set(['intro', 'vietnamese', 'bilingual', 'vocabulary', 'transition', 'cta']);
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const CHINESE_PRESENTATION_LAYOUTS = {
+  'dialogue-cards': {
+    inlineTarget: false,
+    layers: {
+      'vietnamese-card': { x: 69, y: 458, width: 941, height: 200, fontSize: 54, padding: 42, textAlign: 'center' },
+      'chinese-card': { x: 69, y: 689, width: 941, height: 280, fontSize: 52, padding: 42, textAlign: 'center' },
+      pinyin: { x: 80, y: 750, width: 918, height: 44, fontSize: 29, align: 'center' },
+      vocabulary: { visible: false }
+    }
+  },
+  'numbered-scenario': {
+    inlineTarget: false,
+    layers: {
+      'scene-number': { visible: true, x: 78, y: 408, width: 100, height: 54, fontSize: 23 },
+      'vietnamese-card': { x: 79, y: 487, width: 924, height: 206, fontSize: 52, padding: 43 },
+      'chinese-card': { x: 79, y: 792, width: 924, height: 210, fontSize: 50, padding: 43 },
+      pinyin: { x: 95, y: 900, width: 892, height: 42, fontSize: 27, align: 'center' },
+      vocabulary: { x: 79, y: 1024, width: 924, height: 152, fontSize: 28, padding: 30 },
+      character: { x: 550, y: 1210, width: 488, height: 690 }
+    }
+  },
+  'inline-meaning': {
+    inlineTarget: true,
+    layers: {
+      'vietnamese-card': { x: 76, y: 378, width: 930, height: 190, fontSize: 52, padding: 42 },
+      'chinese-card': { x: 76, y: 598, width: 930, height: 160, fontSize: 52, padding: 0, textAlign: 'start' },
+      pinyin: { x: 76, y: 666, width: 930, height: 40, fontSize: 28, align: 'start' },
+      vocabulary: { x: 76, y: 780, width: 900, height: 190, fontSize: 28, padding: 28 }
+    }
+  },
+  'inline-keyphrase': {
+    inlineTarget: true,
+    layers: {
+      'vietnamese-card': { x: 76, y: 378, width: 930, height: 190, fontSize: 52, padding: 42 },
+      'chinese-card': { x: 76, y: 598, width: 930, height: 160, fontSize: 52, padding: 0, textAlign: 'start', highlightColor: '#C9933D' },
+      pinyin: { x: 76, y: 666, width: 930, height: 40, fontSize: 28, align: 'start' },
+      vocabulary: { x: 76, y: 780, width: 900, height: 190, fontSize: 28, padding: 28 }
+    }
+  }
+};
 
-export function readVisualTemplate() {
+function chinesePresentationStyle(script) {
+  const requested = String(script?.presentationStyle || script?.dialogues?.[0]?.presentationStyle || 'inline-meaning');
+  return CHINESE_PRESENTATION_LAYOUTS[requested] ? requested : 'inline-meaning';
+}
+
+function presentationLayer(template, script, layerId) {
+  const layer = getLayer(template, layerId);
+  if (!layer || script?.contentLanguage !== 'zh') return layer;
+  const style = CHINESE_PRESENTATION_LAYOUTS[chinesePresentationStyle(script)];
+  return { ...layer, ...(style.layers[layerId] || {}) };
+}
+
+export function makeDefaultChineseTemplate() {
   const template = JSON.parse(fs.readFileSync(TEMPLATE_PATH, 'utf8'));
+  template.templateId = 'branded-dialogue-zh-v1';
+  template.name = 'Vietnamese–Chinese Pinyin V1';
+  template.brand = {
+    ...template.brand,
+    pageName: 'Cô Nơ Tiếng Trung',
+    tagline: 'Tiếng Trung Chậm Mà Chắc · Luyện phản xạ giao tiếp mỗi ngày',
+    primaryColor: '#8F241B',
+    secondaryColor: '#70523A',
+    accentColor: '#C9933D',
+    bodyColor: '#332820',
+    backgroundColor: '#FBF3E5',
+    softGray: '#EFE2CE'
+  };
+  template.layers = template.layers.map((layer) => {
+    if (layer.id === 'background') return { ...layer, asset: 'background-chinese-page.png' };
+    if (layer.id === 'logo') return { ...layer, asset: 'brand-logo-chinese.png', x: 465, y: 20, width: 150, height: 150 };
+    if (layer.id === 'title') return { ...layer, color: '#8F241B' };
+    if (layer.id === 'scene-number') return { ...layer, color: '#8F241B', fill: '#F6E8C9', stroke: '#D9B76E' };
+    if (layer.id === 'vietnamese-card') return {
+      ...layer, x: 76, y: 378, width: 930, height: 190, fontSize: 52, padding: 42,
+      color: '#332820', fill: '#FFF9EF', stroke: '#E5D5BB', accent: '#8F241B',
+      shadow: { ...layer.shadow, color: '#6C4029' }
+    };
+    if (layer.id === 'vocabulary') return {
+      ...layer, x: 76, y: 780, width: 900, height: 190, fontSize: 28, padding: 28,
+      color: '#8F241B', fill: '#FFF9EF', stroke: '#D9B76E',
+      shadow: { ...layer.shadow, color: '#6C4029' }
+    };
+    if (layer.id === 'cta') return { ...layer, fill: '#8F241B', accent: '#C9933D', shadow: { ...layer.shadow, color: '#6C4029' } };
+    if (layer.id === 'english-card') return {
+      ...layer, id: 'chinese-card', label: 'Câu tiếng Trung', kind: 'card',
+      x: 76, y: 598, width: 930, height: 160, fontSize: 52, padding: 0,
+      color: '#76231C', highlightColor: '#B67927', fill: '#F9EFDF', stroke: '#D8B96F', accent: '#9B3023',
+      shadow: { ...layer.shadow, color: '#6C4029' }
+    };
+    if (layer.id === 'footer') return { ...layer, text: 'Cô Nơ Tiếng Trung', color: '#8F241B' };
+    return { ...layer };
+  });
+  const targetIndex = template.layers.findIndex((layer) => layer.id === 'chinese-card');
+  template.layers.splice(targetIndex + 1, 0, {
+    id: 'pinyin', label: 'Pinyin', kind: 'text', visible: true, text: '',
+    x: 76, y: 666, width: 930, height: 40, fontSize: 28, fontWeight: 500,
+    color: '#287D7B', lineHeight: 36, align: 'center', fontFamily: 'Be Vietnam Pro', appearanceEffect: 'fade'
+  });
+  return validateVisualTemplate(template);
+}
+
+export function readVisualTemplate({ contentLanguage = 'en' } = {}) {
+  const isChinese = contentLanguage === 'zh';
+  const template = isChinese
+    ? fs.existsSync(CHINESE_TEMPLATE_PATH) ? JSON.parse(fs.readFileSync(CHINESE_TEMPLATE_PATH, 'utf8')) : makeDefaultChineseTemplate()
+    : JSON.parse(fs.readFileSync(TEMPLATE_PATH, 'utf8'));
   return validateVisualTemplate(template);
 }
 
@@ -57,6 +162,7 @@ export function validateVisualTemplate(input) {
     }
     if (clean.x + clean.width > 2160 || clean.y + clean.height > 3000) throw new Error(`Layer ${layer.id} vượt giới hạn scene.`);
     if (clean.visible !== undefined && typeof clean.visible !== 'boolean') throw new Error(`Cờ hiển thị ${layer.id} không hợp lệ.`);
+    if (clean.fontFamily !== undefined && (typeof clean.fontFamily !== 'string' || clean.fontFamily.length > 120)) throw new Error(`Font chữ ${layer.id} không hợp lệ.`);
     if (clean.id === 'footer' && clean.text !== undefined && (typeof clean.text !== 'string' || clean.text.length > 160)) throw new Error('Nội dung Footer tối đa 160 ký tự.');
     if (clean.fontSize !== undefined && (!Number.isFinite(Number(clean.fontSize)) || Number(clean.fontSize) < 12 || Number(clean.fontSize) > 140)) throw new Error(`Cỡ chữ ${layer.id} phải trong khoảng 12–140.`);
     for (const key of ['color', 'fill', 'stroke', 'accent', 'highlightColor']) {
@@ -78,11 +184,20 @@ export function validateVisualTemplate(input) {
   return { ...input, timing, layers };
 }
 
-export function saveVisualTemplate(input) {
+export function saveVisualTemplate(input, { contentLanguage = 'en' } = {}) {
   const template = validateVisualTemplate(input);
-  const tempPath = `${TEMPLATE_PATH}.${process.pid}.tmp`;
+  const targetPath = contentLanguage === 'zh' ? CHINESE_TEMPLATE_PATH : TEMPLATE_PATH;
+  const tempPath = `${targetPath}.${process.pid}.tmp`;
   fs.writeFileSync(tempPath, `${JSON.stringify(template, null, 2)}\n`, 'utf8');
-  fs.renameSync(tempPath, TEMPLATE_PATH);
+  fs.renameSync(tempPath, targetPath);
+  return template;
+}
+
+export function resetChineseVisualTemplate() {
+  const template = makeDefaultChineseTemplate();
+  const tempPath = `${CHINESE_TEMPLATE_PATH}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, `${JSON.stringify(template, null, 2)}\n`, 'utf8');
+  fs.renameSync(tempPath, CHINESE_TEMPLATE_PATH);
   return template;
 }
 
@@ -180,18 +295,40 @@ function fitDialogueText(value, layer, isVietnamese) {
   return layout;
 }
 
-function layoutWordLines(value, widthPx, fontSize, segmentId) {
+function fitChineseDialogueText(value, layer, isVietnamese, inlineTarget = false) {
+  const preferredFontSize = Number(layer.fontSize || (isVietnamese ? 52 : 48));
+  const minFontSize = Math.min(preferredFontSize, Math.max(30, Math.floor(preferredFontSize * 0.64)));
+  const padding = inlineTarget ? 0 : Number(layer.padding || 40);
+  const contentWidth = Math.max(1, Number(layer.width) - padding * 2);
+  const fixedHeight = Math.max(1, Number(layer.height || 160));
+  let layout;
+  for (let fontSize = preferredFontSize; fontSize >= minFontSize; fontSize -= 1) {
+    const lineHeight = fontSize + (isVietnamese ? 15 : 13);
+    const lines = wrapText(value, contentWidth * 0.96, fontSize);
+    const textHeight = Math.max(fontSize, lines.length * lineHeight);
+    const height = Math.max(fixedHeight, textHeight + (inlineTarget ? 0 : 64));
+    layout = { lines, fontSize, lineHeight, height, textHeight };
+    if (height <= fixedHeight) return layout;
+  }
+  return layout;
+}
+
+function layoutWordLines(value, widthPx, fontSize, segmentId, language = 'und') {
   const text = String(value ?? '').trim();
-  const tokens = tokenizeText(text, segmentId);
+  const tokens = tokenizeText(text, segmentId, language);
+  const cjk = ['ja', 'zh'].includes(normalizeLanguage(language)) && /[\u3040-\u30ff\u3400-\u9fff]/u.test(text);
   const tokenByStart = new Map(tokens.map((token) => [token.start, token]));
   const capacity = Math.max(1, widthPx / fontSize);
   const lines = [{ fragments: [], units: 0 }];
   let tokenIndex = 0;
 
   const newLine = () => lines.push({ fragments: [], units: 0 });
-  for (const match of text.matchAll(/\S+/gu)) {
+  const items = cjk
+    ? tokens.map((token, index) => ({ 0: `${index === 0 ? text.slice(0, token.start) : ''}${text.slice(token.start, tokens[index + 1]?.start ?? text.length)}`, token }))
+    : [...text.matchAll(/\S+/gu)].map((match) => ({ 0: match[0], token: tokenByStart.get(match.index) || null }));
+  for (const match of items) {
     const word = match[0];
-    const token = tokenByStart.get(match.index);
+    const token = match.token;
     const tokenId = token?.id || null;
     if (token) tokenIndex += 1;
     const units = [...word].reduce((sum, char) => sum + glyphWeight(char), 0);
@@ -222,7 +359,7 @@ function layoutWordLines(value, widthPx, fontSize, segmentId) {
       }
       continue;
     }
-    if (line.fragments.length) {
+    if (line.fragments.length && !cjk) {
       line.fragments.push({ text: ' ', tokenId: null });
       line.units += 0.3;
     }
@@ -325,8 +462,9 @@ async function measureWordBoxes(layout, { fontSize, lineHeight, weight, fontFami
   return rememberWordMetrics(cacheKey, measured);
 }
 
-async function dialogueTextMarkup(layout, { x, y, fontSize, lineHeight, color: fill, weight = 700, fontFamily = 'Be Vietnam Pro', highlight, highlightSettings }) {
+async function dialogueTextMarkup(layout, { x, y, fontSize, lineHeight, color: fill, weight = 700, fontFamily = 'Be Vietnam Pro', highlight, highlightSettings, anchor = 'start', staticHighlightTokenIds = null, staticHighlightColor = null }) {
   const activeIds = new Set(highlightSettings?.highlightEnabled === false || highlight?.segmentId !== layout.segmentId ? [] : highlight.tokenIds || []);
+  const staticIds = staticHighlightTokenIds instanceof Set ? staticHighlightTokenIds : new Set(staticHighlightTokenIds || []);
   const settings = highlightSettings || {};
   const padding = Math.max(0, Math.min(24, Number(settings.highlightPadding ?? 6)));
   const radius = Math.max(0, Math.min(32, Number(settings.highlightRadius ?? 8)));
@@ -353,7 +491,8 @@ async function dialogueTextMarkup(layout, { x, y, fontSize, lineHeight, color: f
     const padRight = Math.min(padding, Number.isFinite(rightGap) ? Math.max(0, rightGap / 2 - 0.5) : padding);
     return `<rect x="${x + box.x - padLeft}" y="${y + box.y - padding}" width="${Math.max(1, box.width + padLeft + padRight)}" height="${box.height + padding * 2}" rx="${radius}" fill="${highlightColor}"/>`;
   }).join('');
-  const text = `<text x="${x}" y="${y}" fill="${color(fill, '#263244')}" font-family="${xml(fontFamily)}, Segoe UI, sans-serif" font-size="${fontSize}" font-weight="${weight}" dominant-baseline="alphabetic">${layout.lines.map((line, index) => `<tspan x="${x}" y="${y + index * lineHeight}">${line.fragments.map((fragment) => tokenFragmentMarkup(fragment, activeIds)).join('')}</tspan>`).join('')}</text>`;
+  const anchorAttribute = anchor === 'center' ? ' text-anchor="middle"' : '';
+  const text = `<text x="${x}" y="${y}"${anchorAttribute} fill="${color(fill, '#263244')}" font-family="${xml(fontFamily)}, Segoe UI, sans-serif" font-size="${fontSize}" font-weight="${weight}" dominant-baseline="alphabetic">${layout.lines.map((line, index) => `<tspan x="${x}" y="${y + index * lineHeight}">${line.fragments.map((fragment) => tokenFragmentMarkup(fragment, activeIds, staticIds.has(fragment.tokenId) ? staticHighlightColor : null)).join('')}</tspan>`).join('')}</text>`;
   return `${rects}${text}`;
 }
 
@@ -373,39 +512,71 @@ function textLines(lines, options = {}) {
 
 function layerGeometry(template, script, index, speechSegment = null) {
   const map = layerMap(template);
-  const vi = map.get('vietnamese-card') || { x: 0, y: 0, width: 920, height: 202, fontSize: 53, padding: 43 };
-  const en = map.get('english-card') || { x: 0, y: 0, width: 920, height: 220, fontSize: 49, padding: 42 };
-  const vocab = map.get('vocabulary') || { x: 0, y: 0, width: 800, height: 190, fontSize: 25, padding: 28 };
+  const contentLanguage = script.contentLanguage === 'ja' || script.contentLanguage === 'zh' ? script.contentLanguage : 'en';
+  const styleName = contentLanguage === 'zh' ? chinesePresentationStyle(script) : null;
+  const style = styleName ? CHINESE_PRESENTATION_LAYOUTS[styleName] : null;
+  const vi = (contentLanguage === 'zh' ? presentationLayer(template, script, 'vietnamese-card') : map.get('vietnamese-card')) || { x: 0, y: 0, width: 920, height: 202, fontSize: 53, padding: 43 };
+  const en = (contentLanguage === 'zh' ? presentationLayer(template, script, 'chinese-card') : null) || map.get('english-card') || { x: 0, y: 0, width: 920, height: 220, fontSize: 49, padding: 42 };
+  const vocab = (contentLanguage === 'zh' ? presentationLayer(template, script, 'vocabulary') : map.get('vocabulary')) || { x: 0, y: 0, width: 800, height: 190, fontSize: 25, padding: 28 };
   const dialogue = { ...(script.dialogues?.[index] || { vietnamese: 'Hôm nay mình cùng luyện nói tiếng Anh nhé.', english: "Let's practice English together today.", term: 'practice English', meaningVi: 'luyện nói tiếng Anh' }) };
+  const targetField = contentLanguage === 'ja' ? 'japanese' : contentLanguage === 'zh' ? 'chinese' : 'english';
+  if (targetField !== 'english') dialogue.english = dialogue[targetField] || '';
   if (speechSegment && Number(speechSegment.target?.dialogueIndex) === index) {
     if (speechSegment.target.layerId === 'vietnamese-card') dialogue.vietnamese = speechSegment.text;
-    if (speechSegment.target.layerId === 'english-card') dialogue.english = speechSegment.text;
+    if (speechSegment.target.layerId === 'english-card' || speechSegment.target.layerId === 'chinese-card') dialogue.english = speechSegment.text;
   }
   const viTarget = speechSegment?.target?.layerId === 'vietnamese-card' && Number(speechSegment.target?.dialogueIndex) === index;
-  const enTarget = speechSegment?.target?.layerId === 'english-card' && Number(speechSegment.target?.dialogueIndex) === index;
+  const enTarget = ['english-card', 'chinese-card'].includes(speechSegment?.target?.layerId) && Number(speechSegment.target?.dialogueIndex) === index;
   const viSegmentId = viTarget ? speechSegment.segmentId : defaultDialogueSegmentId(index, 'vi', dialogue);
-  const enSegmentId = enTarget ? speechSegment.segmentId : defaultDialogueSegmentId(index, 'en', dialogue);
-  const viLayout = fitDialogueText(dialogue.vietnamese, vi, true);
-  const enLayout = fitDialogueText(dialogue.english, en, false);
-  const viText = layoutWordLines(dialogue.vietnamese, (Number(vi.width) - Number(vi.padding || 40) * 2) * 0.92, viLayout.fontSize, viSegmentId);
-  const enText = layoutWordLines(dialogue.english, (Number(en.width) - Number(en.padding || 40) * 2) * 0.92, enLayout.fontSize, enSegmentId);
+  const enSegmentId = enTarget ? speechSegment.segmentId : defaultDialogueSegmentId(index, contentLanguage, dialogue);
+  const inlineTarget = Boolean(style?.inlineTarget);
+  const viLayout = contentLanguage === 'zh' ? fitChineseDialogueText(dialogue.vietnamese, vi, true) : fitDialogueText(dialogue.vietnamese, vi, true);
+  const enLayout = contentLanguage === 'zh' ? fitChineseDialogueText(dialogue.english, en, false, inlineTarget) : fitDialogueText(dialogue.english, en, false);
+  const viText = layoutWordLines(dialogue.vietnamese, (Number(vi.width) - Number(vi.padding || 40) * 2) * (contentLanguage === 'zh' ? 0.96 : 0.92), viLayout.fontSize, viSegmentId, contentLanguage === 'en' ? 'en' : 'vi');
+  const enTextWidth = inlineTarget ? Number(en.width) * 0.96 : (Number(en.width) - Number(en.padding || 40) * 2) * (contentLanguage === 'zh' ? 0.96 : 0.92);
+  const enText = layoutWordLines(dialogue.english, enTextWidth, enLayout.fontSize, enSegmentId, contentLanguage);
   const termText = `${dialogue.term || ''} = ${dialogue.meaningVi || ''}`;
   const vocabLines = wrapText(termText, vocab.width - (vocab.padding || 28) * 2, Number(vocab.fontSize || 32));
-  const viHeight = viLayout.height;
-  const enHeight = Math.max(en.height, 110 + enLayout.lines.length * enLayout.lineHeight + 6);
-  const enY = Math.max(en.y, vi.y + viHeight + 24);
-  const vocabY = Math.max(vocab.y, enY + enHeight + 24);
+  const viHeight = contentLanguage === 'zh' ? viLayout.height : viLayout.height;
+  const enHeight = contentLanguage === 'zh'
+    ? Math.max(en.height, enLayout.textHeight + (inlineTarget ? 0 : 64 + 40))
+    : Math.max(en.height, 110 + enLayout.lines.length * enLayout.lineHeight + 6);
+  const enY = Math.max(en.y, vi.y + viHeight + (contentLanguage === 'zh' ? 30 : 24));
+  const vocabGap = contentLanguage === 'zh' ? (inlineTarget ? 48 : 22) : 24;
+  const vocabY = Math.max(vocab.y, enY + enHeight + vocabGap);
   const vocabHeight = Math.max(vocab.height, 76 + vocabLines.length * (Number(vocab.fontSize || 32) + 10));
+  const pinyinLayer = contentLanguage === 'zh' ? presentationLayer(template, script, 'pinyin') : null;
+  const pinyinFontSize = Number(pinyinLayer?.fontSize || 28);
+  const cardTextHeight = Math.max(enLayout.fontSize, enLayout.lines.length * enLayout.lineHeight);
+  const cardTextTop = enY + (enHeight - cardTextHeight - (inlineTarget ? 0 : pinyinFontSize + 32)) / 2;
+  const chineseTextFirstBaseline = inlineTarget
+    ? enY + enLayout.fontSize
+    : cardTextTop + enLayout.fontSize;
+  const chineseTextLastBaseline = chineseTextFirstBaseline + Math.max(0, enLayout.lines.length - 1) * enLayout.lineHeight;
+  const pinyinBaseline = contentLanguage === 'zh'
+    ? chineseTextLastBaseline + pinyinFontSize + (inlineTarget ? 12 : 18)
+    : null;
+  const staticHighlightTokenIds = new Set();
   return {
     dialogue,
+    styleName,
+    inlineTarget,
     viText,
     viFontSize: viLayout.fontSize,
     viLineHeight: viLayout.lineHeight,
+    viHeight,
+    viY: vi.y,
+    viTextBaseline: vi.y + (viHeight - Math.max(viLayout.fontSize, viLayout.lines.length * viLayout.lineHeight)) / 2 + viLayout.fontSize,
     enText,
     enFontSize: enLayout.fontSize,
     enLineHeight: enLayout.lineHeight,
+    enX: inlineTarget ? en.x : en.x + Number(en.padding || 40),
+    enTextFirstBaseline: chineseTextFirstBaseline,
+    pinyinBaseline,
+    pinyinFontSize,
+    staticHighlightTokenIds,
+    staticHighlightColor: null,
     vocabLines,
-    viHeight,
     enHeight,
     enY,
     vocabY,
@@ -434,19 +605,47 @@ function opacityFor(state, layerId) {
 
 async function layerMarkup(layerId, context) {
   const { template, script, index, state, embedAssets, geometry, highlight, highlightSettings, speechSegment, totalCount } = context;
-  const layer = getLayer(template, layerId);
+  const layer = presentationLayer(template, script, layerId);
   if (!layer || layer.visible === false) return '';
   const brand = template.brand;
-  const opacity = Math.max(0, Math.min(1, Number(layer.opacity ?? 1) * opacityFor(state, layerId)));
+  const contentLanguage = script.contentLanguage === 'ja' || script.contentLanguage === 'zh' ? script.contentLanguage : 'en';
+  const inlineChinese = contentLanguage === 'zh' && Boolean(geometry.inlineTarget);
+  const faintChineseLead = inlineChinese && layerId === 'chinese-card' && state === 'vietnamese'
+    && speechSegment?.target?.layerId === 'vietnamese-card';
+  const chineseFade = contentLanguage === 'zh'
+    && ((layerId === 'chinese-card' && speechSegment?.target?.layerId === 'chinese-card' && speechSegment.target?.pinyinVisible === false)
+      || (layerId === 'vocabulary' && speechSegment?.target?.layerId === 'vocabulary'))
+    ? Math.max(0, Math.min(1, Number(context.chineseTextEffectProgress ?? 1)))
+    : 1;
+  const opacity = Math.max(0, Math.min(1, Number(layer.opacity ?? 1) * opacityFor(state, layerId) * (faintChineseLead ? 0.3 : 1) * chineseFade));
   const pointerEvents = ['background'].includes(layerId) ? 'none' : ['facebook-logo', 'youtube-logo'].includes(layerId) ? 'all' : 'visiblePainted';
   const groupStart = `<g id="layer-${xml(layerId)}" data-layer-id="${xml(layerId)}" opacity="${opacity}" pointer-events="${pointerEvents}">`;
+  if (layerId === 'pinyin') {
+    const activeChineseSegment = speechSegment?.target?.layerId === 'chinese-card' ? speechSegment : null;
+    if (activeChineseSegment && activeChineseSegment.target?.pinyinVisible === false) return '';
+    const dialogue = script.dialogues?.[index] || {};
+    const pinyin = String(activeChineseSegment?.target?.pinyin || dialogue.pinyin || '');
+    if (!pinyin.trim()) return '';
+    const fontSize = Number(layer.fontSize || 28);
+    const appearanceEffect = String(layer.appearanceEffect || 'none');
+    const progress = Math.max(0, Math.min(1, Number(context.pinyinEffectProgress ?? 1)));
+    const opacityValue = appearanceEffect === 'none' ? 1 : progress;
+    const translateY = appearanceEffect === 'rise' ? 10 * (1 - progress) : 0;
+    const scale = appearanceEffect === 'pop' ? 0.84 + 0.16 * progress : 1;
+    const baseline = Number(geometry.pinyinBaseline || Number(layer.y) + fontSize);
+    const centerX = Number(layer.x) + Number(layer.width) / 2;
+    const transform = `translate(${centerX} ${baseline}) scale(${scale}) translate(${-centerX} ${-baseline + translateY})`;
+    const textAnchor = layer.align === 'start' ? 'start' : 'middle';
+    const textX = layer.align === 'start' ? Number(layer.x) : centerX;
+    return `${groupStart}<text x="${textX}" y="${baseline}" text-anchor="${textAnchor}" opacity="${opacityValue}" fill="${color(layer.color, '#287D7B')}" font-family="${xml(layer.fontFamily || brand.fontFamily || 'Be Vietnam Pro')}, Microsoft YaHei, sans-serif" font-size="${fontSize}" font-weight="${Number(layer.fontWeight || 500)}" transform="${transform}" data-appearance="${xml(appearanceEffect)}">${xml(pinyin)}</text></g>`;
+  }
   if (layer.kind === 'text' && layerId !== 'title') {
     const activeSpeech = speechSegment?.target?.layerId === layerId ? speechSegment : null;
     const text = String(activeSpeech?.text ?? layer.text ?? script.textLayers?.[layerId] ?? '');
     if (!text.trim()) return '';
     const fontSize = Number(layer.fontSize || 48);
     const segmentId = activeSpeech?.segmentId || `text-${layerId}`;
-    const layout = layoutWordLines(text, Math.max(1, Number(layer.width)), fontSize, segmentId);
+    const layout = layoutWordLines(text, Math.max(1, Number(layer.width)), fontSize, segmentId, contentLanguage);
     const markup = await dialogueTextMarkup(layout, {
       x: Number(layer.x), y: Number(layer.y) + fontSize, fontSize, lineHeight: Number(layer.lineHeight || fontSize * 1.25),
       color: color(layer.color, brand.bodyColor), weight: Number(layer.fontWeight || 700), fontFamily: brand.fontFamily,
@@ -466,7 +665,24 @@ async function layerMarkup(layerId, context) {
     const defaultAsset = layerId === 'logo' ? 'brand-logo.png' : 'teacher-female.png';
     const href = await imageHref(layer.asset || defaultAsset, embedAssets);
     const preserve = layerId === 'character' ? 'xMidYMax meet' : 'xMinYMid meet';
-    return `${groupStart}<image x="${layer.x}" y="${layer.y}" width="${layer.width}" height="${layer.height}" preserveAspectRatio="${preserve}" href="${href}"/></g>`;
+    const image = `<image x="${layer.x}" y="${layer.y}" width="${layer.width}" height="${layer.height}" preserveAspectRatio="${preserve}" href="${href}"/>`;
+    if (layerId === 'logo' && contentLanguage === 'zh') {
+      if (brand.logoLayout === 'left-lockup') {
+        const textX = Number(layer.x) + Number(layer.width) + 18;
+        const titleY = Number(layer.y) + 37;
+        const taglineY = Number(layer.y) + 67;
+        const fontFamily = `${xml(brand.fontFamily || 'Be Vietnam Pro')}, Microsoft YaHei, sans-serif`;
+        return groupStart + image
+          + '<text x="' + textX + '" y="' + titleY + '" text-anchor="start" fill="' + color(brand.primaryColor, '#8F241B') + '" font-family="' + fontFamily + '" font-size="29" font-weight="700">' + xml(brand.pageName) + '</text>'
+          + '<text x="' + textX + '" y="' + taglineY + '" text-anchor="start" fill="' + color(brand.secondaryColor, '#70523A') + '" font-family="' + fontFamily + '" font-size="17" font-weight="500">' + xml(brand.tagline) + '</text></g>';
+      }
+      const centerX = template.canvas.width / 2;
+      const titleY = Number(layer.y) + Number(layer.height) + 36;
+      const taglineY = titleY + 36;
+      const fontFamily = `${xml(brand.fontFamily || 'Be Vietnam Pro')}, Microsoft YaHei, sans-serif`;
+      return `${groupStart}${image}<text x="${centerX}" y="${titleY}" text-anchor="middle" fill="${color(brand.primaryColor, '#8F241B')}" font-family="${fontFamily}" font-size="42" font-weight="700">${xml(brand.pageName)}</text><text x="${centerX}" y="${taglineY}" text-anchor="middle" fill="${color(brand.secondaryColor, '#70523A')}" font-family="${fontFamily}" font-size="21" font-weight="500">${xml(brand.tagline)}</text></g>`;
+    }
+    return `${groupStart}${image}</g>`;
   }
   if (layerId === 'facebook-logo') {
     const size = Math.min(layer.width, layer.height);
@@ -485,25 +701,46 @@ async function layerMarkup(layerId, context) {
     const x = layer.x; const y = layer.y; const w = layer.width; const h = layer.height;
     return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 22}" fill="${color(layer.fill, '#E4F0EC')}" stroke="${color(layer.stroke, '#B9D3CD')}" stroke-width="3"/><text x="${x + w / 2}" y="${y + h / 2 + 9}" text-anchor="middle" fill="${color(layer.color, brand.primaryColor)}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="${layer.fontSize || 27}" font-weight="700">${String(index + 1).padStart(2, '0')}  /  ${String(totalCount || 1).padStart(2, '0')}</text></g>`;
   }
-  if (layerId === 'vietnamese-card' || layerId === 'english-card') {
+  if (layerId === 'vietnamese-card' || layerId === 'english-card' || layerId === 'chinese-card') {
     const isVi = layerId === 'vietnamese-card';
+    const isChineseCard = layerId === 'chinese-card';
     const x = layer.x; const y = isVi ? layer.y : geometry.enY; const w = layer.width; const h = isVi ? geometry.viHeight : geometry.enHeight;
     const textLayout = isVi ? geometry.viText : geometry.enText;
     const padding = Number(layer.padding || 40); const fontSize = isVi ? geometry.viFontSize : geometry.enFontSize; const lineHeight = isVi ? geometry.viLineHeight : geometry.enLineHeight;
     const fill = color(layer.fill, isVi ? '#E8E8E4' : '#E6F0EC');
     const accent = color(layer.accent, isVi ? brand.primaryColor : brand.secondaryColor);
-    const label = isVi ? 'CÂU TIẾNG VIỆT' : 'SAY IT IN ENGLISH';
-    const defaultSegmentId = isVi ? defaultDialogueSegmentId(index, 'vi', geometry.dialogue) : defaultDialogueSegmentId(index, 'en', geometry.dialogue);
-    const textMarkup = await dialogueTextMarkup(textLayout, { x: x + padding, y: y + 112, fontSize, lineHeight, color: color(layer.color, isVi ? brand.bodyColor : brand.primaryColor), weight: Number(layer.fontWeight || 700), fontFamily: brand.fontFamily, highlight: highlight || (highlightSettings?.highlightEnabled ? null : { segmentId: defaultSegmentId, tokenIds: [] }), highlightSettings });
+    const targetLanguage = contentLanguage === 'ja' ? 'JAPANESE' : contentLanguage === 'zh' ? 'CHINESE' : 'ENGLISH';
+    let label = isVi ? 'CÂU TIẾNG VIỆT' : isChineseCard ? 'CÂU TIẾNG TRUNG' : `SAY IT IN ${targetLanguage}`;
+    if (contentLanguage === 'zh' && brand.sampleStyle === true) label = '';
+    const fallbackFonts = contentLanguage === 'ja' ? ', Yu Gothic UI, Meiryo' : contentLanguage === 'zh' ? ', Microsoft YaHei' : '';
+    const dialogueFontFamily = contentLanguage === 'en' ? brand.fontFamily : `${brand.fontFamily || 'Be Vietnam Pro'}${fallbackFonts}`;
+    const defaultSegmentId = isVi ? defaultDialogueSegmentId(index, 'vi', geometry.dialogue) : defaultDialogueSegmentId(index, contentLanguage, geometry.dialogue);
+    const centered = contentLanguage === 'zh' && layer.textAlign === 'center';
+    const isInlineTarget = isChineseCard && geometry.inlineTarget;
+    const textX = isInlineTarget ? Number(geometry.enX) : centered ? x + w / 2 : x + padding;
+    const textY = contentLanguage === 'zh'
+      ? isVi ? geometry.viTextBaseline : geometry.enTextFirstBaseline
+      : y + 112;
+    const textMarkup = await dialogueTextMarkup(textLayout, {
+      x: textX, y: textY, fontSize, lineHeight,
+      color: color(layer.color, isVi ? brand.bodyColor : brand.primaryColor),
+      weight: Number(layer.fontWeight || 700), fontFamily: dialogueFontFamily,
+      highlight: highlight || (highlightSettings?.highlightEnabled ? null : { segmentId: defaultSegmentId, tokenIds: [] }),
+      highlightSettings,
+      anchor: centered ? 'center' : 'start',
+      staticHighlightTokenIds: isChineseCard && contentLanguage === 'zh' ? geometry.staticHighlightTokenIds : null,
+      staticHighlightColor: isChineseCard && contentLanguage === 'zh' ? geometry.staticHighlightColor : null
+    });
+    if (isInlineTarget) return `${groupStart}${textMarkup}</g>`;
     return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 28}" fill="${fill}" stroke="${color(layer.stroke, '#CFD9D6')}" stroke-width="2" filter="url(#softShadow)"/><rect x="${x + 8}" y="${y + 24}" width="10" height="${Math.max(1, h - 48)}" rx="5" fill="${accent}"/><text x="${x + padding}" y="${y + 44}" fill="${accent}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="21" font-weight="700" letter-spacing="1.5">${label}</text>${textMarkup}</g>`;
   }
   if (layerId === 'vocabulary') {
     const x = layer.x; const y = geometry.vocabY; const h = geometry.vocabHeight;
-    const character = getLayer(template, 'character');
-    const rightEdge = character ? character.x : template.canvas.width - 32;
+    const character = presentationLayer(template, script, 'character');
+    const rightEdge = contentLanguage === 'zh' ? template.canvas.width - 32 : character ? character.x : template.canvas.width - 32;
     const w = Math.max(1, Math.min(layer.width, rightEdge - layer.x - 38));
     const fontSize = Number(layer.fontSize || 32); const lines = wrapText(`${geometry.dialogue.term || ''}  =  ${geometry.dialogue.meaningVi || ''}`, w - Number(layer.padding || 28) * 2, fontSize);
-    const textMarkup = textLines(lines, { x: x + Number(layer.padding || 28), y: y + 78, fontSize, lineHeight: fontSize + 10, color: color(layer.color, brand.secondaryColor), weight: Number(layer.fontWeight || 600), phrase: geometry.dialogue.term, highlightColor: brand.accentColor, fontFamily: brand.fontFamily });
+    const textMarkup = textLines(lines, { x: x + Number(layer.padding || 28), y: y + 78, fontSize, lineHeight: fontSize + 10, color: color(layer.color, brand.secondaryColor), weight: Number(layer.fontWeight || 600), phrase: contentLanguage === 'zh' ? '' : geometry.dialogue.term, highlightColor: brand.accentColor, fontFamily: brand.fontFamily });
     return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 26}" fill="${color(layer.fill, '#FFFFFF')}" stroke="${color(layer.stroke, '#C7DCD7')}" stroke-width="2" filter="url(#softShadow)"/><text x="${x + Number(layer.padding || 28)}" y="${y + 40}" fill="${brand.secondaryColor}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="20" font-weight="700" letter-spacing="1.4">CỤM TỪ</text>${textMarkup}</g>`;
   }
   if (layerId === 'footer') {
@@ -517,17 +754,21 @@ async function layerMarkup(layerId, context) {
     const buttonWidth = Math.min(500, w);
     const buttonHeight = 118;
     const buttonX = x + (w - buttonWidth) / 2;
-    return `${groupStart}<rect x="${buttonX}" y="${y}" width="${buttonWidth}" height="${buttonHeight}" rx="${layer.radius || 0}" fill="${color(layer.fill, brand.primaryColor)}" filter="url(#softShadow)"/><text x="${x + w / 2}" y="${y + 78}" text-anchor="middle" fill="${color(layer.color, '#FFFFFF')}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="56" font-weight="700">FOLLOW</text><text x="${x + w / 2}" y="${y + 190}" text-anchor="middle" fill="#263244" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="40" font-weight="500">Follow kênh để luyện phản xạ</text><text x="${x + w / 2}" y="${y + 244}" text-anchor="middle" fill="#263244" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="40" font-weight="500">tiếng Anh mỗi ngày!</text></g>`;
+    const practiceLanguage = script.contentLanguage === 'ja' ? 'tiếng Nhật' : script.contentLanguage === 'zh' ? 'tiếng Trung' : 'tiếng Anh';
+    const ctaTitle = script.contentLanguage === 'zh' ? 'THEO DÕI' : 'FOLLOW';
+    const ctaLine = script.contentLanguage === 'zh' ? `Theo dõi ${brand.pageName || 'Cô Nói Tiếng Trung'}` : 'Follow kênh để luyện phản xạ';
+    return `${groupStart}<rect x="${buttonX}" y="${y}" width="${buttonWidth}" height="${buttonHeight}" rx="${layer.radius || 0}" fill="${color(layer.fill, brand.primaryColor)}" filter="url(#softShadow)"/><text x="${x + w / 2}" y="${y + 78}" text-anchor="middle" fill="${color(layer.color, '#FFFFFF')}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="56" font-weight="700">${ctaTitle}</text><text x="${x + w / 2}" y="${y + 190}" text-anchor="middle" fill="#263244" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="40" font-weight="500">${xml(ctaLine)}</text><text x="${x + w / 2}" y="${y + 244}" text-anchor="middle" fill="#263244" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="40" font-weight="500">${xml(practiceLanguage)} mỗi ngày!</text></g>`;
   }
   return '';
 }
 
-export async function buildSceneSvg({ template = readVisualTemplate(), script, state = 'vietnamese', index = 0, embedAssets = false, includeBackground = true, forceLayer = null, includeLayers = null, highlight = null, highlightSettings = null, speechSegment = null, totalCount = null, backgroundEffect = 'none', backgroundEffectDensity = 28, backgroundEffectSpeed = 58, backgroundEffectOpacity = 32, effectTime = 0, effectSeed = 'preview' }) {
+export async function buildSceneSvg({ template = readVisualTemplate(), script, state = 'vietnamese', index = 0, embedAssets = false, includeBackground = true, forceLayer = null, includeLayers = null, highlight = null, highlightSettings = null, speechSegment = null, totalCount = null, backgroundEffect = 'none', backgroundEffectDensity = 28, backgroundEffectSpeed = 58, backgroundEffectOpacity = 32, effectTime = 0, effectSeed = 'preview', pinyinEffectProgress = 1, chineseTextEffectProgress = 1 }) {
   if (!VALID_SCENES.has(state)) throw new Error(`Scene không hỗ trợ: ${state}`);
   const sceneScript = script || { title: 'Học tiếng Anh giao tiếp mỗi ngày', topic: 'Giao tiếp hằng ngày', dialogues: [] };
   const geometry = layerGeometry(template, sceneScript, index, speechSegment);
-  const context = { template, script: sceneScript, state, index, embedAssets, geometry, highlight, highlightSettings, speechSegment, totalCount: totalCount || sceneScript.dialogues?.length || 3 };
-  const fixedOrder = ['background', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'title', 'footer', 'scene-number', 'vietnamese-card', 'english-card', 'vocabulary', 'cta'];
+  const context = { template, script: sceneScript, state, index, embedAssets, geometry, highlight, highlightSettings, speechSegment, totalCount: totalCount || sceneScript.dialogues?.length || 3, pinyinEffectProgress, chineseTextEffectProgress };
+  const contentCardId = sceneScript.contentLanguage === 'zh' && getLayer(template, 'chinese-card') ? 'chinese-card' : 'english-card';
+  const fixedOrder = ['background', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'title', 'footer', 'scene-number', 'vietnamese-card', contentCardId, ...(contentCardId === 'chinese-card' ? ['pinyin'] : []), 'vocabulary', 'cta'];
   const extras = template.layers.map((layer) => layer.id).filter((id) => !fixedOrder.includes(id));
   const order = [...(includeBackground ? fixedOrder : fixedOrder.filter((id) => id !== 'background')), ...extras];
   const activeLayers = forceLayer ? [forceLayer] : Array.isArray(includeLayers) ? order.filter((id) => includeLayers.includes(id)) : order.filter((id) => {
@@ -535,6 +776,10 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
     if (id === 'title') return state === 'intro';
     if (id === 'scene-number' || id === 'vietnamese-card') return ['vietnamese', 'bilingual', 'vocabulary', 'transition'].includes(state);
     if (id === 'english-card') return ['bilingual', 'vocabulary', 'transition'].includes(state);
+    if (id === 'chinese-card') return ['bilingual', 'vocabulary', 'transition'].includes(state)
+      || (sceneScript.contentLanguage === 'zh' && ['inline-meaning', 'inline-keyphrase'].includes(chinesePresentationStyle(sceneScript)) && state === 'vietnamese');
+    if (id === 'pinyin') return ['bilingual', 'vocabulary'].includes(state)
+      && (speechSegment?.target?.layerId !== 'chinese-card' || speechSegment.target?.pinyinVisible !== false);
     if (id === 'vocabulary') return ['vocabulary', 'transition'].includes(state);
     if (id === 'cta') return state === 'cta';
     if (getLayer(template, id)?.kind === 'text') return ['vietnamese', 'bilingual', 'vocabulary'].includes(state);
@@ -557,8 +802,8 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs>${shadowDef()}</defs>${selected}</svg>`;
 }
 
-export async function rasterizeScene({ template = readVisualTemplate(), script, state = 'vietnamese', index = 0, outputPath, includeBackground = true, includeLayers = null, highlight = null, highlightSettings = null, speechSegment = null, totalCount = null, backgroundEffect = 'none', backgroundEffectDensity = 28, backgroundEffectSpeed = 58, backgroundEffectOpacity = 32, effectTime = 0, effectSeed = 'preview' }) {
-  const svg = await buildSceneSvg({ template, script, state, index, embedAssets: true, includeBackground, includeLayers, highlight, highlightSettings, speechSegment, totalCount, backgroundEffect, backgroundEffectDensity: normalizeBackgroundEffectDensity(backgroundEffectDensity), backgroundEffectSpeed: normalizeBackgroundEffectSpeed(backgroundEffectSpeed), backgroundEffectOpacity: normalizeBackgroundEffectOpacity(backgroundEffectOpacity), effectTime, effectSeed });
+export async function rasterizeScene({ template = readVisualTemplate(), script, state = 'vietnamese', index = 0, outputPath, includeBackground = true, includeLayers = null, highlight = null, highlightSettings = null, speechSegment = null, totalCount = null, backgroundEffect = 'none', backgroundEffectDensity = 28, backgroundEffectSpeed = 58, backgroundEffectOpacity = 32, effectTime = 0, effectSeed = 'preview', pinyinEffectProgress = 1, chineseTextEffectProgress = 1 }) {
+  const svg = await buildSceneSvg({ template, script, state, index, embedAssets: true, includeBackground, includeLayers, highlight, highlightSettings, speechSegment, totalCount, backgroundEffect, backgroundEffectDensity: normalizeBackgroundEffectDensity(backgroundEffectDensity), backgroundEffectSpeed: normalizeBackgroundEffectSpeed(backgroundEffectSpeed), backgroundEffectOpacity: normalizeBackgroundEffectOpacity(backgroundEffectOpacity), effectTime, effectSeed, pinyinEffectProgress, chineseTextEffectProgress });
   const image = sharp(Buffer.from(svg)).png({ compressionLevel: 9 });
   if (outputPath) { fs.mkdirSync(path.dirname(outputPath), { recursive: true }); await image.toFile(outputPath); return outputPath; }
   return image.toBuffer();

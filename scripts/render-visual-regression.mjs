@@ -34,7 +34,7 @@ const audio = [];
 for (let index = 0; index < 3; index++) {
   for (const language of ['vi', 'en']) {
     const file = path.join(PATHS.temporary, row.id, 'audio', `${String(index + 1).padStart(2, '0')}-${language}.mp3`);
-    if (!fs.existsSync(file) || fs.statSync(file).size < 1024) throw new Error(`Thiếu audio Edge TTS: ${file}`);
+    if (!fs.existsSync(file) || fs.statSync(file).size < 1024) throw new Error(`Thiếu audio TTS: ${file}`);
     audio.push({ index: index + 1, language, text: script.dialogues[index][language === 'vi' ? 'vietnamese' : 'english'], voice: language === 'vi' ? 'vi-VN-HoaiMyNeural' : 'en-US-JennyNeural', path: file });
   }
 }

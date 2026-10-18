@@ -5,7 +5,7 @@
 - `src/server.mjs` chạy HTTP server chỉ bind `127.0.0.1`, port mặc định 3001.
 - `node:sqlite` lưu settings, 100 chủ đề, scripts, video, queue, lịch, nhật ký và trạng thái publish. Database bật WAL và foreign keys.
 - `src/workers/worker.mjs` poll database queue độc lập với trình duyệt, khôi phục job stale, bổ sung stock, xử lý lịch và thực hiện publish.
-- `src/pipeline/create-video.mjs` điều phối AI → script validation → Edge TTS → FFmpeg → FFprobe → thumbnail.
+- `src/pipeline/create-video.mjs` điều phối AI → script validation → VieNeu/Kokoro hoặc model Nhật/Trung → FFmpeg → FFprobe → thumbnail.
 - AI provider gọi Responses API bằng OAuth ChatGPT plan khi người dùng cấp quyền, rồi fallback Ollama. Paid API bị chặn bằng cấu hình và không có key.
 - Facebook adapter chọn riêng Mock hoặc Meta Graph API. Live mặc định tắt.
 

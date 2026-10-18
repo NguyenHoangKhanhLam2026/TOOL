@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/voice-picker.css" />
     <link rel="stylesheet" href="/tts-provider.css" />
+    <link rel="stylesheet" href="/tts-multilingual.css" />
     <link rel="stylesheet" href="/navigation-links.css" />
     <link rel="stylesheet" href="/highlight-settings.css" />
     <script type="module" src="/app.js"></script>
@@ -66,6 +67,7 @@
                 <h2>Biến một chủ đề<br />thành <span>video học nhanh.</span></h2>
                 <p>Ba câu giao tiếp thật. Giọng đọc Việt – Anh. Một video dọc sẵn sàng đăng lên Facebook.</p>
                 <div class="hero-controls">
+                  <label class="select-wrap" id="content-language-wrap"><span class="sr-only">Chọn ngôn ngữ nội dung</span><select id="content-language"><option value="en">Nội dung: Tiếng Việt + Tiếng Anh</option><option value="ja">Nội dung: Tiếng Việt + Tiếng Nhật</option><option value="zh">Nội dung: Tiếng Việt + Tiếng Trung</option></select><span class="select-chevron">⌄</span></label>
                   <label class="select-wrap"><span class="sr-only">Chọn chủ đề</span><select id="topic-select"><option value="">AI t&#7921; ch&#7885;n ch&#7911; &#273;&#7873;</option></select><span class="select-chevron">⌄</span></label>
                   <button class="button button-outline" id="add-topic">+ Thêm chủ đề</button>
                   <button class="button button-dark" id="generate-button"><span>✳</span> Tạo video mới <span class="button-arrow">↗</span></button>
@@ -100,8 +102,8 @@
           </section>
 
           <section class="view" id="view-library">
-            <div class="page-title-row"><div><div class="eyebrow">TUS VIDEO CỦA BẠN</div><h1>Thư viện video</h1><p class="lead">Kịch bản, thumbnail, caption và trạng thái của từng video Facebook.</p></div><button class="button button-dark" data-generate><span>✳</span> Tạo video mới</button></div>
-            <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
+            <div class="page-title-row"><div><div class="eyebrow">TUS VIDEO CỦA BẠN</div><h1>Thư viện video</h1><p class="lead">Video Facebook đã nhận lịch được tách khỏi danh sách Tất cả; xem lại ở tab Đã lên lịch hoặc mục Lịch đăng.</p></div><button class="button button-dark" data-generate><span>✳</span> Tạo video mới</button></div>
+            <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><label class="content-language-filter">Ngôn ngữ<select id="content-language-filter"><option value="all">Tất cả</option><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option></select></label><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
             <div class="library-list" id="library-list"></div>
           </section>
 
@@ -123,25 +125,27 @@
                 <label>Facebook Page ID<input id="page-id" inputmode="numeric" placeholder="Ví dụ: 123456789012345" /></label>
                 <label>Page Access Token<input id="page-token" type="password" autocomplete="new-password" placeholder="Chỉ cần nhập khi thêm hoặc thay token" /></label>
                 <div class="button-row"><button class="button button-outline button-small" id="save-facebook">Lưu thông tin</button><button class="button button-quiet button-small" id="test-facebook">Kiểm tra Page</button></div><p id="facebook-result" class="inline-status"></p><button id="clear-facebook" class="danger-link" hidden>Xóa token đã lưu</button>
+                <div class="facebook-pages-extension">
+                  <div class="facebook-pages-heading"><strong>Page theo ngôn ngữ nội dung</strong><button class="button button-outline button-small" id="add-facebook-page" type="button">＋ Thêm Page</button></div>
+                  <div class="facebook-page-routes">
+                    <label>Tiếng Anh<select id="facebook-route-en" data-route-language="en"></select></label>
+                    <label>Tiếng Trung<select id="facebook-route-zh" data-route-language="zh"></select></label>
+                    <label>Tiếng Nhật<select id="facebook-route-ja" data-route-language="ja"></select></label>
+                  </div>
+                  <div id="facebook-pages-list" class="facebook-pages-list"></div>
+                  <p class="facebook-pages-note">Mỗi lịch đã duyệt sẽ ghi nhớ Page đích tại thời điểm xếp lịch. Token được lưu cục bộ và không hiển thị lại.</p>
+                </div>
               </article>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-mint">♫</span><div><h2>Giọng đọc & video</h2><p class="panel-caption">Chọn một nhà cung cấp TTS; cấu hình riêng theo từng chế độ.</p></div></div></div>
-                <label class="tts-provider-select">Nhà cung cấp giọng đọc<select id="tts-provider"><option value="edge">Microsoft Edge TTS · online</option><option value="vieneu">Local AI TTS · VieNeu tiếng Việt + Kokoro tiếng Anh</option></select></label>
-                <div id="edge-tts-settings" class="tts-provider-panel">
-                <div class="voice-settings-layout">
-                  <section class="voice-side-settings" aria-label="Cài đặt giọng tiếng Việt">
-                    <label>Giọng tiếng Việt<select id="vi-voice"><option value="vi-VN-HoaiMyNeural">Hoài My — Nữ</option><option value="vi-VN-NamMinhNeural">Nam Minh — Nam</option></select></label>
-                    <button class="button button-outline button-small" id="preview-vi" type="button">▶ Nghe thử tiếng Việt</button>
-                    <div class="speed-control"><label for="en-rate-slider">Tốc độ <output id="en-rate-label">1x</output></label><input id="en-rate-slider" type="range" min="50" max="150" step="1" value="100" /></div>
-<details class="manual-voice-settings"><summary>Nhập giọng / tốc độ thủ công</summary><label>Tốc độ tiếng Anh (Edge TTS)<input id="en-rate" value="-8%" /></label></details>
-                  </section>
-                  <section class="english-voice-picker" aria-labelledby="english-voice-heading">
-                    <label id="english-voice-heading" for="en-locale">Giọng đọc<select id="en-locale"><option value="en-US">Tiếng Anh (Mỹ) (en-US)</option></select></label>
-                    <p class="selected-english-voice" id="en-voice-selection" aria-live="polite">Đang chọn en-US-JennyNeural</p>
-                    <input id="en-voice" type="hidden" value="en-US-JennyNeural" />
-                    <div class="english-voice-scroll"><div class="english-voice-grid" id="en-voice-list"></div></div>
-                  </section>
-                </div>
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-mint">♫</span><div><h2>Giọng đọc & video</h2><p class="panel-caption">Chọn model tại đây. Chọn model Nhật hoặc Trung sẽ tự chuyển sang cặp nội dung tương ứng.</p></div></div></div>
+                <div class="tts-provider-select">
+                  <span class="tts-provider-label" id="tts-provider-label">Nhà cung cấp giọng đọc</span>
+                  <div class="tts-provider-combobox" id="tts-provider-combobox">
+                    <button class="tts-provider-trigger" id="tts-provider-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="tts-provider-options" aria-labelledby="tts-provider-label tts-provider-value"><span id="tts-provider-value"></span><span class="tts-provider-chevron" aria-hidden="true">⌄</span></button>
+                    <div class="tts-provider-menu" id="tts-provider-options" role="listbox" aria-labelledby="tts-provider-label" hidden></div>
+                    <select id="tts-provider" class="tts-provider-native" aria-hidden="true" tabindex="-1"><option value="vieneu">Local AI TTS · VieNeu tiếng Việt + Kokoro tiếng Anh</option><option value="vieneu-sbv2">Local AI TTS · VieNeu tiếng Việt + Style-Bert-VITS2 tiếng Nhật</option><option value="vieneu-cosyvoice3">Local AI TTS · VieNeu tiếng Việt + CosyVoice 3.0 tiếng Trung</option></select>
+                  </div>
+                  <span class="tts-provider-hint">Menu sẽ giữ mở khi rê chuột; bấm một model để chọn, hoặc bấm ngoài để đóng.</span>
                 </div>
                 <div id="vieneu-tts-settings" class="tts-provider-panel vieneu-settings" hidden>
                   <div class="vieneu-voice-grid">
@@ -159,6 +163,37 @@
                   <div class="button-row vieneu-preview-actions"><button class="button button-outline button-small" id="preview-vieneu-vi" type="button">▶ Nghe thử tiếng Việt</button><button class="button button-outline button-small" id="preview-vieneu-en" type="button">▶ Nghe thử tiếng Anh · Kokoro</button></div>
                   <p class="vieneu-note" id="local-tts-status" aria-live="polite">Model chỉ nạp khi tạo giọng. VieNeu chạy tiếng Việt trước; Kokoro chạy tiếng Anh sau khi worker VieNeu thoát. Dùng CPU, không dùng VRAM.</p>
                 </div>
+                <div id="sbv2-tts-settings" class="tts-provider-panel vieneu-settings" hidden>
+                  <div class="vieneu-voice-grid">
+                    <label>Tiếng Việt · VieNeu-TTS v3 Turbo<select id="sbv2-vi-voice"><option>Hải Đăng</option><option>Trúc Ly</option><option>Thiện Minh</option><option>Mai Anh</option><option>Thùy Dung</option><option>Thiền Tâm Đức</option><option>Ngọc Huyền</option><option>Quang Sơn</option><option>Ngọc Trân</option><option>Adam bựa</option><option>Minh Đức</option><option>Phạm Tuyên</option><option>Xuân Vĩnh</option><option>Thanh Bình</option><option>Ngọc Linh</option><option>Đoan Trang</option><option>Quỳnh Anh</option><option>Quốc Tuấn</option><option>Adam</option><option>Thái Sơn</option><option>Thục Đoan</option><option>Minh Triết</option><option>Mỹ Duyên</option><option>Đức Trí</option><option>Kim Thanh</option></select></label>
+                    <label>Tiếng Nhật · Style-Bert-VITS2<select id="sbv2-voice"><option value="jvnv-F1-jp">JVNV F1 · Nữ 1</option><option value="jvnv-F2-jp">JVNV F2 · Nữ 2</option><option value="jvnv-M1-jp">JVNV M1 · Nam 1</option><option value="jvnv-M2-jp">JVNV M2 · Nam 2</option></select></label>
+                    <label>Phong cách đọc<select id="sbv2-style"><option value="Neutral">Trung tính</option><option value="Happy">Vui vẻ</option><option value="Angry">Mạnh mẽ</option><option value="Disgust">Không hài lòng</option><option value="Fear">Lo lắng</option><option value="Sad">Buồn</option><option value="Surprise">Ngạc nhiên</option></select></label>
+                  </div>
+                  <div class="vieneu-speed-grid">
+                    <div class="speed-control vieneu-speed-control"><label for="sbv2-vi-speed">Tốc độ giọng tiếng Việt <output id="sbv2-vi-speed-label">1x</output></label><input id="sbv2-vi-speed" type="range" min="0.75" max="1.25" step="0.05" value="1" /></div>
+                    <div class="speed-control vieneu-speed-control"><label for="sbv2-speed">Tốc độ giọng tiếng Nhật <output id="sbv2-speed-label">1x</output></label><input id="sbv2-speed" type="range" min="0.7" max="1.4" step="0.05" value="1" /></div>
+                  </div>
+                  <div class="button-row vieneu-preview-actions"><button class="button button-outline button-small" id="preview-vieneu-vi-sbv2" type="button">▶ Nghe thử tiếng Việt</button><button class="button button-outline button-small" id="preview-ja" type="button">▶ Nghe thử tiếng Nhật</button></div>
+                  <p class="vieneu-note" id="sbv2-status" aria-live="polite">Bốn giọng Nhật JVNV, bảy kiểu đọc cảm xúc. Model chạy CPU; cần tối thiểu 4 GB RAM trống trước khi nạp.</p>
+                </div>
+                <div id="cosyvoice-tts-settings" class="tts-provider-panel vieneu-settings" hidden>
+                  <div class="vieneu-voice-grid">
+                    <label>Tiếng Việt · VieNeu-TTS v3 Turbo<select id="cosyvoice-vi-voice"><option>Hải Đăng</option><option>Trúc Ly</option><option>Thiện Minh</option><option>Mai Anh</option><option>Thùy Dung</option><option>Thiền Tâm Đức</option><option>Ngọc Huyền</option><option>Quang Sơn</option><option>Ngọc Trân</option><option>Adam bựa</option><option>Minh Đức</option><option>Phạm Tuyên</option><option>Xuân Vĩnh</option><option>Thanh Bình</option><option>Ngọc Linh</option><option>Đoan Trang</option><option>Quỳnh Anh</option><option>Quốc Tuấn</option><option>Adam</option><option>Thái Sơn</option><option>Thục Đoan</option><option>Minh Triết</option><option>Mỹ Duyên</option><option>Đức Trí</option><option>Kim Thanh</option></select></label>
+                    <div><label for="cosyvoice-profile">Tiếng Trung · Giọng tham chiếu CosyVoice 3.0</label><div class="cosyvoice-profile-picker"><select id="cosyvoice-profile"><option value="">Chưa có giọng mẫu</option></select><button class="button button-outline button-small" id="cosyvoice-new-profile" type="button">+ Giọng riêng</button><button class="button button-outline button-small" id="cosyvoice-rename-profile" type="button" disabled>Đổi tên</button><button class="button button-danger button-small" id="cosyvoice-delete-profile" type="button" disabled>Xóa</button></div><p class="cosyvoice-profile-details" id="cosyvoice-profile-details" aria-live="polite">Chọn giọng đã lưu hoặc thêm WAV riêng.</p></div>
+                    <div class="cosyvoice-library-actions" id="cosyvoice-library-actions"><button class="button button-outline button-small" id="cosyvoice-download-library" type="button">Tải thư viện giọng tiếng Trung</button><button class="button button-outline button-small" id="cosyvoice-check-library" type="button">Kiểm tra thư viện</button><button class="button button-outline button-small" id="cosyvoice-retry-library" type="button" hidden>Tải lại giọng lỗi</button><button class="button button-danger button-small" id="cosyvoice-cancel-library" type="button" hidden>Hủy tải</button></div>
+                    <p class="cosyvoice-library-status" id="cosyvoice-library-status" aria-live="polite">AISHELL-3 · Apache-2.0 · tải từng WAV riêng, không tải toàn bộ dataset.</p>
+                    <div id="cosyvoice-custom-profile-fields" class="cosyvoice-custom-profile-fields" hidden>
+                      <label>Tên cấu hình giọng<input id="cosyvoice-profile-name" maxlength="80" placeholder="Ví dụ: Giọng nữ ấm" /></label>
+                      <label>Tệp giọng mẫu WAV<input id="cosyvoice-reference-file" type="file" accept="audio/wav,.wav" /><small id="cosyvoice-reference-status">Chưa có tệp giọng mẫu</small></label>
+                      <label class="cosyvoice-custom-transcript">Câu chữ chính xác trong tệp mẫu<textarea id="cosyvoice-reference-text" rows="3" maxlength="1000" placeholder="Nhập nguyên văn câu được đọc trong tệp WAV"></textarea></label>
+                    </div>
+                  </div>
+                  <div class="vieneu-speed-grid cosyvoice-speed-grid">
+                    <div class="speed-control vieneu-speed-control"><label for="cosyvoice-vi-speed">Tốc độ giọng tiếng Việt <output id="cosyvoice-vi-speed-label">1x</output></label><input id="cosyvoice-vi-speed" type="range" min="0.75" max="1.25" step="0.05" value="1" /></div>
+                  </div>
+                  <div class="button-row vieneu-preview-actions"><button class="button button-outline button-small" id="preview-vieneu-vi-cosyvoice" type="button">▶ Nghe thử tiếng Việt</button><button class="button button-outline button-small" id="preview-zh" type="button">▶ Nghe thử tiếng Trung</button></div>
+                  <p class="vieneu-note" id="cosyvoice-status" aria-live="polite">CosyVoice 3.0 chạy CPU. Chọn giọng Trung đã lưu trong danh sách.</p>
+                </div>
                 <div class="tool-checks" id="tool-checks"></div>
               </article>
 
@@ -171,7 +206,7 @@
                 <iframe id="background-effect-preview-frame" src="/bubble-effect-preview.html" title="Xem thử hiệu ứng nền video" loading="lazy"></iframe>
               </section>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Edge dùng WordBoundary; Local AI dùng căn chỉnh audio cục bộ khi cần.</p></div></div></div>
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Các model cung cấp mốc lời nói; ứng dụng căn chỉnh audio cục bộ khi cần.</p></div></div></div>
                 <div class="highlight-settings-grid">
                   <label class="switch-row highlight-enable"><input type="checkbox" id="highlight-enabled" checked /><span class="switch"></span><span><strong>Bật highlight đồng bộ</strong><small>Áp dụng tự động cho video mới.</small></span></label>
                   <label>Kiểu highlight<select id="highlight-mode"><option value="word">Từng từ</option><option value="phrase">Từng cụm từ</option></select></label>

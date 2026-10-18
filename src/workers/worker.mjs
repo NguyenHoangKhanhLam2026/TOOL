@@ -6,12 +6,12 @@ import {
   db, claimJob, finishJob, failJob, deferJob, recoverStaleJobs, log, getSettings,
   claimDueSchedule, markSchedule, queueJob, countFutureStock,
   updatePublishHistory, getScript, getFacebookSchedule, updateFacebookSchedule, completePublishedSchedule,
-  queueFacebookSchedule, queueUnsubmittedFacebookSchedules, updateVideo, beginPublish, createRandomSchedule, archivePublishedVideo, cleanupArchivedPublishedVideoFiles,
-  acquirePagePublishLock, releasePagePublishLock
+  queueFacebookSchedule, updateVideo, beginPublish, createRandomSchedule, archivePublishedVideo, cleanupArchivedPublishedVideoFiles,
+  acquirePagePublishLock, releasePagePublishLock, getFacebookPageForLanguage, getFacebookPageProfile
 } from '../database/db.mjs';
 import { createVideoJob } from '../pipeline/create-video.mjs';
 import { renderStillPreviewVideo } from '../../packages/video-engine/render.mjs';
-import { MetaGraphAdapter } from '../../packages/facebook-engine/meta-graph-adapter.mjs';
+import { MetaGraphAdapter, facebookTokenSaved } from '../../packages/facebook-engine/meta-graph-adapter.mjs';
 import { MockFacebookAdapter } from '../../packages/facebook-engine/mock-adapter.mjs';
 import { chatgptStatus } from '../ai/chatgpt-plan.mjs';
 import { startOfLocalDay } from '../scheduler/time.mjs';
@@ -20,6 +20,28 @@ const workerId = `worker-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 const heartbeatPath = path.join(PATHS.logs, 'worker-heartbeat.json');
 let stopping = false;
 let lastScheduleCheck = 0;
+
+function facebookTargetFor(contentLanguage = 'en', schedule = null) {
+  const profileId = schedule?.target_page_profile_id || schedule?.targetPageProfileId;
+  const profile = profileId ? getFacebookPageProfile(profileId) : getFacebookPageForLanguage(contentLanguage);
+  if (!profile) return null;
+  return { ...profile, pageId: schedule?.target_page_id || schedule?.targetPageId || profile.pageId };
+}
+
+function facebookProfileReady(profile) {
+  return Boolean(profile?.pageId && profile.connectionVerified && facebookTokenSaved(profile.tokenFile));
+}
+
+function pageLockKeyForJob(job) {
+  if (job.type === 'schedule_facebook_video') {
+    const schedule = db.prepare('SELECT * FROM scheduled_posts WHERE id=?').get(job.payload.scheduleId);
+    const language = db.prepare('SELECT s.content_language FROM scripts s JOIN videos v ON v.script_id=s.id WHERE v.id=?').get(job.payload.videoId)?.content_language || 'en';
+    return `meta:${facebookTargetFor(language, schedule)?.pageId || 'unconfigured'}`;
+  }
+  const language = db.prepare('SELECT s.content_language FROM scripts s JOIN videos v ON v.script_id=s.id WHERE v.id=?').get(job.payload.videoId)?.content_language || 'en';
+  const schedule = job.payload.scheduleId ? db.prepare('SELECT * FROM scheduled_posts WHERE id=?').get(job.payload.scheduleId) : null;
+  return `meta:${facebookTargetFor(language, schedule || job.payload)?.pageId || 'unconfigured'}`;
+}
 
 async function ensureAutoQueue() {
   const settings = getSettings();
@@ -44,15 +66,31 @@ async function enqueueDuePosts() {
   while (true) {
     const item = claimDueSchedule();
     if (!item) break;
+    if (settings.facebookAdapter === 'meta') {
+      const contentLanguage = db.prepare('SELECT s.content_language FROM scripts s JOIN videos v ON v.script_id=s.id WHERE v.id=?').get(item.video_id)?.content_language || 'en';
+      const profile = facebookTargetFor(contentLanguage, item);
+      if (!facebookProfileReady(profile)) {
+        markSchedule(item.id, 'scheduled');
+        if (!db.prepare('SELECT 1 FROM logs WHERE code=? AND message LIKE ? LIMIT 1').get('FACEBOOK_DUE_PAGE_NOT_READY', `%${item.id}%`)) {
+          log('WARN', 'FACEBOOK_DUE_PAGE_NOT_READY', `Lịch ${item.id} đến giờ nhưng Page đích chưa xác minh; giữ lịch để thử lại sau.`);
+        }
+        break;
+      }
+    }
     queueJob('publish_video', { videoId: item.video_id, scheduleId: item.id });
   }
 }
 
 function enqueueFacebookSchedules() {
   const settings = getSettings();
-  if (!settings.autoPublishEnabled || settings.facebookAdapter !== 'meta' || !settings.facebookConnectionVerified) return;
-  const queued = queueUnsubmittedFacebookSchedules(3);
-  for (const item of queued) log('INFO', 'FACEBOOK_SCHEDULE_QUEUED', `\u0110\u00e3 x\u1ebfp upload video ${item.videoId} \u0111\u1ec3 g\u1eedi l\u1ecbch \u0111\u0103ng l\u00ean Facebook.`, item.jobId);
+  if (!settings.autoPublishEnabled || settings.facebookAdapter !== 'meta') return;
+  const due = db.prepare("SELECT p.id,p.video_id,p.target_page_profile_id,p.target_page_id,s.content_language FROM scheduled_posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id WHERE p.status='scheduled' AND p.facebook_schedule_state='local' ORDER BY p.scheduled_at LIMIT 10").all();
+  for (const schedule of due) {
+    const profile = facebookTargetFor(schedule.content_language || 'en', schedule);
+    if (!facebookProfileReady(profile)) continue;
+    const item = queueFacebookSchedule(schedule.id);
+    if (item) log('INFO', 'FACEBOOK_SCHEDULE_QUEUED', `Đã xếp upload video ${item.videoId} để gửi lịch đăng lên Facebook.`, item.jobId);
+  }
 }
 
 function scheduleDueSlots() {
@@ -60,13 +98,18 @@ function scheduleDueSlots() {
   if (!settings.autoPublishEnabled) return;
   const queuedJobs = Number(db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE type='create_video' AND status IN ('pending','running')").get().count);
   if (queuedJobs) return;
-  const unscheduled = db.prepare("SELECT v.id FROM videos v WHERE v.status='ready' AND v.review_status='approved' AND v.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM scheduled_posts p WHERE p.video_id=v.id) ORDER BY v.created_at ASC LIMIT 1").get();
+  const unscheduled = db.prepare("SELECT v.id,s.content_language FROM videos v JOIN scripts s ON s.id=v.script_id WHERE v.status='ready' AND v.review_status='approved' AND v.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM scheduled_posts p WHERE p.video_id=v.id) ORDER BY v.created_at ASC LIMIT 1").get();
   if (!unscheduled) return;
   try {
     const schedule = createRandomSchedule(unscheduled.id, settings.timezone, settings.postsPerDay);
-    if (settings.facebookAdapter === 'meta' && settings.facebookConnectionVerified) {
+    if (settings.facebookAdapter === 'meta') {
+      const profile = facebookTargetFor(unscheduled.content_language || 'en', schedule);
+      if (!facebookProfileReady(profile)) {
+        log('WARN', 'FACEBOOK_SCHEDULE_PAGE_NOT_READY', `Chưa xác minh Page đích cho video ${unscheduled.id}; lịch vẫn được giữ trong tool.`);
+      } else {
       const queued = queueFacebookSchedule(schedule.id);
       if (queued) log('INFO', 'FACEBOOK_SCHEDULE_QUEUED', `Đã xếp upload video ${unscheduled.id} để gửi lịch đăng lên Facebook.`, queued.jobId);
+      }
     }
     log('INFO', 'POST_SCHEDULED', `Đã xếp video cuối thư viện ${unscheduled.id} vào lịch ${schedule.scheduledAt}.`);
   } catch (error) { log('WARN', 'AUTO_SCHEDULE_CONFLICT', error.message); }
@@ -78,7 +121,7 @@ async function scheduleFacebookVideo(job) {
   if (!schedule) throw Object.assign(new Error('Không tìm thấy lịch cần gửi lên Facebook.'), { permanentMetaPermission: true });
   if (['scheduled', 'published'].includes(schedule.facebook_schedule_state)) return { alreadyScheduled: true };
   const settings = getSettings();
-  if (!settings.autoPublishEnabled || settings.facebookAdapter !== 'meta' || !settings.facebookConnectionVerified) {
+  if (!settings.autoPublishEnabled || settings.facebookAdapter !== 'meta') {
     updateFacebookSchedule(scheduleId, { facebook_schedule_state: 'local' });
     return { inactive: true };
   }
@@ -87,7 +130,12 @@ async function scheduleFacebookVideo(job) {
   if (!video.video_path || !fs.existsSync(video.video_path)) throw new Error('Không tìm thấy tệp video để gửi lịch lên Facebook.');
   const script = getScript(video.script_id);
   if (!script) throw new Error('Không tìm thấy kịch bản của video cần gửi lên Facebook.');
-  const adapter = new MetaGraphAdapter(settings.pageId);
+  const profile = facebookTargetFor(script.contentLanguage || 'en', schedule);
+  if (!facebookProfileReady(profile)) throw new Error(`Facebook Page cho nội dung ${script.contentLanguage || 'en'} chưa có token đã lưu và xác minh.`);
+  if (!schedule.target_page_profile_id || !schedule.target_page_id) {
+    updateFacebookSchedule(scheduleId, { target_page_profile_id: profile.id, target_page_id: profile.pageId });
+  }
+  const adapter = new MetaGraphAdapter(profile.pageId, { tokenFile: profile.tokenFile });
   try {
     const result = await adapter.schedule({
       video, script, scheduledAt: schedule.scheduled_at, uploadSession: schedule,
@@ -114,18 +162,18 @@ async function syncCompletedFacebookSchedules() {
   const due = db.prepare("SELECT * FROM scheduled_posts WHERE status='scheduled' AND ((facebook_schedule_state='scheduled' AND scheduled_at<=?) OR facebook_schedule_state='uncertain') ORDER BY scheduled_at LIMIT 5")
     .all(new Date().toISOString());
   if (!due.length) return;
-  if (!settings.facebookConnectionVerified) {
-    const message = 'Facebook Page Access Token chưa được xác minh. Lưu token mới trong Kết nối & cài đặt rồi bấm Kiểm tra Page để tiếp tục xác nhận lịch.';
-    for (const schedule of due) {
-      const shouldLog = schedule.facebook_schedule_state !== 'uncertain' || schedule.facebook_error !== message;
-      updateFacebookSchedule(schedule.id, { facebook_schedule_state: 'uncertain', facebook_error: message });
-      if (shouldLog) log('WARN', 'FACEBOOK_SCHEDULE_STATUS_CHECK_FAILED', `Không xác minh được video ${schedule.facebook_video_id || schedule.video_id}: ${message}`);
-    }
-    return;
-  }
-  const adapter = new MetaGraphAdapter(settings.pageId);
   for (const schedule of due) {
     if (!schedule.facebook_video_id) continue;
+    const scriptRow = db.prepare('SELECT s.content_language FROM scripts s JOIN videos v ON v.script_id=s.id WHERE v.id=?').get(schedule.video_id);
+    const profile = facebookTargetFor(scriptRow?.content_language || 'en', schedule);
+    if (!facebookProfileReady(profile)) {
+      const message = `Facebook Page của lịch ${schedule.target_page_id || profile?.pageId || ''} chưa có token đã xác minh.`;
+      const shouldLog = schedule.facebook_schedule_state !== 'uncertain' || schedule.facebook_error !== message;
+      updateFacebookSchedule(schedule.id, { facebook_schedule_state: 'uncertain', facebook_error: message });
+      if (shouldLog) log('WARN', 'FACEBOOK_SCHEDULE_STATUS_CHECK_FAILED', `Không xác minh được video ${schedule.facebook_video_id}: ${message}`);
+      continue;
+    }
+    const adapter = new MetaGraphAdapter(profile.pageId, { tokenFile: profile.tokenFile });
     try {
       const remote = await adapter.getVideoStatus(schedule.facebook_video_id);
       const remoteStatus = String(remote.status?.video_status || remote.status?.publishing_phase?.status || '').toLowerCase();
@@ -179,11 +227,15 @@ async function publishVideo(job) {
   }
   if (!video.video_path || !fs.existsSync(video.video_path)) throw new Error('Video sẵn sàng không còn trên ổ đĩa.');
   const settings = getSettings();
-  const oneShotLiveAllowed = settings.facebookAdapter === 'meta' && job.payload.confirmLive === true && settings.facebookConnectionVerified;
+  const script = getScript(video.script_id);
+  const schedule = scheduleId ? db.prepare('SELECT * FROM scheduled_posts WHERE id=?').get(scheduleId) : null;
+  const profile = settings.facebookAdapter === 'meta' ? facebookTargetFor(script?.contentLanguage || 'en', schedule || job.payload) : null;
+  const pageReady = settings.facebookAdapter === 'meta' && facebookProfileReady(profile);
+  const oneShotLiveAllowed = pageReady && job.payload.confirmLive === true;
   if (!settings.autoPublishEnabled && settings.facebookAdapter !== 'mock' && !oneShotLiveAllowed) throw new Error('Đăng live đang tắt; lịch được giữ nguyên.');
   const adapterName = settings.facebookAdapter === 'meta' ? 'meta' : 'mock';
-  const script = getScript(video.script_id);
-  const adapter = adapterName === 'meta' ? new MetaGraphAdapter(settings.pageId) : new MockFacebookAdapter();
+  if (adapterName === 'meta' && !pageReady) throw new Error(`Facebook Page cho nội dung ${script?.contentLanguage || 'en'} chưa có token đã lưu và xác minh.`);
+  const adapter = adapterName === 'meta' ? new MetaGraphAdapter(profile.pageId, { tokenFile: profile.tokenFile }) : new MockFacebookAdapter();
   const gate = beginPublish(videoId, adapterName);
   if (gate.alreadyPublished) {
     const facebookId = gate.record.facebook_id || gate.record.published_id;
@@ -231,7 +283,7 @@ async function processJob(job) {
   }
   if (job.type === 'publish_video') {
     const settings = getSettings();
-    const pageKey = settings.facebookAdapter === 'meta' ? `meta:${settings.pageId}` : 'mock:page';
+    const pageKey = settings.facebookAdapter === 'meta' ? pageLockKeyForJob(job) : 'mock:page';
     if (!acquirePagePublishLock(pageKey, job.id, job.payload.videoId)) {
       deferJob(job.id);
       return { deferred: true };
@@ -240,8 +292,7 @@ async function processJob(job) {
     finally { releasePagePublishLock(pageKey, job.id); }
   }
   if (job.type === 'schedule_facebook_video') {
-    const settings = getSettings();
-    const pageKey = `meta:${settings.pageId}`;
+    const pageKey = pageLockKeyForJob(job);
     if (!acquirePagePublishLock(pageKey, job.id, job.payload.videoId)) {
       deferJob(job.id);
       return { deferred: true };

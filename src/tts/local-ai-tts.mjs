@@ -2,13 +2,26 @@ import { createSpeechSegments } from '../../packages/audio-highlight/highlight-e
 import { synthesizeVieNeuScript } from './vieneu-tts.mjs';
 import { synthesizeKokoroSegments } from './kokoro-tts.mjs';
 import { withLocalTtsModel } from './local-model-manager.mjs';
+import { synthesizeMultilingualSegments } from './multilingual-local-tts.mjs';
 
-export async function synthesizeLocalAiScript(script, videoId, { settings = {}, onProgress = () => {} } = {}) {
-  const segments = createSpeechSegments(script, settings);
-  const unsupported = segments.filter((segment) => !['vi', 'en'].includes(segment.language));
+export async function synthesizeLocalAiScript(script, videoId, { settings = {}, provider = settings.ttsProvider || 'vieneu', onProgress = () => {} } = {}) {
+  const baseSegments = createSpeechSegments(script, settings);
+  const segments = script.contentLanguage === 'zh'
+    ? baseSegments.map((segment) => {
+      const source = (script.speechSegments || []).find((item) => String(item.segmentId || item.id || '') === segment.segmentId);
+      const ttsDirection = String(source?.ttsDirection || '').trim();
+      return ttsDirection ? {
+        ...segment,
+        ttsDirection,
+        ttsSpeedMultiplier: Number(source.ttsSpeedMultiplier) || 1
+      } : segment;
+    })
+    : baseSegments;
+  const providerLanguage = { vieneu: 'en', 'vieneu-sbv2': 'ja', 'vieneu-cosyvoice3': 'zh' }[provider];
+  const unsupported = segments.filter((segment) => !['vi', providerLanguage].includes(segment.language));
   if (unsupported.length) throw new Error(`Local AI TTS chưa hỗ trợ ngôn ngữ ${unsupported[0].language} ở đoạn ${unsupported[0].segmentId}.`);
   const vietnamese = segments.filter((segment) => segment.language === 'vi');
-  const english = segments.filter((segment) => segment.language === 'en');
+  const targetSegments = segments.filter((segment) => segment.language === providerLanguage);
   const generated = [];
   const total = Math.max(1, segments.length);
 
@@ -36,11 +49,22 @@ export async function synthesizeLocalAiScript(script, videoId, { settings = {}, 
     generated.push(...audio);
   }
 
-  if (english.length) {
-    const audio = await withLocalTtsModel('Kokoro TTS', (lease) => synthesizeKokoroSegments(english, videoId, {
+  if (targetSegments.length && providerLanguage === 'en') {
+    const audio = await withLocalTtsModel('Kokoro TTS', (lease) => synthesizeKokoroSegments(targetSegments, videoId, {
       settings,
       lease,
       onProgress: (progress, detail) => onProgress(0.5 + Math.min(0.49, Math.max(0, progress) * 0.49), { ...detail, language: 'en' })
+    }), {
+      onPhase: (state) => onProgress(0.5, { phase: 'local-tts-manager', model: state.model, managerPhase: state.phase })
+    });
+    generated.push(...audio);
+  }
+
+  if (targetSegments.length && ['ja', 'zh'].includes(providerLanguage)) {
+    const modelName = providerLanguage === 'ja' ? 'Style-Bert-VITS2 Japanese' : 'CosyVoice 3.0 Chinese';
+    const audio = await withLocalTtsModel(modelName, (lease) => synthesizeMultilingualSegments(targetSegments, videoId, {
+      settings, provider, lease,
+      onProgress: (progress, detail) => onProgress(0.5 + Math.min(0.49, Math.max(0, progress) * 0.49), { ...detail, language: providerLanguage })
     }), {
       onPhase: (state) => onProgress(0.5, { phase: 'local-tts-manager', model: state.model, managerPhase: state.phase })
     });

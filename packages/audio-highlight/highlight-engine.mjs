@@ -13,6 +13,8 @@ export function normalizeLanguage(value) {
   const language = String(value || '').trim().toLocaleLowerCase('en-US');
   if (language === 'vi' || language === 'vietnamese' || language.startsWith('vi-')) return 'vi';
   if (language === 'en' || language === 'english' || language.startsWith('en-')) return 'en';
+  if (language === 'ja' || language === 'japanese' || language.startsWith('ja-')) return 'ja';
+  if (language === 'zh' || language === 'chinese' || language.startsWith('zh-')) return 'zh';
   return language || 'und';
 }
 
@@ -21,10 +23,18 @@ export function defaultDialogueSegmentId(index, language, dialogue = {}) {
   return `dialogue-${stableId}-${normalizeLanguage(language)}`;
 }
 
-export function tokenizeText(value, segmentId = 'segment') {
+export function tokenizeText(value, segmentId = 'segment', language = 'und') {
   const text = String(value ?? '');
   const tokens = [];
-  for (const match of text.matchAll(/\S+/gu)) {
+  const normalizedLanguage = normalizeLanguage(language);
+  const cjkLanguage = ['ja', 'zh'].includes(normalizedLanguage)
+    ? normalizedLanguage
+    : normalizedLanguage === 'en' ? null
+      : /[\u3040-\u30ff]/u.test(text) ? 'ja' : /[\u3400-\u9fff]/u.test(text) ? 'zh' : null;
+  const pieces = cjkLanguage && typeof Intl.Segmenter === 'function'
+    ? [...new Intl.Segmenter(cjkLanguage, { granularity: 'word' }).segment(text)].filter((part) => part.isWordLike).map((part) => ({ 0: part.segment, index: part.index }))
+    : [...text.matchAll(/\S+/gu)];
+  for (const match of pieces) {
     const normalized = normalizeWord(match[0]);
     if (!normalized) continue;
     const index = tokens.length;
@@ -113,8 +123,8 @@ export function prepareSpeechText(value, language) {
 }
 
 export function mapWordBoundariesToTokens(value, boundaries, segmentId = 'segment', { language = 'und' } = {}) {
-  const tokens = tokenizeText(value, segmentId);
   const mappingLanguage = normalizeLanguage(language);
+  const tokens = tokenizeText(value, segmentId, mappingLanguage);
   const speechTokens = [];
   for (const token of tokens) {
     const expectedText = mappingLanguage === 'en' ? prepareSpeechText(token.text, mappingLanguage) : token.text;
@@ -301,7 +311,7 @@ export function createSpeechSegments(script, settings = {}) {
         }
       });
     });
-    appendVocabularySpeech(script, settings, segments);
+    if (script?.contentLanguage !== 'zh') appendVocabularySpeech(script, settings, segments);
   } else {
     const dialogues = Array.isArray(script?.dialogues) ? script.dialogues : [];
     dialogues.forEach((dialogue, index) => {
@@ -333,14 +343,29 @@ export function createSpeechSegments(script, settings = {}) {
             }
           });
         });
-        appendVocabularySpeechForDialogue(dialogue, index, settings, segments);
+        const scriptLanguage = normalizeLanguage(script.contentLanguage || settings.contentLanguage || 'en');
+        const targetTurn = dialogue.turns.find((turn) => normalizeLanguage(turn?.language || turn?.locale) !== 'vi');
+        const vocabularyLanguage = scriptLanguage === 'en' ? 'en' : targetTurn?.language || targetTurn?.locale || scriptLanguage;
+        appendVocabularySpeechForDialogue(dialogue, index, settings, segments, vocabularyLanguage);
         return;
       }
 
-      for (const item of [
-        { language: 'vi', text: dialogue?.vietnamese, voiceName: dialogue?.vietnameseVoiceName || dialogue?.viVoiceName, speakerId: dialogue?.vietnameseSpeakerId || dialogue?.speakers?.vi, rate: dialogue?.vietnameseRate, layerId: 'vietnamese-card' },
-        { language: 'en', text: dialogue?.english, voiceName: dialogue?.englishVoiceName || dialogue?.enVoiceName, speakerId: dialogue?.englishSpeakerId || dialogue?.speakers?.en, rate: dialogue?.englishRate, layerId: 'english-card' }
-      ]) {
+      const targetLanguage = normalizeLanguage(script.contentLanguage || settings.contentLanguage || 'en');
+      const targetField = targetLanguage === 'ja' ? 'japanese' : targetLanguage === 'zh' ? 'chinese' : 'english';
+      const targetVoice = targetLanguage === 'ja'
+        ? settings.styleBertVits2Voice || 'jvnv-F1-jp'
+        : targetLanguage === 'zh' ? 'cosyvoice3-reference' : null;
+      const targetRate = targetLanguage === 'ja' ? settings.styleBertVits2Speed || 1 : targetLanguage === 'zh' ? 1 : null;
+      const items = targetLanguage === 'en'
+        ? [
+          { language: 'vi', text: dialogue?.vietnamese, voiceName: dialogue?.vietnameseVoiceName || dialogue?.viVoiceName, speakerId: dialogue?.vietnameseSpeakerId || dialogue?.speakers?.vi, rate: dialogue?.vietnameseRate, layerId: 'vietnamese-card' },
+          { language: 'en', text: dialogue?.english, voiceName: dialogue?.englishVoiceName || dialogue?.enVoiceName, speakerId: dialogue?.englishSpeakerId || dialogue?.speakers?.en, rate: dialogue?.englishRate, layerId: 'english-card' }
+        ]
+        : [
+          { language: 'vi', text: dialogue?.vietnamese, voiceName: dialogue?.vietnameseVoiceName || dialogue?.viVoiceName, speakerId: dialogue?.vietnameseSpeakerId || dialogue?.speakers?.vi, rate: dialogue?.vietnameseRate, layerId: 'vietnamese-card' },
+          { language: targetLanguage, text: dialogue?.[targetField], voiceName: dialogue?.targetVoiceName || targetVoice, speakerId: dialogue?.targetSpeakerId || `speaker-${targetLanguage}`, rate: dialogue?.targetRate ?? targetRate, layerId: 'english-card' }
+        ];
+      for (const item of items) {
         const text = String(item.text ?? '').trim();
         if (!text) continue;
         const segmentId = defaultDialogueSegmentId(index, item.language, dialogue);
@@ -355,11 +380,12 @@ export function createSpeechSegments(script, settings = {}) {
           speechText: prepareSpeechText(text, item.language),
           order: segments.length,
           turnId: String(dialogue?.id || `dialogue-${index + 1}`),
-          state: item.language === 'en' ? 'bilingual' : 'vietnamese',
+          state: item.language === 'vi' ? 'vietnamese' : 'bilingual',
           target: { id: segmentId, layerId: item.layerId, dialogueIndex: index, text }
         });
       }
-      appendVocabularySpeechForDialogue(dialogue, index, settings, segments);
+      if (targetLanguage === 'en') appendVocabularySpeechForDialogue(dialogue, index, settings, segments);
+      else appendVocabularySpeechForDialogue(dialogue, index, settings, segments, targetLanguage);
     });
   }
 
@@ -377,7 +403,9 @@ export function createSpeechSegments(script, settings = {}) {
 }
 
 function appendCtaSpeech(settings, segments) {
-  const text = 'Follow kênh để luyện phản xạ tiếng Anh mỗi ngày!';
+  const contentLanguage = normalizeLanguage(settings.contentLanguage || 'en');
+  const label = contentLanguage === 'ja' ? 'tiếng Nhật' : contentLanguage === 'zh' ? 'tiếng Trung' : 'tiếng Anh';
+  const text = contentLanguage === 'en' ? 'Follow kênh để luyện phản xạ tiếng Anh mỗi ngày!' : `Follow kênh để luyện phản xạ ${label} mỗi ngày!`;
   const existing = segments.find((segment) => segment.target?.layerId === 'cta' || segment.state === 'cta');
   for (let index = segments.length - 1; index >= 0; index -= 1) {
     if (segments[index].target?.layerId === 'cta' || segments[index].state === 'cta') segments.splice(index, 1);
@@ -410,7 +438,8 @@ function appendVocabularySpeech(script, settings, segments) {
     const existing = segments.find((segment) => segment.target?.layerId === 'vocabulary'
       && Number(segment.target?.dialogueIndex) === index);
     if (existing) continue;
-    const vocabulary = makeVocabularySpeech(dialogue, index, settings);
+    const targetLanguage = script?.contentLanguage || segments.find((segment) => segment.target?.dialogueIndex === index && segment.language !== 'vi')?.language || settings.contentLanguage || 'en';
+    const vocabulary = makeVocabularySpeech(dialogue, index, settings, targetLanguage);
     if (!vocabulary.length) continue;
     const lastSegmentIndex = segments.reduce((last, segment, segmentIndex) =>
       Number(segment.target?.dialogueIndex) === index ? segmentIndex : last, -1);
@@ -418,28 +447,35 @@ function appendVocabularySpeech(script, settings, segments) {
   }
 }
 
-function appendVocabularySpeechForDialogue(dialogue, index, settings, segments) {
-  const vocabulary = makeVocabularySpeech(dialogue, index, settings);
+function appendVocabularySpeechForDialogue(dialogue, index, settings, segments, targetLanguage = 'en') {
+  const vocabulary = makeVocabularySpeech(dialogue, index, settings, targetLanguage);
   if (vocabulary.length) segments.push(...vocabulary);
 }
 
-function makeVocabularySpeech(dialogue, index, settings) {
+function makeVocabularySpeech(dialogue, index, settings, targetLanguage = 'en') {
   const term = String(dialogue?.term ?? '').trim();
   const meaningVi = String(dialogue?.meaningVi ?? '').trim();
   if (!term || !meaningVi) return [];
   const baseSegmentId = `${defaultDialogueSegmentId(index, 'vi', dialogue)}-vocabulary`;
   const englishSpeakerId = String(dialogue?.englishSpeakerId || dialogue?.speakers?.en || 'en-default');
+  const targetSpeakerId = targetLanguage === 'en'
+    ? englishSpeakerId
+    : String(dialogue?.targetSpeakerId || dialogue?.englishSpeakerId || dialogue?.speakers?.[targetLanguage] || `${targetLanguage}-default`);
   const vietnameseSpeakerId = String(dialogue?.vietnameseSpeakerId || dialogue?.speakers?.vi || 'vi-default');
   const turnId = String(dialogue?.id || `dialogue-${index + 1}`);
   return [
     {
       segmentId: `${baseSegmentId}-term`,
-      speakerId: englishSpeakerId,
-      voiceName: String(dialogue?.englishVoiceName || dialogue?.enVoiceName || settings.speakerVoices?.[englishSpeakerId] || voiceForLanguage(settings, 'en')),
-      language: 'en',
-      rate: String(dialogue?.englishRate || rateForLanguage(settings, 'en')),
+      speakerId: targetSpeakerId,
+      voiceName: targetLanguage === 'en'
+        ? String(dialogue?.englishVoiceName || dialogue?.enVoiceName || settings.speakerVoices?.[englishSpeakerId] || voiceForLanguage(settings, 'en'))
+        : String(dialogue?.targetVoiceName || dialogue?.englishVoiceName || dialogue?.enVoiceName || settings.speakerVoices?.[targetSpeakerId] || voiceForLanguage(settings, targetLanguage)),
+      language: targetLanguage,
+      rate: targetLanguage === 'en'
+        ? String(dialogue?.englishRate || rateForLanguage(settings, 'en'))
+        : String(dialogue?.targetRate || dialogue?.englishRate || rateForLanguage(settings, targetLanguage)),
       text: term,
-      speechText: prepareSpeechText(term, 'en'),
+      speechText: prepareSpeechText(term, targetLanguage),
       order: Number.MAX_SAFE_INTEGER,
       turnId,
       state: 'vocabulary',
@@ -465,8 +501,18 @@ function tokenizeBoundaryText(value) {
   return String(value ?? '').split(/\s+/u).map(normalizeWord).filter(Boolean);
 }
 
-function defaultLayerForLanguage(language) { return language === 'vi' ? 'vietnamese-card' : 'english-card'; }
-function voiceForLanguage(settings, language) { return language === 'vi' ? settings.viVoice || 'vi-VN-HoaiMyNeural' : settings.enVoice || 'en-US-AndrewNeural'; }
-function rateForLanguage(settings, language) { return language === 'vi' ? settings.viRate || '+0%' : settings.enRate || '+0%'; }
+function defaultLayerForLanguage(language) { return language === 'vi' ? 'vietnamese-card' : language === 'zh' ? 'chinese-card' : 'english-card'; }
+function voiceForLanguage(settings, language) {
+  if (language === 'vi') return settings.vieneuViVoice || 'Hải Đăng';
+  if (language === 'ja') return settings.styleBertVits2Voice || 'jvnv-F1-jp';
+  if (language === 'zh') return 'cosyvoice3-reference';
+  return settings.kokoroEnVoice || 'af_heart';
+}
+function rateForLanguage(settings, language) {
+  if (language === 'vi') return settings.vieneuViSpeed || 1;
+  if (language === 'ja') return settings.styleBertVits2Speed || 1;
+  if (language === 'zh') return 1;
+  return settings.kokoroEnSpeed || 1;
+}
 function finiteNumber(value) { const number = Number(value); return Number.isFinite(number) ? number : NaN; }
 function safeId(value) { return String(value ?? 'segment').normalize('NFKC').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 100) || 'segment'; }

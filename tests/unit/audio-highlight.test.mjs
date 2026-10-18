@@ -10,28 +10,28 @@ const ticks = (seconds) => Math.round(seconds * 10_000_000);
 const boundary = (text, start, duration = 0.12) => ({ text, offsetTicks: ticks(start), durationTicks: ticks(duration) });
 
 test('English female voice keeps its own voice identity and accurate word timing', () => {
-  const segments = createSpeechSegments({ dialogues: [{ id: 'coffee', english: 'Hello there.', vietnamese: 'Xin chào.', term: 'Hello', meaningVi: 'Xin chào', noteVi: '' }] }, { enVoice: 'en-US-AvaNeural', viVoice: 'vi-VN-HoaiMyNeural' });
+  const segments = createSpeechSegments({ dialogues: [{ id: 'coffee', english: 'Hello there.', vietnamese: 'Xin chào.', term: 'Hello', meaningVi: 'Xin chào', noteVi: '' }] }, { kokoroEnVoice: 'af_bella', vieneuViVoice: 'Mỹ Duyên' });
   const english = segments.find((segment) => segment.language === 'en');
   const mapped = mapWordBoundariesToTokens(english.text, [boundary('Hello', 0.08), boundary('there.', 0.41)], english.segmentId);
-  assert.equal(english.voiceName, 'en-US-AvaNeural');
+  assert.equal(english.voiceName, 'af_bella');
   assert.equal(mapped.alignment.reliable, true);
   assert.deepEqual(mapped.wordTimings.map((word) => word.startSeconds), [0.08, 0.41]);
 });
 
 test('Vietnamese male voice override is independent of the English voice', () => {
-  const segments = createSpeechSegments({ dialogues: [{ vietnamese: 'Bạn khỏe không?', vietnameseVoiceName: 'vi-VN-NamMinhNeural', english: 'Are you well?', term: 'well', meaningVi: 'khỏe', noteVi: '' }] }, { viVoice: 'vi-VN-HoaiMyNeural', enVoice: 'en-US-AndrewNeural' });
+  const segments = createSpeechSegments({ dialogues: [{ vietnamese: 'Bạn khỏe không?', vietnameseVoiceName: 'vi-VN-NamMinhNeural', english: 'Are you well?', term: 'well', meaningVi: 'khỏe', noteVi: '' }] }, { vieneuViVoice: 'Hải Đăng', kokoroEnVoice: 'am_michael' });
   assert.equal(segments[0].voiceName, 'vi-VN-NamMinhNeural');
-  assert.equal(segments[1].voiceName, 'en-US-AndrewNeural');
+  assert.equal(segments[1].voiceName, 'am_michael');
 });
 
 test('alternating speakers retain order, speaker IDs, and separate voices', () => {
   const segments = createSpeechSegments({ dialogues: [{ id: 'roleplay', turns: [
-    { speakerId: 'a', language: 'en', voiceName: 'en-US-AvaNeural', text: 'Can you help?' },
-    { speakerId: 'b', language: 'en', voiceName: 'en-US-AndrewNeural', text: 'Of course.' },
+    { speakerId: 'a', language: 'en', voiceName: 'af_bella', text: 'Can you help?' },
+    { speakerId: 'b', language: 'en', voiceName: 'am_michael', text: 'Of course.' },
     { speakerId: 'a', language: 'vi', voiceName: 'vi-VN-HoaiMyNeural', text: 'Cảm ơn bạn.' }
   ] }] });
   assert.deepEqual(segments.map((segment) => segment.speakerId), ['a', 'b', 'a']);
-  assert.deepEqual(segments.map((segment) => segment.voiceName), ['en-US-AvaNeural', 'en-US-AndrewNeural', 'vi-VN-HoaiMyNeural']);
+  assert.deepEqual(segments.map((segment) => segment.voiceName), ['af_bella', 'am_michael', 'vi-VN-HoaiMyNeural']);
   assert.deepEqual(segments.map((segment) => segment.order), [0, 1, 2]);
 });
 
@@ -46,11 +46,11 @@ test('Vietnamese phrase audio follows each bilingual dialogue and targets the vo
   const segments = createSpeechSegments({ dialogues: [{
     id: 'coffee', vietnamese: 'Bạn uống cà phê không?', english: 'Would you like coffee?',
     term: 'would you like', meaningVi: 'bạn có muốn', noteVi: ''
-  }] }, { viVoice: 'vi-VN-HoaiMyNeural', enVoice: 'en-US-AvaNeural' });
+  }] }, { vieneuViVoice: 'Hải Đăng', kokoroEnVoice: 'af_bella' });
   assert.deepEqual(segments.map((segment) => segment.language), ['vi', 'en', 'vi']);
   assert.equal(segments[2].state, 'vocabulary');
   assert.equal(segments[2].text, 'would you like. bạn có muốn');
-  assert.equal(segments[2].voiceName, 'vi-VN-HoaiMyNeural');
+  assert.equal(segments[2].voiceName, 'Hải Đăng');
   assert.equal(segments[2].target.layerId, 'vocabulary');
   assert.equal(segments[2].target.dialogueIndex, 0);
   assert.equal(segments[2].turnId, segments[0].turnId);

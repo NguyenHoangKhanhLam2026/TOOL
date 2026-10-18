@@ -1,6 +1,6 @@
 # Auto English Reels Studio
 
-> Ứng dụng Windows chạy local để soạn kịch bản tiếng Anh Việt–Anh, tạo giọng đọc, dựng video dọc, lưu thư viện và lên lịch Facebook Page.
+> Ứng dụng Windows chạy local để soạn kịch bản học ngoại ngữ Việt–Anh, Việt–Nhật hoặc Việt–Trung, tạo giọng đọc, dựng video dọc, lưu thư viện và lên lịch Facebook Page.
 
 **Địa chỉ mặc định:** http://localhost:3001  
 **Ngôn ngữ giao diện:** tiếng Việt  
@@ -8,7 +8,7 @@
 
 ## Tình trạng hiện tại
 
-Đã có mã nguồn cho dashboard, SQLite WAL, thư viện 100 chủ đề, xác thực kịch bản, ChatGPT plan OAuth, Edge TTS, FFmpeg renderer, thư viện video, lịch địa phương, worker, Facebook Mock và adapter Meta Graph API. Visual Engine V2 bổ sung nhận diện “Sinh ra để nói tiếng Anh”, scene template dùng chung, preview/editor, asset manager, upload asset cục bộ và sự kiện tiến độ qua WebSocket loopback.
+Đã có mã nguồn cho dashboard, SQLite WAL, thư viện 100 chủ đề, xác thực kịch bản, ChatGPT plan OAuth, các model TTS local (VieNeu, Kokoro, Style-Bert-VITS2 và CosyVoice 3.0), FFmpeg renderer, thư viện video, lịch địa phương, worker, Facebook Mock và adapter Meta Graph API. Visual Engine V2 bổ sung scene template, preview/editor, asset manager, upload asset cục bộ và sự kiện tiến độ qua WebSocket loopback.
 
 Mỗi video tạo audio riêng cho từng đoạn đọc, thu WordBoundary theo giọng và căn highlight theo timeline trước khi render MP4. Số lượt hội thoại lấy từ kịch bản, không cố định ba cặp. Renderer vẫn xác minh 1080×1920, 30 FPS, H.264/AAC và thời lượng 4–60 giây bằng ffprobe. Facebook live tắt mặc định.
 
@@ -18,7 +18,7 @@ Mỗi video tạo audio riêng cho từng đoạn đọc, thu WordBoundary theo 
 
 - Windows 10/11.
 - Node.js 22.13 trở lên (SQLite được tích hợp trong Node).
-- Python 3.10 trở lên để chạy Edge TTS.
+- Python 3.10 trở lên để chạy các worker TTS local và căn chỉnh lời nói.
 - FFmpeg và FFprobe có trong `PATH`.
 
 ## Cài đặt lần đầu
@@ -34,13 +34,16 @@ Mỗi video tạo audio riêng cho từng đoạn đọc, thu WordBoundary theo 
    npm run setup
    ```
 
-   `setup.ps1` tạo `.venv` riêng cho dự án và cài gói mã nguồn mở `edge-tts`. `npm run setup` kiểm tra Node, Python, Edge TTS, FFmpeg và ffprobe.
+   `setup.ps1` hướng dẫn cài các model TTS local. `npm run setup` kiểm tra Node, Python, FFmpeg và ffprobe; Edge TTS không còn được cài hoặc sử dụng.
 
-   WordBoundary của Edge TTS là nguồn timestamp chính. Nếu mốc thiếu hoặc không khớp văn bản, ứng dụng thử forced alignment local bằng stable-ts nếu đã cài. Đây là phụ thuộc tùy chọn vì cần PyTorch và model tải về; cài bằng `python -m pip --python .venv\Scripts\python.exe install -r packages\tts-engine\python\requirements-alignment.txt`. Model mặc định là `base`; có thể đổi bằng `AERS_ALIGNMENT_MODEL`. Nếu không có model hoặc căn chỉnh không đáng tin, audio vẫn được giữ nguyên, highlight tắt riêng cho đoạn đó và ứng dụng ghi cảnh báo.
+   Các model TTS local cung cấp timestamp từ hoặc được căn chỉnh bằng stable-ts nếu đã cài. Đây là phụ thuộc tùy chọn vì cần PyTorch và model tải về; cài bằng `npm run setup:alignment`. Nếu không có model hoặc căn chỉnh không đáng tin, audio vẫn được giữ nguyên, highlight tắt riêng cho đoạn đó và ứng dụng ghi cảnh báo.
 
-Trong **Cài đặt → Giọng đọc & video**, chọn giọng nữ/nam tiếng Việt hoặc một trong các giọng tiếng Anh Mỹ. Mỗi giọng tiếng Anh có nút nghe thử riêng; chọn giọng rồi bấm **Lưu cài đặt** để dùng cho video tiếp theo. Mỗi thẻ hội thoại giữ đủ thông tin khoảng 5,5 giây rồi chuyển cảnh mờ về đen trong khoảng 0,3 giây.
+Trong **Tổng quan**, chọn cặp nội dung **Việt–Anh**, **Việt–Nhật** hoặc **Việt–Trung** trước khi tạo video. Cấu hình nhà cung cấp được lưu riêng theo từng cặp; đổi sang tiếng Nhật/Trung không ghi đè nhà cung cấp tiếng Anh.
 
-5. Chạy `start.bat`. Ứng dụng mở tại http://localhost:3001 cùng worker nền.
+Trong **Cài đặt → Giọng đọc & video**, chọn model VieNeu + Kokoro cho nội dung Việt–Anh, rồi chọn giọng và tốc độ Kokoro. Có nút nghe thử riêng cho tiếng Việt và tiếng Anh. Mỗi thẻ hội thoại giữ đủ thông tin khoảng 5,5 giây rồi chuyển cảnh mờ về đen trong khoảng 0,3 giây.
+
+5. Chạy `npm run setup:multilingual-tts` để cài bốn giọng Nhật Style-Bert-VITS2 (JVNV F1/F2/M1/M2) và CosyVoice 3.0 tiếng Trung. Lệnh cài môi trường Python CPU riêng và tải khoảng 6 GB model. Tiếng Nhật có bảy phong cách đọc. Tiếng Trung hỗ trợ tối đa 12 hồ sơ giọng; thêm từng WAV tham chiếu cùng bản chép chính xác trong Cài đặt, rồi chọn giọng cần dùng.
+6. Chạy `start.bat`. Ứng dụng mở tại http://localhost:3001 cùng worker nền.
 
 `start.bat` tự thêm thư mục FFmpeg WinGet vào `PATH` của server và worker nếu phát hiện bản đã cài. Nếu chạy `npm run dev` hoặc `npm run worker` riêng, giữ FFmpeg và FFprobe trong `PATH` của terminal.
 
@@ -78,7 +81,7 @@ Tài khoản phải được OpenAI cho phép dùng ChatGPT plan trong ứng d�
 
 1. Kết nối ChatGPT plan; có thể bật tùy chọn mẫu cục bộ nếu chỉ muốn thử các bước sau AI.
 2. Chọn chủ đề trong dashboard và tạo video.
-3. Worker xác thực kịch bản có số lượt linh hoạt, gọi Edge TTS riêng theo giọng/ngôn ngữ của từng lượt, đo thời lượng bằng ffprobe và dựng video 1080×1920/30 FPS với highlight theo timeline.
+3. Worker xác thực kịch bản có số lượt linh hoạt, gọi model TTS local theo ngôn ngữ, đo thời lượng bằng ffprobe và dựng video 1080×1920/30 FPS với highlight theo timeline.
 4. Video hợp lệ xuất hiện trong Thư viện. Mở kịch bản để xem câu, từ khóa, giải thích và caption.
 5. Lên lịch trong tab Lịch đăng. Muốn tự đăng, kết nối Meta và bật rõ ràng tùy chọn tương ứng.
 
@@ -96,7 +99,7 @@ Renderer xác minh H.264/AAC, 1080×1920, 30 FPS và thời lượng 4–60 giâ
 
 - Trong Cài đặt, chọn bật/tắt, từng từ/từng cụm, màu, padding, bo góc và chuyển tức thời/trượt mượt; nút nghe thử dùng audio và WordBoundary trả về cho đúng câu preview.
 - Câu hiển thị được token hóa thành ID ổn định; renderer dùng cùng bộ ánh xạ timeline cho audio preview và MP4. Các câu dài được xuống dòng trước khi xác định hộp từ, nên highlight giữ đúng vị trí sau khi xuống dòng.
-- WordBoundary theo từng audio clip tự phản ánh giọng và tốc độ đọc. Nếu Edge thiếu mốc, stable-ts là phương án local miễn phí có thể cài tùy chọn. Nếu cả hai nguồn không căn chỉnh được đầy đủ, đoạn vẫn có tiếng nhưng không tô từ và có log cảnh báo.
+- Mốc lời nói theo từng audio clip phản ánh giọng và tốc độ đọc. Nếu model thiếu mốc, stable-ts là phương án local miễn phí có thể cài tùy chọn. Nếu căn chỉnh không đầy đủ, audio vẫn được giữ nhưng đoạn đó không tô từ và có log cảnh báo.
 - Khi có nhiều lượt, renderer tự rút ngắn thời gian nghỉ xem từ vựng để giữ video trong giới hạn 60 giây nếu tổng audio còn vừa. Nếu riêng audio đọc đã dài hơn giới hạn, hệ thống báo rõ và không cắt mất câu.
 
 ## Lệnh dự án
@@ -104,6 +107,7 @@ Renderer xác minh H.264/AAC, 1080×1920, 30 FPS và thời lượng 4–60 giâ
 | Lệnh | Hoạt động |
 |---|---|
 | `npm run setup` | Kiểm tra phiên bản và công cụ local |
+| `npm run setup:multilingual-tts` | Cài Style-Bert-VITS2 tiếng Nhật và CosyVoice 3.0 tiếng Trung cho CPU |
 | `npm run dev` | Chạy server local |
 | `npm run build` | Kiểm tra cú pháp toàn bộ module trước khi chạy |
 | `npm run start` | Chạy server local |
@@ -124,7 +128,7 @@ src/
   workers/            queue worker
 packages/
   facebook-engine/    Mock và Meta Graph API adapters
-  tts-engine/         Edge TTS worker Python
+  tts-engine/         Python workers for local TTS and speech alignment
   video-engine/       FFmpeg renderer và ffprobe validation
 public/               Dashboard, Visual Editor và Asset Manager
 assets/branding/      Logo, ảnh nền, nhân vật, font OFL và template scene

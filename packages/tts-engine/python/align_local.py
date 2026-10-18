@@ -130,7 +130,7 @@ def main():
     for item in items:
         try:
             language = str(item.get("language") or "en").split("-", 1)[0].lower()
-            if language not in ("en", "vi"):
+            if language not in ("en", "vi", "ja", "zh"):
                 language = "en"
             waveform = load_audio(item["audioPath"], sr=16000, verbose=None)
             if leading_pad_samples:

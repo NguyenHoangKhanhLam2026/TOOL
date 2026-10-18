@@ -19,7 +19,6 @@ const checks = [
     ['Python', PYTHON_BIN, ['--version']],
     ['FFmpeg', 'ffmpeg', ['-version']],
     ['FFprobe', 'ffprobe', ['-version']],
-    ['Edge TTS Python package', PYTHON_BIN, ['-c', 'import edge_tts']]
   ].map(([name, command, args]) => {
     const result = probe(command, args, { stdio: 'ignore' });
     return [name, result.ok, result.errorCode];
@@ -30,7 +29,8 @@ for (const [name, ok] of checks) console.log(`${ok ? '✓' : '○'} ${name}${ok 
 console.log(`\nThư mục dữ liệu: ${path.join(ROOT, 'data')}`);
 console.log(`Thông tin bí mật: ${PATHS.private}`);
 if (checks.some(([name, ok]) => !ok && name !== 'Node.js 22.13+')) {
-  console.log('\nĐể cài giọng đọc: chạy setup.ps1. Cài FFmpeg/FFprobe, thêm vào PATH rồi mở terminal mới.');
+  console.log('\nKiểm tra Python (căn chỉnh cục bộ) và cài FFmpeg/FFprobe, thêm FFmpeg vào PATH rồi mở terminal mới.');
+  console.log('Model TTS local được quản lý riêng bằng npm run setup:vieneu, npm run setup:kokoro và npm run setup:multilingual-tts.');
 }
 const spawnBlocked = checks.filter(([, , errorCode]) => errorCode === 'EPERM').map(([name]) => name);
 if (spawnBlocked.length) {

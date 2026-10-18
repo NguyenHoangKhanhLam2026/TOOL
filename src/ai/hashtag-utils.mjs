@@ -1,8 +1,29 @@
 export const BRAND_HASHTAG = '#sinhradenoitienganh';
+export const CHINESE_BRAND_HASHTAG = '#conotiengtrung';
 
 const HASHTAG_PATTERN = /#[\p{L}\p{N}_]+/gu;
 
-export function ensureBrandHashtag(hashtags) {
+export function ensureBrandHashtag(hashtags, contentLanguage = 'en') {
+  if (contentLanguage === 'zh') {
+    const unique = [];
+    const seen = new Set([CHINESE_BRAND_HASHTAG]);
+    const forbidden = new Set(['#tiengtrungchammachac', BRAND_HASHTAG]);
+    const irrelevantEnglish = /^(english|learnenglish|tienganh|hoctienganh|englishlearning|englishvocabulary)/i;
+    for (const value of Array.isArray(hashtags) ? hashtags : []) {
+      const tag = String(value || '').trim();
+      const key = tag.toLocaleLowerCase('vi');
+      if (!/^#[\p{L}\p{N}_]+$/u.test(tag) || forbidden.has(key) || irrelevantEnglish.test(key.slice(1)) || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(tag);
+      if (unique.length === 4) break;
+    }
+    const fallbacks = ['#hoctiengtrung', '#tiengtrunggiaotiep', '#pinyin', '#tuvungtiengtrung'];
+    for (const tag of fallbacks) {
+      if (unique.length === 4) break;
+      if (!seen.has(tag)) { seen.add(tag); unique.push(tag); }
+    }
+    return [...unique, CHINESE_BRAND_HASHTAG];
+  }
   const unique = [];
   const seen = new Set();
   for (const value of Array.isArray(hashtags) ? hashtags : []) {
@@ -32,10 +53,10 @@ function captionSections(value) {
   return paragraphs.join('\n\n');
 }
 
-export function formatCaption(caption, hashtags) {
+export function formatCaption(caption, hashtags, contentLanguage = 'en') {
   const body = String(caption || '').replace(/\r\n?/g, '\n').trim();
   const embedded = body.match(HASHTAG_PATTERN) || [];
   const cleanBody = captionSections(body.replace(HASHTAG_PATTERN, ' ').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
-  const tags = ensureBrandHashtag([...(Array.isArray(hashtags) ? hashtags : []), ...embedded]);
+  const tags = ensureBrandHashtag([...(Array.isArray(hashtags) ? hashtags : []), ...embedded], contentLanguage);
   return cleanBody ? `${cleanBody}\n\n${tags.join(' ')}` : tags.join(' ');
 }

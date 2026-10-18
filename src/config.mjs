@@ -59,6 +59,7 @@ export const VIENEU_MODEL_DIR = path.join(DATA, 'models', 'vieneu-v3-turbo');
 export const VIENEU_ONNX_DIR = path.join(VIENEU_MODEL_DIR, 'onnx_update');
 export const VIENEU_CODEC_DIR = path.join(VIENEU_MODEL_DIR, 'codec');
 export const VIENEU_HF_HOME = path.join(DATA, 'models', 'huggingface-cache');
+if (!process.env.HF_HOME) process.env.HF_HOME = VIENEU_HF_HOME;
 export const VIENEU_MODEL_MARKER = path.join(VIENEU_MODEL_DIR, 'install.json');
 const kokoroVenvPython = process.platform === 'win32' ? path.join(ROOT, '.venv-kokoro', 'Scripts', 'python.exe') : path.join(ROOT, '.venv-kokoro', 'bin', 'python');
 export const KOKORO_PYTHON_BIN = process.env.KOKORO_PYTHON || kokoroVenvPython;
@@ -66,6 +67,21 @@ export const KOKORO_MODEL_DIR = path.join(DATA, 'models', 'kokoro-onnx');
 export const KOKORO_MODEL_PATH = path.join(KOKORO_MODEL_DIR, 'kokoro-v1.0.onnx');
 export const KOKORO_VOICES_PATH = path.join(KOKORO_MODEL_DIR, 'voices-v1.0.bin');
 export const KOKORO_MODEL_MARKER = path.join(KOKORO_MODEL_DIR, 'install.json');
+const styleBertVits2VenvPython = process.platform === 'win32' ? path.join(ROOT, '.venv-sbv2', 'Scripts', 'python.exe') : path.join(ROOT, '.venv-sbv2', 'bin', 'python');
+export const STYLE_BERT_VITS2_PYTHON_BIN = process.env.STYLE_BERT_VITS2_PYTHON || styleBertVits2VenvPython;
+export const STYLE_BERT_VITS2_MODELS_DIR = path.join(DATA, 'models', 'style-bert-vits2-jp');
+export const STYLE_BERT_VITS2_MODEL_DIR = path.join(STYLE_BERT_VITS2_MODELS_DIR, 'jvnv-F1-jp');
+export const STYLE_BERT_VITS2_MODEL_MARKER = path.join(DATA, 'models', 'style-bert-vits2-jp', 'install.json');
+export const OPEN_JTALK_DICTIONARY_DIR = path.join(DATA, 'models', 'open_jtalk_dic_utf_8-1.11');
+if (!process.env.OPEN_JTALK_DICT_DIR) process.env.OPEN_JTALK_DICT_DIR = OPEN_JTALK_DICTIONARY_DIR;
+const cosyVoiceVenvPython = process.platform === 'win32' ? path.join(ROOT, '.venv-cosyvoice', 'Scripts', 'python.exe') : path.join(ROOT, '.venv-cosyvoice', 'bin', 'python');
+export const COSYVOICE_PYTHON_BIN = process.env.COSYVOICE_PYTHON || cosyVoiceVenvPython;
+export const COSYVOICE_SOURCE_DIR = path.join(DATA, 'models', 'cosyvoice-source');
+export const COSYVOICE_MODEL_DIR = path.join(DATA, 'models', 'cosyvoice3');
+export const COSYVOICE_MODEL_MARKER = path.join(COSYVOICE_MODEL_DIR, 'install.json');
+export const COSYVOICE_REFERENCE_PATH = path.join(COSYVOICE_MODEL_DIR, 'voice-reference.wav');
+export const COSYVOICE_PROFILES_DIR = path.join(COSYVOICE_MODEL_DIR, 'voice-profiles');
+export const COSYVOICE_VOICE_LIBRARY_DIR = path.join(DATA, 'tts', 'zh-CN', 'cosyvoice3', 'voices');
 export const LOCAL_TTS_LOCK_DB = path.join(DATA, 'models', 'local-tts-manager.sqlite');
 export const LOCAL_TTS_STATUS_PATH = path.join(DATA, 'temporary', 'local-tts-model-status.json');
 export const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v26.0';
@@ -78,16 +94,25 @@ export const DEFAULTS = Object.freeze({
   videoHeight: 1920,
   videoFps: 30,
   template: 'classic-beige',
-  viVoice: 'vi-VN-HoaiMyNeural',
-  enVoice: 'en-US-AndrewNeural',
-  enRate: '-8%',
-  ttsProvider: 'edge',
+  ttsProvider: 'vieneu',
+  japaneseTtsProvider: 'vieneu-sbv2',
+  chineseTtsProvider: 'vieneu-cosyvoice3',
+  contentLanguage: 'en',
   vieneuViVoice: 'Hải Đăng',
   vieneuEnVoice: 'Hải Đăng',
   vieneuViSpeed: 1,
   vieneuEnSpeed: 0.9,
   kokoroEnVoice: 'af_heart',
   kokoroEnSpeed: 1,
+  styleBertVits2Voice: 'jvnv-F1-jp',
+  styleBertVits2Style: 'Neutral',
+  styleBertVits2Speed: 1,
+  cosyVoiceProfile: 'custom',
+  cosyVoiceProfileId: '',
+  cosyVoiceProfileName: '',
+  cosyVoiceReferenceText: '',
+  cosyVoiceProfiles: [],
+  cosyVoiceSpeed: 1,
   localTtsMinFreeRamMb: 2560,
   localTtsMinRemainingRamMb: 1024,
   highlightEnabled: true,

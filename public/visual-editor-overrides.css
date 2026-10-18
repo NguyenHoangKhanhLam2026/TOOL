@@ -1,1 +1,5 @@
 .button,.state-button,.layer-item,.field input,.field select{font-family:"Be Vietnam Pro",Segoe UI,sans-serif}.button{font-size:12px;font-weight:600}.state-button,.layer-item{font-size:11px;font-weight:500}.field input,.field select{font-size:11px}
+.visual-language-switch{display:flex;gap:4px;padding:4px;border:1px solid #e5e0d6;border-radius:11px;background:#faf8f2}
+.visual-language-switch button{border:0;border-radius:8px;padding:8px 11px;background:transparent;color:#617177;font:600 11px inherit;cursor:pointer}
+.visual-language-switch button.active{background:#315b50;color:#fff}
+@media(max-width:720px){.visual-language-switch{order:3}.top-actions{order:4}}

@@ -1,28 +1,36 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { PATHS, GRAPH_VERSION } from '../../src/config.mjs';
 import { formatCaption } from '../../src/ai/hashtag-utils.mjs';
 
 const tokenFile = `${PATHS.private}/facebook-page-token.txt`;
 
-export function facebookTokenSaved() {
-  return fs.existsSync(tokenFile) && fs.readFileSync(tokenFile, 'utf8').trim().length > 20;
+export function facebookPageTokenPath(profileId) {
+  const id = String(profileId || '').trim();
+  if (!/^[\w-]{8,80}$/u.test(id) || id === 'legacy') throw new Error('Facebook Page profile ID không hợp lệ.');
+  return path.join(PATHS.private, 'facebook-pages', `${id}.txt`);
 }
 
-export function saveFacebookToken(token) {
+export function facebookTokenSaved(filePath = tokenFile) {
+  return fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf8').trim().length > 20;
+}
+
+export function saveFacebookToken(token, filePath = tokenFile) {
   if (typeof token !== 'string' || token.trim().length < 20) throw new Error('Page Access Token không hợp lệ.');
-  fs.writeFileSync(tokenFile, token.trim(), { mode: 0o600 });
-  try { fs.chmodSync(tokenFile, 0o600); } catch { /* Windows ACLs govern this file. */ }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, token.trim(), { mode: 0o600 });
+  try { fs.chmodSync(filePath, 0o600); } catch { /* Windows ACLs govern this file. */ }
 }
 
-export function clearFacebookToken() { fs.rmSync(tokenFile, { force: true }); }
+export function clearFacebookToken(filePath = tokenFile) { fs.rmSync(filePath, { force: true }); }
 
-function getToken() {
-  if (!facebookTokenSaved()) throw new Error('Chưa lưu Facebook Page Access Token.');
-  return fs.readFileSync(tokenFile, 'utf8').trim();
+function getToken(filePath = tokenFile) {
+  if (!facebookTokenSaved(filePath)) throw new Error('Chưa lưu Facebook Page Access Token.');
+  return fs.readFileSync(filePath, 'utf8').trim();
 }
 
-async function graph(path, form = null, host = 'graph.facebook.com') {
-  const token = getToken();
+async function graph(path, form = null, host = 'graph.facebook.com', tokenPath = tokenFile) {
+  const token = getToken(tokenPath);
   const url = new URL(`https://${host}/${GRAPH_VERSION}/${path.replace(/^\//, '')}`);
   const response = await fetch(url, form ? {
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -40,10 +48,10 @@ async function graph(path, form = null, host = 'graph.facebook.com') {
   return data;
 }
 
-async function uploadVideoChunk(path, fields, fileName, chunk) {
+async function uploadVideoChunk(path, fields, fileName, chunk, tokenPath = tokenFile) {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.set(key, String(value));
-  form.set('access_token', getToken());
+  form.set('access_token', getToken(tokenPath));
   form.set('video_file_chunk', new Blob([chunk], { type: 'application/octet-stream' }), fileName);
   const response = await fetch(`https://graph-video.facebook.com/${GRAPH_VERSION}/${path.replace(/^\//, '')}`, {
     method: 'POST', body: form, signal: AbortSignal.timeout(10 * 60_000)
@@ -61,11 +69,11 @@ async function uploadVideoChunk(path, fields, fileName, chunk) {
 }
 
 export class MetaGraphAdapter {
-  constructor(pageId) { this.pageId = String(pageId || '').trim(); }
+  constructor(pageId, { tokenFile: tokenPath = tokenFile } = {}) { this.pageId = String(pageId || '').trim(); this.tokenFile = tokenPath; }
 
   async checkConnection() {
     if (!/^\d{5,}$/.test(this.pageId)) throw new Error('Facebook Page ID phải là số.');
-    const page = await graph(`${encodeURIComponent(this.pageId)}?fields=id,name`);
+    const page = await graph(`${encodeURIComponent(this.pageId)}?fields=id,name`, null, 'graph.facebook.com', this.tokenFile);
     if (String(page.id) !== this.pageId) throw new Error('Page ID trả về không khớp Page đã cấu hình.');
     return { connected: true, pageId: page.id, pageName: page.name, adapter: 'meta-graph-api' };
   }
@@ -80,7 +88,7 @@ export class MetaGraphAdapter {
     if (size > 0xffffffff) throw new Error('Video vượt quá giới hạn dung lượng upload của Meta.');
     const endpoint = `${encodeURIComponent(this.pageId)}/videos`;
     const uploadHost = 'graph-video.facebook.com';
-    const start = await graph(endpoint, { upload_phase: 'start', file_size: String(size) }, uploadHost);
+    const start = await graph(endpoint, { upload_phase: 'start', file_size: String(size) }, uploadHost, this.tokenFile);
     if (!start.video_id || !start.upload_session_id) throw new Error('Meta không trả về phiên upload video hợp lệ.');
 
     const file = await fs.promises.open(filePath, 'r');
@@ -96,7 +104,7 @@ export class MetaGraphAdapter {
         if (bytesRead !== chunk.length) throw new Error('Không đọc đủ dữ liệu video để upload.');
         const transfer = await uploadVideoChunk(endpoint, {
           upload_phase: 'transfer', upload_session_id: start.upload_session_id, start_offset: offset
-        }, filePath.split(/[\\/]/).at(-1), chunk);
+        }, filePath.split(/[\\/]/).at(-1), chunk, this.tokenFile);
         const nextOffset = Number(transfer.start_offset);
         const nextEndOffset = Number(transfer.end_offset);
         if (!Number.isSafeInteger(nextOffset) || !Number.isSafeInteger(nextEndOffset) || nextOffset <= offset || nextEndOffset < nextOffset || nextEndOffset > size) {
@@ -111,8 +119,8 @@ export class MetaGraphAdapter {
 
     const finish = await graph(endpoint, {
       upload_phase: 'finish', upload_session_id: start.upload_session_id,
-      title: script.title, description: formatCaption(script.caption, script.hashtags), published: 'true'
-    }, uploadHost);
+      title: script.title, description: formatCaption(script.caption, script.hashtags, script.contentLanguage || 'en'), published: 'true'
+    }, uploadHost, this.tokenFile);
     const videoId = String(finish.video_id || finish.id || start.video_id);
     const status = await this.#waitUntilPublished(videoId);
     if (!status.verified) throw new Error('Meta đã nhận lệnh đăng nhưng chưa xác minh trạng thái xuất bản.');
@@ -152,7 +160,7 @@ export class MetaGraphAdapter {
     }
 
     if (!videoId || !uploadSessionId) {
-      const start = await graph(endpoint, { upload_phase: 'start', file_size: String(size) }, uploadHost);
+      const start = await graph(endpoint, { upload_phase: 'start', file_size: String(size) }, uploadHost, this.tokenFile);
       if (!start.video_id || !start.upload_session_id) throw new Error('Meta khÃ´ng tráº£ vá» phiÃªn upload video há»£p lá»‡.');
       videoId = String(start.video_id);
       uploadSessionId = String(start.upload_session_id);
@@ -167,7 +175,7 @@ export class MetaGraphAdapter {
       });
     } else {
       try {
-        const progress = await graph(endpoint, { upload_phase: 'status', upload_session_id: uploadSessionId }, uploadHost);
+        const progress = await graph(endpoint, { upload_phase: 'status', upload_session_id: uploadSessionId }, uploadHost, this.tokenFile);
         const remoteOffset = Number(progress.start_offset);
         const remoteEndOffset = Number(progress.end_offset);
         if (Number.isSafeInteger(remoteOffset) && Number.isSafeInteger(remoteEndOffset) && remoteOffset >= 0 && remoteEndOffset >= remoteOffset && remoteEndOffset <= size) {
@@ -191,7 +199,7 @@ export class MetaGraphAdapter {
         if (bytesRead !== chunk.length) throw new Error('KhÃ´ng Ä‘á»c Ä‘á»§ dá»¯ liá»‡u video Ä‘á»ƒ upload.');
         const transfer = await uploadVideoChunk(endpoint, {
           upload_phase: 'transfer', upload_session_id: uploadSessionId, start_offset: offset
-        }, filePath.split(/[\\/]/).at(-1), chunk);
+        }, filePath.split(/[\\/]/).at(-1), chunk, this.tokenFile);
         const nextOffset = Number(transfer.start_offset);
         const nextEndOffset = Number(transfer.end_offset);
         if (!Number.isSafeInteger(nextOffset) || !Number.isSafeInteger(nextEndOffset) || nextOffset <= offset || nextEndOffset < nextOffset || nextEndOffset > size) {
@@ -209,9 +217,9 @@ export class MetaGraphAdapter {
     try {
       await graph(endpoint, {
         upload_phase: 'finish', upload_session_id: uploadSessionId,
-        title: script.title, description: formatCaption(script.caption, script.hashtags),
+        title: script.title, description: formatCaption(script.caption, script.hashtags, script.contentLanguage || 'en'),
         published: 'false', scheduled_publish_time: String(Math.floor(scheduledTime.getTime() / 1000))
-      }, uploadHost);
+      }, uploadHost, this.tokenFile);
     } catch (error) {
       if (!error.metaResponse) error.facebookOutcomeUnknown = true;
       throw error;
@@ -220,14 +228,14 @@ export class MetaGraphAdapter {
   }
 
   async getVideoStatus(videoId) {
-    return graph(`${encodeURIComponent(String(videoId))}?fields=status,published,scheduled_publish_time,permalink_url`);
+    return graph(`${encodeURIComponent(String(videoId))}?fields=status,published,scheduled_publish_time,permalink_url`, null, 'graph.facebook.com', this.tokenFile);
   }
 
   async #waitUntilPublished(videoId) {
     const deadline = Date.now() + 10 * 60_000;
     let last = null;
     while (Date.now() < deadline) {
-      last = await graph(`${encodeURIComponent(videoId)}?fields=status,published,permalink_url`);
+      last = await graph(`${encodeURIComponent(videoId)}?fields=status,published,permalink_url`, null, 'graph.facebook.com', this.tokenFile);
       const value = String(last.status?.video_status || last.status?.publishing_phase?.status || '').toLowerCase();
       const publishPhase = String(last.status?.publishing_phase?.status || '').toLowerCase();
       if (last.published === true || value === 'published' || value === 'complete' || publishPhase === 'complete' || Boolean(last.permalink_url)) {

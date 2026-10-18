@@ -1,7 +1,6 @@
 import { insertVideo, updateVideo, log, getSettings, getScript, getVideo, findVideoByScriptId, updateJobPayload } from '../database/db.mjs';
 import { createScript } from '../ai/script-service.mjs';
 import { formatCaption } from '../ai/hashtag-utils.mjs';
-import { synthesizeScript } from '../tts/edge-tts.mjs';
 import { synthesizeLocalAiScript } from '../tts/local-ai-tts.mjs';
 import { renderVideo } from '../../packages/video-engine/render.mjs';
 import fs from 'node:fs';
@@ -27,7 +26,11 @@ export async function createVideoJob(job) {
     if (!script) throw new Error('Kịch bản đã lưu cho job không còn tồn tại.');
     provider ||= script.provider;
   } else {
-    const generated = await createScript(job.payload.topicId || null, { allowLocalTemplate: Boolean(job.payload.allowLocalTemplate) });
+    const generated = await createScript(job.payload.topicId || null, {
+      allowLocalTemplate: Boolean(job.payload.allowLocalTemplate),
+      contentLanguage: job.payload.contentLanguage || settings.contentLanguage || 'en',
+      ...(job.payload.contentLanguage === 'zh' && job.payload.presentationStyle ? { presentationStyle: job.payload.presentationStyle } : {})
+    });
     ({ scriptId, provider, script } = generated);
     updateJobPayload(job.id, { scriptId, provider });
   }
@@ -46,9 +49,13 @@ export async function createVideoJob(job) {
   log('INFO', 'SCRIPT_READY', `Kịch bản ${script.topic} hợp lệ, provider ${provider}.`, job.id);
   try {
     const onTtsProgress = (progress, detail) => log('INFO', 'TTS_PROGRESS', JSON.stringify({ videoId, progress, ...detail }), job.id);
-    const audio = settings.ttsProvider === 'vieneu'
-      ? await synthesizeLocalAiScript(script, videoId, { settings, onProgress: onTtsProgress })
-      : await synthesizeScript(script, videoId, { onProgress: onTtsProgress });
+    const contentLanguage = script.contentLanguage || 'en';
+    const languageProvider = { en: 'vieneu', ja: 'vieneu-sbv2', zh: 'vieneu-cosyvoice3' };
+    const expectedTtsProvider = languageProvider[contentLanguage] || 'vieneu';
+    const requestedTtsProvider = job.payload.ttsProvider || settings.ttsProvider;
+    const ttsProvider = requestedTtsProvider === expectedTtsProvider ? requestedTtsProvider : expectedTtsProvider;
+    const jobSettings = { ...settings, ttsProvider, contentLanguage: script.contentLanguage || 'en' };
+    const audio = await synthesizeLocalAiScript(script, videoId, { settings: jobSettings, provider: ttsProvider, onProgress: onTtsProgress });
     log('INFO', 'TTS_READY', `Đã tạo ${audio.length} đoạn đọc, thu WordBoundary và thử căn chỉnh local khi cần.`, job.id);
     const result = await renderVideo(script, videoId, audio, {
       onProgress: (progress) => log('INFO', 'RENDER_PROGRESS', JSON.stringify({ videoId, progress }), job.id),
@@ -63,7 +70,7 @@ export async function createVideoJob(job) {
     const outputDir = path.dirname(result.videoPath);
     try {
       fs.writeFileSync(path.join(outputDir, 'script.json'), JSON.stringify(script, null, 2), 'utf8');
-      fs.writeFileSync(path.join(outputDir, 'caption.txt'), formatCaption(script.caption, script.hashtags), 'utf8');
+      fs.writeFileSync(path.join(outputDir, 'caption.txt'), formatCaption(script.caption, script.hashtags, script.contentLanguage || 'en'), 'utf8');
       fs.writeFileSync(path.join(outputDir, 'audio-manifest.json'), JSON.stringify(result.audioManifest, null, 2), 'utf8');
       fs.writeFileSync(path.join(outputDir, 'render-manifest.json'), JSON.stringify(result.renderManifest, null, 2), 'utf8');
     } catch (error) {

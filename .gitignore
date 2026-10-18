@@ -12,4 +12,7 @@ __pycache__/
 .venv/
 .venv-vieneu/
 .venv-kokoro/
+.venv-sbv2/
+.venv-cosyvoice/
 data/models/
+data/tts/

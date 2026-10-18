@@ -1,5 +1,5 @@
 import { chatgptStatus, generateWithChatGPT } from './chatgpt-plan.mjs';
-import { BRAND_HASHTAG, ensureBrandHashtag } from './hashtag-utils.mjs';
+import { BRAND_HASHTAG, CHINESE_BRAND_HASHTAG, ensureBrandHashtag } from './hashtag-utils.mjs';
 
 const LENGTHS = [
   { id: 'short', weight: 30, min: 30, max: 55, target: 42, label: 'ngắn' },
@@ -58,7 +58,10 @@ function tagsFor(script, supplied = []) {
   const shuffled = unique.sort(() => Math.random() - 0.5);
   const extras = shuffled.slice(0, Math.min(4, Math.max(2, shuffled.length)));
   if (extras.length < 2) {
-    for (const fallback of ['#hoctienganh', '#tienganhgiaotiep']) {
+    const fallbacks = script.contentLanguage === 'ja' ? ['#hoctiengnhat', '#tiengnhatgiaotiep']
+      : script.contentLanguage === 'zh' ? ['#hoctiengtrung', '#tiengtrunggiaotiep']
+        : ['#hoctienganh', '#tienganhgiaotiep'];
+    for (const fallback of fallbacks) {
       if (!extras.includes(fallback)) extras.push(fallback);
       if (extras.length === 2) break;
     }
@@ -85,19 +88,26 @@ function paragraphCount(value) {
 }
 
 function lessonData(script) {
+  const targetField = script.contentLanguage === 'ja' ? 'japanese' : script.contentLanguage === 'zh' ? 'chinese' : 'english';
   return {
     topic: script.topic,
     category: script.category,
     title: script.title,
-    dialogues: (script.dialogues || []).map(({ vietnamese, english, term, meaningVi, noteVi, grammarNote, turns }) => ({
-      vietnamese, english, term, meaningVi, noteVi, grammarNote,
-      ...(Array.isArray(turns) ? { turns: turns.map(({ speakerId, language, text }) => ({ speakerId, language, text })) } : {})
+    dialogues: (script.dialogues || []).map((line) => ({
+      vietnamese: line.vietnamese,
+      ...(targetField === 'english' ? { english: line.english } : { [targetField]: line[targetField] }),
+      term: line.term, meaningVi: line.meaningVi, noteVi: line.noteVi, grammarNote: line.grammarNote,
+      ...(Array.isArray(line.turns) ? { turns: line.turns.map(({ speakerId, language, text }) => ({ speakerId, language, text })) } : {})
     })),
     speechSegments: speechSegmentsFor(script).map(({ speakerId, language, text }) => ({ speakerId, language, text }))
   };
 }
 
 function makePrompt(script, length, style, repair = '') {
+  if (script.contentLanguage === 'ja' || script.contentLanguage === 'zh') {
+    const languageName = script.contentLanguage === 'ja' ? 'tiếng Nhật' : 'tiếng Trung';
+    return `Viết caption Facebook bằng tiếng Việt tự nhiên cho bài học ${languageName} dưới đây. Độ dài ${length.min}-${length.max} từ, phong cách ${style.label}. Caption có đúng 3 đoạn: mở bài về tình huống, giải thích cách dùng cụm ${languageName} có trong dữ liệu, và một câu gợi ý luyện tập. Không gọi đây là tiếng Anh, không bịa nội dung và không nhồi từ khóa. Trả JSON {"caption":"...","hashtags":["#..." ]}. ${repair ? `Sửa theo yêu cầu: ${repair}. ` : ''}Dữ liệu: ${JSON.stringify(lessonData(script))}`;
+  }
   return `Viết caption Facebook bằng tiếng Việt tự nhiên cho video bài đăng dưới đây.\n` +
     `Độ dài ${length.label}: ${length.min}-${length.max} từ, phong cách: ${style.label}.\n` +
     `Tối ưu SEO tự nhiên cho Facebook: câu mở đầu phải nêu chủ đề cụ thể và cụm từ khóa chính “tiếng Anh giao tiếp” hoặc “học tiếng Anh giao tiếp”; đưa từ khóa chủ đề vào đúng ngữ cảnh. Dùng cụm từ trong bài như từ khóa phụ khi phù hợp, không nhồi hoặc lặp từ khóa.\n` +
@@ -109,6 +119,14 @@ function makePrompt(script, length, style, repair = '') {
 
 function fallbackCaption(script, length, style) {
   const lines = script.dialogues || [];
+  if (script.contentLanguage === 'ja' || script.contentLanguage === 'zh') {
+    const languageName = script.contentLanguage === 'ja' ? 'tiếng Nhật' : 'tiếng Trung';
+    const topic = script.topic || `giao tiếp ${languageName}`;
+    const opening = `Cùng học ${languageName} qua tình huống “${topic}” với những câu nói tự nhiên, dễ áp dụng.`;
+    const body = lines.map((line) => `“${line.term}” có nghĩa là “${line.meaningVi}”. ${line.noteVi || ''}`).join(' ');
+    const closing = `Chọn một câu ${languageName} trong video và thử nói lại theo trải nghiệm của bạn.`;
+    return [opening, body, closing].filter(Boolean).join('\n\n');
+  }
   const topic = script.topic || 'giao tiếp tiếng Anh';
   const termCount = lines.filter((line) => line.term).length;
   const countPhrase = termCount ? `${termCount} cụm từ` : 'các lượt hội thoại';
@@ -152,7 +170,82 @@ function speechSegmentsFor(script) {
   if (Array.isArray(script.speechSegments) && script.speechSegments.length) return script.speechSegments;
   return Array.isArray(script.audioSegments) ? script.audioSegments : [];
 }
+
+function chineseHashtags(script, supplied = []) {
+  const required = CHINESE_BRAND_HASHTAG;
+  const forbidden = new Set(['#tiengtrungchammachac', '#sinhradenoitienganh']);
+  const irrelevantEnglish = /^(english|learnenglish|tienganh|hoctienganh|englishlearning|englishvocabulary)/i;
+  const tags = [
+    '#hoctiengtrung', '#tiengtrunggiaotiep', '#pinyin', topicTag(script.topic),
+    ...supplied.map(normalizeTag), '#hoctiengtrungmoingay', '#tuvungtiengtrung'
+  ].filter(Boolean);
+  const unique = [];
+  const seen = new Set([required]);
+  for (const tag of tags) {
+    const key = tag.toLowerCase();
+    const slug = key.slice(1);
+    if (forbidden.has(key) || irrelevantEnglish.test(slug) || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(tag);
+    if (unique.length === 4) break;
+  }
+  while (unique.length < 4) {
+    const fallback = `#tiengtrung${unique.length + 1}`;
+    if (!seen.has(fallback)) { seen.add(fallback); unique.push(fallback); }
+  }
+  return [...unique, required];
+}
+
+function validateChineseCaption(caption) {
+  const paragraphs = paragraphCount(caption);
+  if (paragraphs !== 3) return 'Caption phải có đúng 3 đoạn: tiêu đề ngắn, phần giải thích và lời mời tương tác.';
+  const [title, body, closing] = caption.split(/\n\s*\n+/u).map((part) => part.trim());
+  if (wordCount(title) > 14) return 'Tiêu đề caption cần ngắn, tối đa 14 từ.';
+  const bodySentences = body.split(/[.!?。！？]+/u).map((part) => part.trim()).filter(Boolean);
+  if (bodySentences.length < 2 || bodySentences.length > 5) return 'Phần giải thích cần từ 2 đến 5 câu.';
+  if (!/(bình luận|chia sẻ|thử|luyện|đặt câu|viết|hãy)/iu.test(closing)) return 'Đoạn cuối cần mời người xem tương tác hoặc luyện nói.';
+  if (/#(?:tiengtrungchammachac|sinhradenoitienganh)\b/iu.test(caption)) return 'Caption chứa hashtag bị cấm.';
+  return '';
+}
+
+async function generateChineseCaption(script) {
+  const dialogue = script.dialogues?.[0] || {};
+  let caption = '';
+  let supplied = [];
+  let feedback = '';
+  if (chatgptStatus().connected) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = parseResponse(await generateWithChatGPT(
+          `Viết caption Facebook bằng tiếng Việt cho bài học tiếng Trung giản thể này. Trả JSON đúng dạng {"caption":"...","hashtags":[...]}. Caption phải có 3 đoạn cách nhau bằng dòng trống: (1) tiêu đề ngắn tối đa 14 từ; (2) từ 2 đến 5 câu giải thích chính xác chữ Hán, Pinyin, nghĩa và cách dùng dựa đúng dữ liệu cung cấp; (3) lời mời tương tác/luyện nói. Không thêm thông tin ngữ pháp nếu dữ liệu không nói. Không đưa hashtag vào caption; trả hashtag riêng. Cần đúng 5 hashtag, gồm #conotiengtrung; không dùng #tiengtrungchammachac hay hashtag tiếng Anh.\n${feedback}\nDữ liệu: ${JSON.stringify({ topic: script.topic, title: script.title, chinese: dialogue.chinese, pinyin: dialogue.pinyin, term: dialogue.term, termPinyin: dialogue.termPinyin, meaningVi: dialogue.meaningVi, explanationVi: dialogue.noteVi, grammarNote: dialogue.grammarNote })}`
+        ));
+        const embedded = result.caption.match(/#[\p{L}\p{N}_]+/gu) || [];
+        const candidate = result.caption.replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\r\n?/gu, '\n').replace(/\n{3,}/gu, '\n\n').trim();
+        const issue = validateChineseCaption(candidate);
+        if (issue) { feedback = `Sửa lại: ${issue}`; continue; }
+        caption = candidate;
+        supplied = [...(Array.isArray(result.hashtags) ? result.hashtags : []), ...embedded];
+        break;
+      } catch (error) { feedback = error.message; }
+    }
+  }
+  if (!caption) {
+    const topic = String(script.topic || 'tiếng Trung giao tiếp').trim().split(/\s+/u).slice(0, 6).join(' ');
+    const opening = `Học ${topic} qua một câu nói dễ áp dụng.`;
+    const note = String(dialogue.noteVi || 'Hãy chú ý cách dùng câu trong đúng ngữ cảnh.').trim();
+    const noteSentences = (note.match(/[^.!?。！？]+[.!?。！？]?/gu) || []).map((sentence) => sentence.trim()).filter(Boolean).slice(0, 2);
+    const completedNote = noteSentences.length ? noteSentences.map((sentence) => /[.!?。！？]$/u.test(sentence) ? sentence : `${sentence}。`).join(' ') : 'Hãy chú ý cách dùng câu trong đúng ngữ cảnh.';
+    const body = `“${dialogue.chinese || ''}” đọc là “${dialogue.pinyin || ''}”, nghĩa là “${dialogue.meaningVi || ''}”. ${completedNote}`;
+    const closing = 'Bạn hãy thử đọc lại câu này và chia sẻ một tình huống có thể dùng câu nói này nhé.';
+    caption = [opening, body, closing].join('\n\n');
+    const issue = validateChineseCaption(caption);
+    if (issue) throw new Error(`Không tạo được caption tiếng Trung hợp lệ: ${issue}`);
+  }
+  return { caption, hashtags: chineseHashtags(script, supplied), length: 'chinese', style: 'lesson' };
+}
+
 export async function generateCaption(script) {
+  if (script.contentLanguage === 'zh') return generateChineseCaption(script);
   const length = selectLength();
   const style = randomItem(STYLES);
   const providers = [];
