@@ -207,8 +207,10 @@ export function validateChineseCaption(caption) {
   if (paragraphs !== 3) return 'Caption phải có đúng 3 đoạn: tiêu đề ngắn, phần giải thích và lời mời tương tác.';
   const [title, body, closing] = caption.split(/\n\s*\n+/u).map((part) => part.trim());
   if (wordCount(title) > 14) return 'Tiêu đề caption cần ngắn, tối đa 14 từ.';
-  const bodySentences = body.split(/[.!?。！？]+/u).map((part) => part.trim()).filter(Boolean);
-  if (bodySentences.length < 2 || bodySentences.length > 5) return 'Phần giải thích cần từ 2 đến 5 câu.';
+  const bodySentences = body
+    .replace(/“[^”]*”|‘[^’]*’|"[^"]*"|'[^']*'|「[^」]*」|『[^』]*』/gu, ' ')
+    .split(/[.!?。！？]+/u).map((part) => part.trim()).filter(Boolean);
+  if (bodySentences.length < 2 || bodySentences.length > 5) return `Phần giải thích cần từ 2 đến 5 câu văn (hiện nhận được ${bodySentences.length}).`;
   if (!/(bình luận|chia sẻ|thử|luyện|đặt câu|viết|hãy)/iu.test(closing)) return 'Đoạn cuối cần mời người xem tương tác hoặc luyện nói.';
   if (/(?:\b(?:follow|subscribe)\b|theo\s*dõi|đăng\s*ký|关注|订阅)/iu.test(caption)) return 'Caption tiếng Trung không được có lời kêu gọi theo dõi hoặc đăng ký.';
   if (/#(?:tiengtrungchammachac|sinhradenoitienganh)\b/iu.test(caption)) return 'Caption chứa hashtag bị cấm.';
@@ -248,11 +250,14 @@ async function generateChineseCaption(script) {
   let supplied = [];
   let feedback = '';
   const planConnected = chatgptStatus().connected;
+  const explanationRules = dialogues.length === 1
+    ? 'Phần giải thích phải có đúng 2 câu tiếng Việt riêng biệt: câu đầu nêu câu tiếng Trung, Pinyin và nghĩa; câu thứ hai giải thích cụm trọng tâm và cách dùng.'
+    : `Phần giải thích phải có đúng 2 câu tiếng Việt riêng biệt, bao quát mọi bài học theo đúng thứ tự. Chia đều các bài học giữa hai câu; mỗi câu có thể dùng dấu chấm phẩy để ngăn các ý, nhưng không gộp cả phần thành một câu.`;
   if (planConnected) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const result = parseResponse(await generateWithChatGPT(
-          `Viết caption Facebook bằng tiếng Việt cho bài học tiếng Trung giản thể này. Trả JSON đúng dạng {"caption":"...","hashtags":[...]}. Caption phải có 3 đoạn cách nhau bằng dòng trống: (1) tiêu đề ngắn tối đa 14 từ; (2) từ 2 đến 5 câu giải thích chính xác chữ Hán, Pinyin, nghĩa và cách dùng dựa đúng dữ liệu cung cấp, bao quát tất cả câu học trong bài; (3) lời mời tương tác/luyện nói. Không thêm thông tin ngữ pháp nếu dữ liệu không nói. Không được kêu gọi theo dõi, follow hoặc đăng ký kênh. Không đưa hashtag vào caption; trả hashtag riêng. Cần đúng 5 hashtag, gồm #conotiengtrung; không dùng #tiengtrungchammachac hay hashtag tiếng Anh.\n${feedback}\nDữ liệu: ${JSON.stringify({ topic: script.topic, title: script.title, lessons: dialogues.map(({ chinese, pinyin, vietnamese, term, termPinyin, meaningVi, noteVi, grammarNote }) => ({ chinese, pinyin, vietnamese, term, termPinyin, meaningVi, noteVi, grammarNote })) })}`
+          `Viết caption Facebook bằng tiếng Việt cho bài học tiếng Trung giản thể này. Trả JSON đúng dạng {"caption":"...","hashtags":[...]}. Caption phải có 3 đoạn cách nhau bằng dòng trống: (1) tiêu đề ngắn tối đa 14 từ; (2) ${explanationRules} Dùng đúng dữ liệu cung cấp để giải thích chữ Hán, Pinyin, nghĩa và cách dùng; không bỏ sót câu học, không thêm kiến thức ngữ pháp không có căn cứ. Mỗi câu giải thích phải kết thúc bằng dấu chấm. (3) một câu mời tương tác hoặc luyện nói. Không được kêu gọi theo dõi, follow hoặc đăng ký kênh. Không đưa hashtag vào caption; trả hashtag riêng. Cần đúng 5 hashtag gồm #conotiengtrung; không dùng #tiengtrungchammachac hay hashtag tiếng Anh.\n${feedback}\nDữ liệu: ${JSON.stringify({ topic: script.topic, title: script.title, lessons: dialogues.map(({ chinese, pinyin, vietnamese, term, termPinyin, meaningVi, noteVi, grammarNote }) => ({ chinese, pinyin, vietnamese, term, termPinyin, meaningVi, noteVi, grammarNote })) })}`
         ));
         const embedded = result.caption.match(/#[\p{L}\p{N}_]+/gu) || [];
         const candidate = result.caption.replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\r\n?/gu, '\n').replace(/\n{3,}/gu, '\n\n').trim();

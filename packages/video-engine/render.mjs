@@ -490,7 +490,11 @@ export async function renderVideo(script, videoId, audioFiles, {
   }));
   onTimeline(timeline);
 
-  const persistentLayers = ['background', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'footer'];
+  const persistentLayers = [
+    'background',
+    ...(script.contentLanguage === 'zh' ? ['chinese-plum-blossom', 'chinese-bamboo'] : []),
+    'character', 'logo', 'facebook-logo', 'youtube-logo', 'footer'
+  ];
   const targetCardLayer = script.contentLanguage === 'zh' ? 'chinese-card' : 'english-card';
   const pinyinLayer = script.contentLanguage === 'zh' ? ['pinyin'] : [];
   const hasExplicitPinyinSequence = script.contentLanguage === 'zh' && durations.some((item) =>
@@ -591,10 +595,14 @@ export async function renderVideo(script, videoId, audioFiles, {
   }
 
   const renderedImageEntries = [];
+  const chineseEffectFrames = script.contentLanguage === 'zh' && settings.backgroundEffect !== 'none';
   if (settings.backgroundEffect !== 'none') {
     // Render every effect frame against the absolute video clock, including
     // scene transitions. This prevents the effect from freezing at each cut.
     const outputFrameCount = Math.max(1, Math.round(total * OUTPUT_FRAME_RATE));
+    const effectFrameConcurrency = script.contentLanguage === 'zh' ? 2 : 1;
+    let effectFramesCompleted = 0;
+    let lastEffectProgress = 0.2;
     let visualStart = 0;
     for (let index = 0; index < imageEntries.length; index += 1) {
       const item = imageEntries[index];
@@ -607,7 +615,7 @@ export async function renderVideo(script, videoId, audioFiles, {
         previous = [...imageEntries.slice(0, index)].reverse().find((candidate) => candidate.foreground && candidate.file);
         next = imageEntries.slice(index + 1).find((candidate) => candidate.foreground && candidate.file);
       }
-      for (let frameIndex = firstOutputFrame; frameIndex < endOutputFrame; frameIndex += 1) {
+      const renderEffectFrame = async (frameIndex) => {
         const frameTime = frameIndex * BACKGROUND_EFFECT_FRAME_SECONDS;
         const effectMarkup = renderBackgroundEffectMarkup(settings.backgroundEffect, {
           width: template.canvas.width,
@@ -644,7 +652,20 @@ export async function renderVideo(script, videoId, audioFiles, {
           .composite(overlays)
           .png({ compressionLevel: 9 })
           .toFile(frameFile);
-        renderedImageEntries.push({ file: frameFile, duration: BACKGROUND_EFFECT_FRAME_SECONDS });
+        return { file: frameFile, duration: BACKGROUND_EFFECT_FRAME_SECONDS };
+      };
+      for (let batchStart = firstOutputFrame; batchStart < endOutputFrame; batchStart += effectFrameConcurrency) {
+        const batchEnd = Math.min(endOutputFrame, batchStart + effectFrameConcurrency);
+        const batch = await Promise.all(Array.from({ length: batchEnd - batchStart }, (_, offset) => renderEffectFrame(batchStart + offset)));
+        renderedImageEntries.push(...batch);
+        effectFramesCompleted += batch.length;
+        if (chineseEffectFrames) {
+          const progress = 0.2 + 0.3 * (effectFramesCompleted / outputFrameCount);
+          if (progress - lastEffectProgress >= 0.02 || effectFramesCompleted === outputFrameCount) {
+            lastEffectProgress = progress;
+            onProgress(progress);
+          }
+        }
       }
       visualStart = visualEnd;
     }
@@ -715,7 +736,8 @@ export async function renderVideo(script, videoId, audioFiles, {
   const output = path.join(outDir, outputName);
   const filterOption = await majorVersion(FFMPEG_BIN) >= 7 ? '-/filter_complex' : '-filter_complex_script';
   const ffmpegArgs = ['-y', ...inputs, filterOption, filterFile, '-map', '[vout]', '-map', '[aout]', '-t', total.toFixed(3), '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage', '-crf', '22', '-threads', '4', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output];
-  await run(FFMPEG_BIN, ffmpegArgs, { onProgress: (progress) => onProgress(0.2 + 0.8 * progress), totalSeconds: total });
+  const ffmpegProgressStart = chineseEffectFrames ? 0.5 : 0.2;
+  await run(FFMPEG_BIN, ffmpegArgs, { onProgress: (progress) => onProgress(ffmpegProgressStart + (1 - ffmpegProgressStart) * progress), totalSeconds: total });
   const check = await probeMedia(output);
   const videoStream = check.streams.find((stream) => stream.codec_type === 'video');
   const audioStream = check.streams.find((stream) => stream.codec_type === 'audio');

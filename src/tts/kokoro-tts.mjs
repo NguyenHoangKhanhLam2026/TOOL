@@ -43,6 +43,7 @@ const MODEL_VERSION = 'kokoro-onnx-0.6.1-kokoro-v1.0';
 const PYTHON_SCRIPT = path.join(ROOT, 'packages', 'tts-engine', 'python', 'synthesize_kokoro.py');
 const MINIMUM_RAM_MB = 2560;
 const MINIMUM_REMAINING_RAM_MB = 1024;
+const MEMORY_WAIT_TIMEOUT_SECONDS = 5 * 60;
 
 function hasFile(file, minimumBytes = 1) {
   try { return fs.statSync(file).isFile() && fs.statSync(file).size >= minimumBytes; }
@@ -86,6 +87,7 @@ function runWorker(requestPath, { onEvent = () => {}, onSpawn = () => {}, timeou
     onSpawn(child.pid || null);
     let stderr = '';
     let pending = '';
+    let workerFailure = null;
     let timedOut = false;
     let settled = false;
     const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
@@ -100,7 +102,12 @@ function runWorker(requestPath, { onEvent = () => {}, onSpawn = () => {}, timeou
         if (eventAt < 0) continue;
         const separator = line.indexOf(':', eventAt);
         if (separator < 0) continue;
-        try { onEvent(line.slice(eventAt, separator), JSON.parse(line.slice(separator + 1))); }
+        try {
+          const kind = line.slice(eventAt, separator);
+          const value = JSON.parse(line.slice(separator + 1));
+          if (kind === 'KOKORO_ERROR') workerFailure = value;
+          onEvent(kind, value);
+        }
         catch { /* Keep malformed diagnostics in stderr. */ }
       }
     });
@@ -112,6 +119,14 @@ function runWorker(requestPath, { onEvent = () => {}, onSpawn = () => {}, timeou
     };
     child.once('error', (error) => finish(describeSpawnError(KOKORO_PYTHON_BIN, error)));
     child.once('close', (code) => {
+      if (code !== 0 && workerFailure?.code === 'INSUFFICIENT_RAM') {
+        const error = new Error(workerFailure.message || 'Kokoro TTS bị dừng vì không đủ RAM.');
+        error.code = 'KOKORO_INSUFFICIENT_RAM';
+        error.permanentTtsMemory = workerFailure.retryable === false;
+        error.memory = workerFailure.memory || null;
+        finish(error);
+        return;
+      }
       if (code === 0) finish();
       else finish(new Error(timedOut
         ? 'Kokoro TTS vượt quá thời gian tối đa 30 phút; worker đã được dừng.'
@@ -137,6 +152,7 @@ async function makeAudio(items, { settings = {}, onProgress = () => {}, onWorker
     modelVersion: MODEL_VERSION,
     minimumAvailableRamMb: status.minimumRamMb,
     minimumRemainingRamMb: status.minimumRemainingRamMb,
+    memoryWaitTimeoutSeconds: MEMORY_WAIT_TIMEOUT_SECONDS,
     items: items.map((item) => ({
       text: item.speechText || item.text,
       voice: item.voiceName || item.voice || settings.kokoroEnVoice || 'af_heart',

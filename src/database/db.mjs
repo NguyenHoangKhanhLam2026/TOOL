@@ -422,7 +422,11 @@ export function finishJob(jobId) {
 export function failJob(job, error) {
   const message = String(error?.message || error);
   const processCannotStart = error?.syscall === 'spawn' && ['EPERM', 'EACCES', 'ENOENT'].includes(error?.code);
-  const retry = !processCannotStart && !error?.permanentMetaPermission && !error?.facebookOutcomeUnknown && job.attempts < job.max_attempts;
+  const retry = !processCannotStart
+    && !error?.permanentMetaPermission
+    && !error?.facebookOutcomeUnknown
+    && !error?.permanentTtsMemory
+    && job.attempts < job.max_attempts;
   const delay = Math.min(60 * 60_000, 10_000 * (2 ** Math.max(0, job.attempts - 1)));
   const status = retry ? 'pending' : 'failed';
   const when = retry ? new Date(Date.now() + delay).toISOString() : new Date().toISOString();
@@ -893,6 +897,47 @@ export function listSchedules() {
     (SELECT h.status FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1) AS last_publish_status,
     COALESCE(p.facebook_error,v.last_error,(SELECT h.error FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1)) AS error,s.topic,s.title,s.caption,s.content_language FROM scheduled_posts p
     JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id WHERE p.status<>'published' ORDER BY p.scheduled_at`).all();
+}
+
+export function deleteScheduleFromApp(scheduleId) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const schedule = db.prepare(`SELECT p.id,p.video_id,p.status,p.facebook_schedule_state,p.facebook_video_id,
+      v.status AS video_status,s.topic FROM scheduled_posts p
+      JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id WHERE p.id=?`).get(scheduleId);
+    if (!schedule) { db.exec('COMMIT'); return null; }
+    if (schedule.status === 'publishing'
+      || ['queued', 'uploading', 'finishing', 'published'].includes(schedule.facebook_schedule_state)
+      || (schedule.facebook_schedule_state === 'scheduled' && schedule.facebook_video_id)) {
+      throw Object.assign(new Error('Lịch đang được gửi hoặc Facebook đã xác nhận lịch từ xa. Hãy xử lý lịch trên Facebook trước khi xóa khỏi tool.'), { statusCode: 409 });
+    }
+    const activeScheduleJob = db.prepare("SELECT payload_json FROM jobs WHERE type='schedule_facebook_video' AND status IN ('pending','running')")
+      .all().some(({ payload_json }) => {
+        try { return JSON.parse(payload_json).scheduleId === schedule.id; } catch { return false; }
+      });
+    const activePublishJob = db.prepare("SELECT payload_json FROM jobs WHERE type='publish_video' AND status IN ('pending','running')")
+      .all().some(({ payload_json }) => {
+        try {
+          const payload = JSON.parse(payload_json);
+          return payload.scheduleId === schedule.id || payload.videoId === schedule.video_id;
+        } catch { return false; }
+      });
+    const activePublication = db.prepare('SELECT 1 FROM active_publications WHERE video_id=? LIMIT 1').get(schedule.video_id);
+    if (activeScheduleJob || activePublishJob || activePublication) {
+      throw Object.assign(new Error('Video đang chờ đăng hoặc đang được xử lý. Hãy thử xóa lịch lại sau khi tác vụ kết thúc.'), { statusCode: 409 });
+    }
+    if (schedule.video_status === 'published') {
+      throw Object.assign(new Error('Video đã được xác nhận là đã đăng. Hãy quản lý thông tin đó trong lịch sử bài đăng.'), { statusCode: 409 });
+    }
+    db.prepare('DELETE FROM scheduled_posts WHERE id=?').run(schedule.id);
+    db.prepare("UPDATE videos SET status=CASE WHEN status='scheduled' THEN 'ready' ELSE status END,scheduled_at=NULL,updated_at=? WHERE id=?")
+      .run(new Date().toISOString(), schedule.video_id);
+    db.exec('COMMIT');
+    return schedule;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 export function listPublishedSchedules() {

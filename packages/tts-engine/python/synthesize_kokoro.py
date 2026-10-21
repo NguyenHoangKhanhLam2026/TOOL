@@ -3,6 +3,7 @@ import gc
 import json
 import os
 import sys
+import time
 
 
 def available_memory_bytes():
@@ -67,6 +68,38 @@ def emit_memory(phase, **extra):
     }, separators=(",", ":")), file=sys.stderr, flush=True)
 
 
+def wait_for_available_memory(minimum_bytes, timeout_seconds):
+    timeout = max(0, int(timeout_seconds))
+    started = time.monotonic()
+    while True:
+        available = available_memory_bytes()
+        if available is None:
+            emit_memory("memory-check-unavailable", requiredRamMb=round(minimum_bytes / (1024 * 1024), 1))
+            return None
+        if available >= minimum_bytes:
+            elapsed = time.monotonic() - started
+            if elapsed >= 1:
+                emit_memory(
+                    "ram-ready", requiredRamMb=round(minimum_bytes / (1024 * 1024), 1),
+                    waitedSeconds=round(elapsed, 1),
+                )
+            return available
+
+        elapsed = time.monotonic() - started
+        if elapsed >= timeout:
+            raise MemoryError(
+                f"Kokoro TTS hết thời gian chờ RAM: còn {available / (1024 * 1024):.0f} MB, "
+                f"cần tối thiểu {minimum_bytes / (1024 * 1024):.0f} MB; "
+                "hãy đóng ứng dụng đang dùng nhiều RAM rồi thử tạo lại video."
+            )
+
+        emit_memory(
+            "waiting-for-ram", requiredRamMb=round(minimum_bytes / (1024 * 1024), 1),
+            elapsedSeconds=round(elapsed, 1), timeoutSeconds=timeout,
+        )
+        time.sleep(min(5, max(0.1, timeout - elapsed)))
+
+
 def require_files(request):
     missing = [path for path in (request["modelPath"], request["voicesPath"])
                if not os.path.isfile(path) or os.path.getsize(path) == 0]
@@ -84,6 +117,8 @@ def main():
     emit_memory("before-load", segmentCount=len(items))
     available = available_memory_bytes()
     minimum = int(request.get("minimumAvailableRamMb", 2560)) * 1024 * 1024
+    wait_for_available_memory(minimum, request.get("memoryWaitTimeoutSeconds", 300))
+    available = available_memory_bytes()
     if available is not None and available < minimum:
         raise MemoryError(f"Chưa nạp Kokoro: RAM trống còn {available / (1024 * 1024):.0f} MB, cần tối thiểu {minimum / (1024 * 1024):.0f} MB.")
 
@@ -139,6 +174,14 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except MemoryError as error:
+        available = available_memory_bytes()
+        print("KOKORO_ERROR:" + json.dumps({
+            "code": "INSUFFICIENT_RAM", "retryable": False, "message": str(error),
+            "memory": {"availableRamMb": round(available / (1024 * 1024), 1) if available is not None else None},
+        }, ensure_ascii=False, separators=(",", ":")), file=sys.stderr, flush=True)
+        print(f"Kokoro TTS failed: {error}", file=sys.stderr, flush=True)
+        raise
     except Exception as error:
         print(f"Kokoro TTS failed: {error}", file=sys.stderr, flush=True)
         raise

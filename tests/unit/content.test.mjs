@@ -146,8 +146,8 @@ test('all four Chinese lesson formats produce the expected spoken order without 
   const expected = {
     'inline-meaning': { lessons: 1, count: 5 },
     'inline-keyphrase': { lessons: 1, count: 5 },
-    'dialogue-cards': { lessons: 2, count: 6 },
-    'numbered-scenario': { lessons: 3, count: 12 }
+    'dialogue-cards': { lessons: 2, count: 10 },
+    'numbered-scenario': { lessons: 3, count: 15 }
   };
   for (const [style, shape] of Object.entries(expected)) {
     const script = validateScript(chineseFixture(style), { contentLanguage: 'zh' });
@@ -156,13 +156,35 @@ test('all four Chinese lesson formats produce the expected spoken order without 
     assert.ok(script.speechSegments.every((segment) => segment.state !== 'cta' && segment.target.layerId !== 'cta'), style);
     assert.deepEqual(
       script.speechSegments.filter((segment) => segment.language === 'zh').map((segment) => segment.text),
-      script.dialogues.flatMap((dialogue) => style === 'dialogue-cards'
-        ? [dialogue.chinese, dialogue.chinese]
-        : style === 'numbered-scenario'
-          ? [dialogue.chinese, dialogue.chinese]
-          : [dialogue.chinese, dialogue.chinese, dialogue.term]),
+      script.dialogues.flatMap((dialogue) => [dialogue.chinese, dialogue.chinese, dialogue.term]),
       style
     );
+    for (let index = 0; index < script.dialogues.length; index += 1) {
+      const dialogue = script.dialogues[index];
+      const turnSegments = script.speechSegments.filter((segment) => segment.target.dialogueIndex === index);
+      assert.deepEqual(turnSegments.map((segment) => segment.segmentId), [
+        `zh-vietnamese-source-${index + 1}`,
+        `zh-reading-1-${index + 1}`,
+        `zh-reading-2-${index + 1}`,
+        `zh-practice-${index + 1}`,
+        `zh-explanation-vi-${index + 1}`
+      ]);
+      assert.equal(turnSegments[1].ttsSpeed, 0.85);
+      assert.equal(turnSegments[2].ttsSpeed, 0.8);
+      assert.equal(turnSegments[3].language, 'zh');
+      assert.equal(turnSegments[3].text, dialogue.term);
+      assert.equal(turnSegments[3].ttsSpeed, 0.85);
+      assert.equal(turnSegments[4].language, 'vi');
+      assert.equal(turnSegments[4].ttsSpeed, undefined);
+      const expectedPhraseExplanation = [dialogue.meaningVi, dialogue.noteVi, dialogue.grammarNote]
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .map((part) => /[.!?…。！？]$/u.test(part) ? part : `${part}.`)
+        .join(' ');
+      assert.equal(turnSegments[4].text, expectedPhraseExplanation);
+      assert.equal(turnSegments[3].target.layerId, 'vocabulary');
+      assert.equal(turnSegments[4].target.layerId, 'vocabulary');
+    }
   }
 });
 

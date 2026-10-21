@@ -10,10 +10,11 @@ export async function synthesizeLocalAiScript(script, videoId, { settings = {}, 
     ? baseSegments.map((segment) => {
       const source = (script.speechSegments || []).find((item) => String(item.segmentId || item.id || '') === segment.segmentId);
       const ttsDirection = String(source?.ttsDirection || '').trim();
-      return ttsDirection ? {
+      const ttsSpeed = Number(source?.ttsSpeed);
+      return ttsDirection || Number.isFinite(ttsSpeed) && ttsSpeed > 0 ? {
         ...segment,
-        ttsDirection,
-        ttsSpeedMultiplier: Number(source.ttsSpeedMultiplier) || 1
+        ...(ttsDirection ? { ttsDirection } : {}),
+        ...(Number.isFinite(ttsSpeed) && ttsSpeed > 0 ? { ttsSpeed } : {})
       } : segment;
     })
     : baseSegments;

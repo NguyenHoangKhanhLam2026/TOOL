@@ -42,13 +42,37 @@
       "opacity": 1
     },
     {
+      "id": "chinese-plum-blossom",
+      "label": "Nhánh hoa đào",
+      "kind": "image",
+      "visible": true,
+      "asset": "chinese-plum-blossom.png",
+      "x": 0,
+      "y": 0,
+      "width": 460,
+      "height": 440,
+      "opacity": 0.9
+    },
+    {
+      "id": "chinese-bamboo",
+      "label": "Bụi tre",
+      "kind": "image",
+      "visible": true,
+      "asset": "chinese-bamboo.png",
+      "x": 601,
+      "y": 0,
+      "width": 560,
+      "height": 580,
+      "opacity": 0.9
+    },
+    {
       "id": "logo",
       "label": "Logo",
       "kind": "brand",
-      "visible": false,
+      "visible": true,
       "asset": "brand-logo-chinese.png",
-      "x": 215,
-      "y": 219,
+      "x": 230,
+      "y": 1642,
       "width": 88,
       "height": 88,
       "opacity": 1

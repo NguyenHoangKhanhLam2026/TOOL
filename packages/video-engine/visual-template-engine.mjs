@@ -30,7 +30,7 @@ const CHINESE_PRESENTATION_LAYOUTS = {
       'vietnamese-card': { x: 69, y: 458, width: 941, height: 200, fontSize: 54, padding: 42, textAlign: 'center' },
       'chinese-card': { x: 69, y: 689, width: 941, height: 280, fontSize: 52, padding: 42, textAlign: 'center' },
       pinyin: { x: 80, y: 750, width: 918, height: 44, fontSize: 29, align: 'center' },
-      vocabulary: { visible: false }
+      vocabulary: { x: 79, y: 1024, width: 924, height: 190, fontSize: 28, padding: 30, visible: true }
     }
   },
   'numbered-scenario': {
@@ -86,18 +86,18 @@ const ENGLISH_PRESENTATION_LAYOUTS = {
     inlineTarget: true,
     layers: {
       'scene-number': { visible: false },
-      'vietnamese-card': { x: 55, y: 385, width: 970, height: 205, fontSize: 50, padding: 38, fill: '#E1E1DE', stroke: '#C8C8C4', accent: '#E2860B' },
-      'english-card': { x: 55, y: 615, width: 970, height: 90, fontSize: 46, padding: 0, textAlign: 'start' },
-      vocabulary: { x: 55, y: 790, width: 970, height: 180, fontSize: 27, padding: 24, color: '#263244', fill: '#DEDEDC', stroke: '#C3C3C0' }
+      'vietnamese-card': { x: 80, y: 385, width: 920, height: 205, fontSize: 50, padding: 38, fill: '#E1E1DE', stroke: '#C8C8C4', accent: '#E2860B' },
+      'english-card': { x: 80, y: 615, width: 920, height: 90, fontSize: 46, padding: 0, textAlign: 'start' },
+      vocabulary: { x: 80, y: 790, width: 920, height: 180, fontSize: 27, padding: 24, color: '#263244', fill: '#DEDEDC', stroke: '#C3C3C0' }
     }
   },
   'inline-keyphrase': {
     inlineTarget: true,
     layers: {
       'scene-number': { visible: false },
-      'vietnamese-card': { x: 55, y: 385, width: 970, height: 205, fontSize: 50, padding: 38, fill: '#E1E1DE', stroke: '#C8C8C4', accent: '#E2860B' },
-      'english-card': { x: 55, y: 615, width: 970, height: 90, fontSize: 46, padding: 0, textAlign: 'start' },
-      vocabulary: { x: 55, y: 790, width: 970, height: 180, fontSize: 27, padding: 24, color: '#263244', fill: '#DEDEDC', stroke: '#C3C3C0' }
+      'vietnamese-card': { x: 80, y: 385, width: 920, height: 205, fontSize: 50, padding: 38, fill: '#E1E1DE', stroke: '#C8C8C4', accent: '#E2860B' },
+      'english-card': { x: 80, y: 615, width: 920, height: 90, fontSize: 46, padding: 0, textAlign: 'start' },
+      vocabulary: { x: 80, y: 790, width: 920, height: 180, fontSize: 27, padding: 24, color: '#263244', fill: '#DEDEDC', stroke: '#C3C3C0' }
     }
   }
 };
@@ -164,6 +164,16 @@ export function makeDefaultChineseTemplate() {
     if (layer.id === 'footer') return { ...layer, text: 'Cô Nơ Tiếng Trung', color: '#8F241B' };
     return { ...layer };
   });
+  template.layers.splice(1, 0,
+    {
+      id: 'chinese-plum-blossom', label: 'Nhánh hoa đào', kind: 'image', visible: true,
+      asset: 'chinese-plum-blossom.png', x: 40, y: 60, width: 460, height: 440, opacity: 0.9
+    },
+    {
+      id: 'chinese-bamboo', label: 'Bụi tre', kind: 'image', visible: true,
+      asset: 'chinese-bamboo.png', x: 520, y: 0, width: 560, height: 580, opacity: 0.9
+    }
+  );
   const targetIndex = template.layers.findIndex((layer) => layer.id === 'chinese-card');
   template.layers.splice(targetIndex + 1, 0, {
     id: 'pinyin', label: 'Pinyin', kind: 'text', visible: true, text: '',
@@ -602,7 +612,42 @@ function layerGeometry(template, script, index, speechSegment = null) {
   const enTextWidth = inlineTarget ? Number(en.width) * 0.96 : (Number(en.width) - Number(en.padding || 40) * 2) * (contentLanguage === 'zh' ? 0.96 : 0.92);
   const enText = layoutWordLines(dialogue.english, enTextWidth, enLayout.fontSize, enSegmentId, contentLanguage);
   const termText = `${dialogue.term || ''} = ${dialogue.meaningVi || ''}`;
-  const vocabLines = wrapText(termText, vocab.width - (vocab.padding || 28) * 2, Number(vocab.fontSize || 32));
+  const vocabularyPadding = Number(vocab.padding || 28);
+  const vocabularyInnerWidth = Math.max(1, Number(vocab.width) - Number(vocab.padding || (contentLanguage === 'zh' ? 28 : 24)) * 2);
+  const vocabLines = wrapText(termText, vocabularyInnerWidth * (contentLanguage === 'zh' ? 0.94 : 1), Number(vocab.fontSize || 32));
+  const chineseVocabularyCardLayout = contentLanguage === 'zh'
+    ? (() => {
+      const termFontSize = Number(vocab.fontSize || 28);
+      const termLineHeight = termFontSize + 10;
+      const explanationFontSize = 22;
+      const explanationLineHeight = 30;
+      const termBaselineOffset = 78;
+      let nextBaselineOffset = termBaselineOffset + vocabLines.length * termLineHeight + 6;
+      const explanationBlocks = [dialogue.noteVi, dialogue.grammarNote]
+        .map((text) => String(text || '').trim())
+        .filter(Boolean)
+        .map((text) => {
+          const block = {
+            text,
+            lines: wrapText(text, vocabularyInnerWidth * 0.94, explanationFontSize),
+            baselineOffset: nextBaselineOffset
+          };
+          nextBaselineOffset += block.lines.length * explanationLineHeight + 8;
+          return block;
+        });
+      return {
+        termLines: vocabLines,
+        termFontSize,
+        termLineHeight,
+        termBaselineOffset,
+        explanationBlocks,
+        explanationFontSize,
+        explanationLineHeight,
+        labelBaselineOffset: 42,
+        height: Math.max(Number(vocab.height || 0), nextBaselineOffset + 24)
+      };
+    })()
+    : null;
   const viHeight = viLayout.height;
   const enHeight = contentLanguage === 'zh'
     ? Math.max(en.height, enLayout.textHeight + (inlineTarget ? 0 : 64 + 40))
@@ -613,7 +658,6 @@ function layerGeometry(template, script, index, speechSegment = null) {
   const vocabGap = contentLanguage === 'zh' ? (inlineTarget ? 48 : 22) : 24;
   const vocabY = Math.max(vocab.y, enY + enHeight + vocabGap);
   const inlineVocabularyStyle = contentLanguage === 'en' && ['inline-meaning', 'inline-keyphrase'].includes(styleName);
-  const vocabularyInnerWidth = Math.max(1, Number(vocab.width) - Number(vocab.padding || 24) * 2);
   const vocabularyCardLayouts = inlineVocabularyStyle
     ? (Array.isArray(dialogue.vocabularyCards) ? dialogue.vocabularyCards : []).map((card, cardIndex) => {
       const sourceFontSize = 26;
@@ -653,11 +697,13 @@ function layerGeometry(template, script, index, speechSegment = null) {
     ? wrapText(dialogue.meaningVi || '', vocabularyInnerWidth, 22)
     : [];
   const scenarioVocabularyHeight = scenarioMeaningLines.length ? 24 + 27 + 8 + scenarioMeaningLines.length * 25 + 18 : 120;
-  const vocabHeight = inlineVocabularyStyle
-    ? Math.max(Number(vocab.height || 0), vocabularyCardLayouts.reduce((sum, card, index) => sum + card.height + (index ? 14 : 0), 0))
-    : contentLanguage === 'en' && styleName === 'numbered-scenario'
-      ? Math.max(Number(vocab.height || 0), scenarioVocabularyHeight)
-      : Math.max(vocab.height, 76 + vocabLines.length * (Number(vocab.fontSize || 32) + 10));
+  const vocabHeight = contentLanguage === 'zh'
+    ? chineseVocabularyCardLayout.height
+    : inlineVocabularyStyle
+      ? Math.max(Number(vocab.height || 0), vocabularyCardLayouts.reduce((sum, card, index) => sum + card.height + (index ? 14 : 0), 0))
+      : contentLanguage === 'en' && styleName === 'numbered-scenario'
+        ? Math.max(Number(vocab.height || 0), scenarioVocabularyHeight)
+        : Math.max(vocab.height, 76 + vocabLines.length * (Number(vocab.fontSize || 32) + 10));
   const pinyinLayer = contentLanguage === 'zh' ? presentationLayer(template, script, 'pinyin') : null;
   const pinyinFontSize = Number(pinyinLayer?.fontSize || 28);
   const cardTextHeight = Math.max(enLayout.fontSize, enLayout.lines.length * enLayout.lineHeight);
@@ -728,6 +774,7 @@ function layerGeometry(template, script, index, speechSegment = null) {
     staticHighlightColor,
     staticHighlightColorByTokenId,
     vocabLines,
+    chineseVocabularyCardLayout,
     enHeight,
     enY,
     vocabY,
@@ -908,6 +955,20 @@ async function layerMarkup(layerId, context) {
       ? template.canvas.width - 32
       : character ? character.x : template.canvas.width - 32;
     const w = Math.max(1, Math.min(layer.width, rightEdge - layer.x - 38));
+    if (contentLanguage === 'zh') {
+      const padding = Number(layer.padding || 28);
+      const textX = x + padding;
+      const layout = geometry.chineseVocabularyCardLayout;
+      const termMarkup = textLines(layout.termLines, {
+        x: textX, y: y + layout.termBaselineOffset, fontSize: layout.termFontSize,
+        lineHeight: layout.termLineHeight, color: color(layer.color, brand.secondaryColor), weight: Number(layer.fontWeight || 700), fontFamily: brand.fontFamily
+      });
+      const explanationMarkup = layout.explanationBlocks.map((block) => textLines(block.lines, {
+        x: textX, y: y + block.baselineOffset, fontSize: layout.explanationFontSize,
+        lineHeight: layout.explanationLineHeight, color: '#565C62', weight: 400, fontFamily: brand.fontFamily
+      })).join('');
+      return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 26}" fill="${color(layer.fill, '#FFFFFF')}" stroke="${color(layer.stroke, '#C7DCD7')}" stroke-width="2" filter="url(#softShadow)"/><text x="${textX}" y="${y + layout.labelBaselineOffset}" fill="${color(brand.secondaryColor, '#70523A')}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="20" font-weight="700" letter-spacing="1.4">CỤM TỪ</text>${termMarkup}${explanationMarkup}</g>`;
+    }
     if (contentLanguage === 'en' && ['inline-meaning', 'inline-keyphrase'].includes(geometry.styleName)) {
       const padding = Number(layer.padding || 24);
       const textX = x + padding;
@@ -982,18 +1043,24 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
   const geometry = layerGeometry(template, sceneScript, index, speechSegment);
   const context = { template, script: sceneScript, state, index, embedAssets, geometry, highlight, highlightSettings, speechSegment, totalCount: totalCount || sceneScript.dialogues?.length || 3, pinyinEffectProgress, chineseTextEffectProgress };
   const contentCardId = sceneScript.contentLanguage === 'zh' && getLayer(template, 'chinese-card') ? 'chinese-card' : 'english-card';
-  const fixedOrder = ['background', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'title', 'footer', 'scene-number', 'vietnamese-card', contentCardId, ...(contentCardId === 'chinese-card' ? ['pinyin'] : []), 'vocabulary', 'cta'];
+  const fixedOrder = ['background', 'chinese-plum-blossom', 'chinese-bamboo', 'character', 'logo', 'facebook-logo', 'youtube-logo', 'title', 'footer', 'scene-number', 'vietnamese-card', contentCardId, ...(contentCardId === 'chinese-card' ? ['pinyin'] : []), 'vocabulary', 'cta'];
   const extras = template.layers.map((layer) => layer.id).filter((id) => !fixedOrder.includes(id));
   const order = [...(includeBackground ? fixedOrder : fixedOrder.filter((id) => id !== 'background')), ...extras];
   const activeLayers = forceLayer ? [forceLayer] : Array.isArray(includeLayers) ? order.filter((id) => includeLayers.includes(id)) : order.filter((id) => {
     if (id === 'background' || id === 'logo' || id === 'facebook-logo' || id === 'youtube-logo' || id === 'character' || id === 'footer') return true;
+    if (['chinese-plum-blossom', 'chinese-bamboo'].includes(id)) return sceneScript.contentLanguage === 'zh' && Boolean(getLayer(template, id));
     if (id === 'title') return state === 'intro';
     if (id === 'scene-number' || id === 'vietnamese-card') return ['vietnamese', 'bilingual', 'vocabulary', 'transition'].includes(state);
     if (id === 'english-card') return ['bilingual', 'vocabulary', 'transition'].includes(state);
     if (id === 'chinese-card') return ['bilingual', 'vocabulary', 'transition'].includes(state);
     if (id === 'pinyin') return ['bilingual', 'vocabulary'].includes(state)
       && (speechSegment?.target?.layerId !== 'chinese-card' || speechSegment.target?.pinyinVisible !== false);
-    if (id === 'vocabulary') return ['vocabulary', 'transition'].includes(state);
+    if (id === 'vocabulary') {
+      const dialogue = sceneScript.dialogues?.[index] || {};
+      const hasChinesePhrase = sceneScript.contentLanguage !== 'zh'
+        || Boolean(String(dialogue.term || '').trim() && String(dialogue.meaningVi || '').trim());
+      return hasChinesePhrase && ['vocabulary', 'transition'].includes(state);
+    }
     if (id === 'cta') return sceneScript.contentLanguage !== 'zh' && state === 'cta';
     if (getLayer(template, id)?.kind === 'text') return ['vietnamese', 'bilingual', 'vocabulary'].includes(state);
     return false;

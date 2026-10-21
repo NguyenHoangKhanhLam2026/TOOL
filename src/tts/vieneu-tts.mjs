@@ -235,11 +235,16 @@ export async function synthesizeVieNeuScript(script, videoId, { settings, onProg
   const cacheDir = path.join(PATHS.temporary, 'audio-cache');
   fs.mkdirSync(cacheDir, { recursive: true });
   const baseSegments = suppliedSegments || createSpeechSegments(script, settings);
-  const segments = baseSegments.map((segment) => ({
-    ...segment,
-    voiceName: segment.language === 'en' ? settings.vieneuEnVoice : settings.vieneuViVoice,
-    rate: Number(segment.language === 'en' ? settings.vieneuEnSpeed : settings.vieneuViSpeed) || (segment.language === 'en' ? 0.9 : 1)
-  }));
+  const segments = baseSegments.map((segment) => {
+    const baseRate = Number(segment.language === 'en' ? settings.vieneuEnSpeed : settings.vieneuViSpeed)
+      || (segment.language === 'en' ? 0.9 : 1);
+    const requestedSegmentRate = Number(segment.ttsSpeed);
+    return {
+      ...segment,
+      voiceName: segment.language === 'en' ? settings.vieneuEnVoice : settings.vieneuViVoice,
+      rate: Number.isFinite(requestedSegmentRate) && requestedSegmentRate > 0 ? requestedSegmentRate : baseRate
+    };
+  });
   const files = [];
   const alignmentQueue = [];
   const pending = [];

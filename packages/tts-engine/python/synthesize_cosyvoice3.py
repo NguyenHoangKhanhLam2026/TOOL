@@ -94,7 +94,10 @@ def main():
         sys.path.insert(0, source_dir)
         from cosyvoice.cli.cosyvoice import AutoModel
 
-        torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
+        # This machine's 4-thread cap left most of the available CPU idle during
+        # autoregressive synthesis. Keep a conservative cap for shared desktop
+        # use while allowing CosyVoice to use the i7's performance cores.
+        torch.set_num_threads(max(1, min(8, os.cpu_count() or 1)))
         model = AutoModel(model_dir=request["modelDir"])
         reference_text = request["referenceText"].strip()
         reference_path = request["referencePath"]
@@ -106,7 +109,11 @@ def main():
         items = request.get("items") or [request]
         for index, item in enumerate(items, start=1):
             chunks = []
-            speed = 1.0
+            try:
+                speed = float(item.get("speed", 1.0))
+            except (TypeError, ValueError):
+                speed = 1.0
+            speed = max(0.7, min(1.3, speed))
             instruction = concise_instruction(item.get("instruction"))
             synthesis = model.inference_instruct2(
                 item["text"], instruction, reference_path, stream=False, speed=speed

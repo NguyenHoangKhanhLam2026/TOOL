@@ -397,21 +397,43 @@ function validateChineseScript(raw, { requireScenes = true } = {}) {
   for (const [index, dialogue] of lessons.entries()) {
     const dialogueIndex = index;
     const turnId = `zh-lesson-${index + 1}`;
-    const explanation = [dialogue.meaningVi, dialogue.noteVi, dialogue.grammarNote]
-      .map((part) => String(part || '').trim().replace(/[.!?。！？\s]+$/u, ''))
-      .filter(Boolean)
-      .join('. ');
     const targetDirection = standardMandarinDirection + punctuationDirection(dialogue.chinese);
     speechSegments.push(
       { turnId, segmentId: `zh-vietnamese-source-${index + 1}`, speakerId: 'vi-default', language: 'vi', text: dialogue.vietnamese, state: 'vietnamese', pauseAfterSeconds: 0.85, target: { layerId: 'vietnamese-card', dialogueIndex } },
-      { turnId, segmentId: `zh-reading-1-${index + 1}`, speakerId: 'zh-default', language: 'zh', text: dialogue.chinese, ttsDirection: targetDirection + `首次自然完整朗读，按拼音“${dialogue.pinyin}”准确处理每个字的声调；短语“${dialogue.term}”稍作强调，句末轻松收住。`, state: 'bilingual', pauseAfterSeconds: 0.55, target: { layerId: 'chinese-card', dialogueIndex, pinyinVisible: false } },
-      { turnId, segmentId: `zh-reading-2-${index + 1}`, speakerId: 'zh-default', language: 'zh', text: dialogue.chinese, ttsDirection: targetDirection + `这是教学复读，停顿由语意自然安排，按意群清楚分开；短语“${dialogue.term}”比周围字稍重、稍响，其余部分放轻，按拼音“${dialogue.pinyin}”准确处理声调。`, state: 'bilingual', pauseAfterSeconds: 0.35, target: { layerId: 'chinese-card', dialogueIndex, pinyinVisible: true } }
+      { turnId, segmentId: `zh-reading-1-${index + 1}`, speakerId: 'zh-default', language: 'zh', text: dialogue.chinese, ttsDirection: targetDirection + `首次自然完整朗读，按拼音“${dialogue.pinyin}”准确处理每个字的声调；短语“${dialogue.term}”稍作强调，句末轻松收住。`, ttsSpeed: 0.85, state: 'bilingual', pauseAfterSeconds: 0.55, target: { layerId: 'chinese-card', dialogueIndex, pinyinVisible: false } },
+      { turnId, segmentId: `zh-reading-2-${index + 1}`, speakerId: 'zh-default', language: 'zh', text: dialogue.chinese, ttsDirection: targetDirection + `这是教学复读，停顿由语意自然安排，按意群清楚分开；短语“${dialogue.term}”比周围字稍重、稍响，其余部分放轻，按拼音“${dialogue.pinyin}”准确处理声调。`, ttsSpeed: 0.8, state: 'bilingual', pauseAfterSeconds: 0.35, target: { layerId: 'chinese-card', dialogueIndex, pinyinVisible: true } }
     );
-    if (presentationStyle !== 'dialogue-cards') {
-      speechSegments.push({ turnId, segmentId: `zh-explanation-vi-${index + 1}`, speakerId: 'vi-default', language: 'vi', text: explanation, state: 'vocabulary', pauseAfterSeconds: 0.35, target: { layerId: 'vocabulary', dialogueIndex } });
-    }
-    if (['inline-meaning', 'inline-keyphrase'].includes(presentationStyle)) {
-      speechSegments.push({ turnId, segmentId: `zh-practice-${index + 1}`, speakerId: 'zh-default', language: 'zh', text: dialogue.term, ttsDirection: targetDirection + `像带领观众跟读一样，清楚、自信地说出重点短语；音节分明但保持连贯，目标词稍微加重并提高音量，最后自然收轻。按拼音“${dialogue.termPinyin}”准确发音，不要添加其他词。`, state: 'bilingual', pauseAfterSeconds: 0.5, target: { layerId: 'chinese-card', dialogueIndex, pinyinVisible: true, pinyin: dialogue.termPinyin } });
+    if (dialogue.term && dialogue.meaningVi) {
+      const numberedScenario = presentationStyle === 'numbered-scenario';
+      const vietnamesePhraseExplanation = [dialogue.meaningVi, dialogue.noteVi, dialogue.grammarNote]
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .map((part) => /[.!?…。！？]$/u.test(part) ? part : `${part}.`)
+        .join(' ');
+      speechSegments.push({
+        turnId,
+        segmentId: `zh-practice-${index + 1}`,
+        speakerId: 'zh-default',
+        language: 'zh',
+        text: dialogue.term,
+        ttsSpeed: 0.85,
+        ttsDirection: targetDirection + (numberedScenario
+          ? `请单独、稍慢地朗读重点短语，音节清楚并保持连贯；按拼音“${dialogue.termPinyin}”准确发音，不要添加其他词。`
+          : `像带领观众跟读一样，清楚、自信地说出重点短语；音节分明但保持连贯，目标词稍微加重并提高音量，最后自然收轻。按拼音“${dialogue.termPinyin}”准确发音，不要添加其他词。`),
+        state: 'vocabulary',
+        pauseAfterSeconds: numberedScenario ? 0.4 : 0.5,
+        target: { layerId: 'vocabulary', dialogueIndex, pinyin: dialogue.termPinyin }
+      });
+      speechSegments.push({
+        turnId,
+        segmentId: `zh-explanation-vi-${index + 1}`,
+        speakerId: 'vi-default',
+        language: 'vi',
+        text: vietnamesePhraseExplanation,
+        state: 'vocabulary',
+        pauseAfterSeconds: 0.35,
+        target: { layerId: 'vocabulary', dialogueIndex }
+      });
     }
   }
   script.speechSegments = speechSegments.filter((segment) => segment.state !== 'cta' && segment.target?.layerId !== 'cta');

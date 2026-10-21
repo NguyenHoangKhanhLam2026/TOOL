@@ -6,6 +6,8 @@ const state = { view: 'overview', topics: [], videos: [], schedules: [], publish
 let previewAudio = null;
 let scheduleCalendarMonth = '';
 let scheduleSelectedDay = '';
+let scheduleDetailsOpen = false;
+let scheduleLanguageFilter = 'all';
 const HIGHLIGHT_PREVIEW_TEXT = {
   vi: 'Xin chào, hôm nay mình cùng luyện nói tiếng Anh nhé.',
   en: 'Hello, let us practice English together today.'
@@ -346,11 +348,22 @@ function renderLibrary() {
 }
 
 function facebookScheduleLanguage(language) {
-  return ({
-    en: { name: 'Tiếng Anh', code: 'EN' },
-    zh: { name: 'Tiếng Trung', code: 'ZH' },
-    ja: { name: 'Tiếng Nhật', code: 'JA' }
-  })[language] || { name: 'Chưa rõ ngôn ngữ', code: '—' };
+  const key = String(language || 'en').toLowerCase();
+  const known = {
+    en: { name: 'Tiếng Anh', code: 'EN', short: 'EN' },
+    zh: { name: 'Tiếng Trung', code: 'ZH', short: 'ZH' },
+    ja: { name: 'Tiếng Nhật', code: 'JA', short: 'JA' },
+    'english-shadowing': { name: 'EnglishShadowing', code: 'SH', short: 'SH' }
+  };
+  return known[key] || {
+    name: key.replace(/[-_]+/g, ' '),
+    code: key.replace(/[^a-z0-9]/g, '').slice(0, 3).toUpperCase() || '—',
+    short: key.replace(/[^a-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
+  };
+}
+
+function scheduleLanguageClass(language) {
+  return `lang-${String(language || 'en').toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`;
 }
 
 function scheduleLocalDayKey(value, timeZone) {
@@ -399,6 +412,17 @@ function scheduleCoverage(items) {
   };
 }
 
+function scheduleItemStatusLabel(item) {
+  const scheduleState = item.facebook_schedule_state;
+  if (item.status === 'failed' || item.video_status === 'publish_failed' || scheduleState === 'failed') return 'Cần kiểm tra';
+  if (scheduleState === 'uncertain') return 'Chưa xác minh trên Facebook';
+  if (item.isPublished || scheduleState === 'published') return 'Đã đăng';
+  if (scheduleState === 'scheduled') return 'Đã lên lịch Facebook';
+  if (['queued', 'uploading', 'finishing'].includes(scheduleState)) return 'Đang gửi lên Facebook';
+  if (scheduleState === 'local') return 'Đang chờ đăng';
+  return 'Đang xử lý';
+}
+
 function renderScheduleLanguageOverview() {
   const container = $('#schedule-language-overview');
   if (!container) return;
@@ -410,11 +434,12 @@ function renderScheduleLanguageOverview() {
     ...state.publishedSchedules.map((item) => ({ ...item, isPublished: true }))
   ];
   if (!scheduleCalendarMonth) {
-    scheduleSelectedDay = tomorrowKey;
     scheduleCalendarMonth = tomorrowKey.slice(0, 7);
   }
-  if (!scheduleSelectedDay || scheduleSelectedDay.slice(0, 7) !== scheduleCalendarMonth) {
-    scheduleSelectedDay = `${scheduleCalendarMonth}-01`;
+  if (scheduleSelectedDay && scheduleSelectedDay.slice(0, 7) !== scheduleCalendarMonth) {
+    scheduleSelectedDay = '';
+    scheduleDetailsOpen = false;
+    scheduleLanguageFilter = 'all';
   }
 
   const [year, month] = scheduleCalendarMonth.split('-').map(Number);
@@ -423,51 +448,99 @@ function renderScheduleLanguageOverview() {
   const leadingCells = (firstWeekday + 6) % 7;
   const monthLabel = new Intl.DateTimeFormat('vi-VN', { month: 'long', year: 'numeric', timeZone: 'UTC' })
     .format(new Date(Date.UTC(year, month - 1, 15)));
-  const languages = ['en', 'zh', 'ja'];
+  const knownLanguages = ['en', 'zh', 'ja', 'english-shadowing'];
+  const monthLanguages = allSchedules
+    .filter((item) => scheduleLocalDayKey(item.scheduled_at, timeZone).startsWith(`${scheduleCalendarMonth}-`))
+    .map((item) => String(item.content_language || 'en').toLowerCase());
+  const languages = [...new Set([...knownLanguages, ...monthLanguages])].sort((left, right) => {
+    const leftIndex = knownLanguages.indexOf(left);
+    const rightIndex = knownLanguages.indexOf(right);
+    if (leftIndex >= 0 || rightIndex >= 0) return (leftIndex < 0 ? 99 : leftIndex) - (rightIndex < 0 ? 99 : rightIndex);
+    return facebookScheduleLanguage(left).name.localeCompare(facebookScheduleLanguage(right).name);
+  });
   const itemsForDay = (day) => allSchedules.filter((item) =>
     scheduleLocalDayKey(item.scheduled_at, timeZone) === day
   );
   const blanks = Array.from({ length: leadingCells }, () => '<span class="schedule-calendar-blank" aria-hidden="true"></span>').join('');
+  const languageLegend = languages.map((language) => {
+    const info = facebookScheduleLanguage(language);
+    return `<span title="${escapeHtml(info.name)}"><i class="schedule-calendar-dot ${scheduleLanguageClass(language)} filled"></i>${escapeHtml(info.short)}</span>`;
+  }).join('');
   const calendarDays = Array.from({ length: daysInMonth }, (_, index) => {
     const dayNumber = index + 1;
     const dayKey = `${scheduleCalendarMonth}-${String(dayNumber).padStart(2, '0')}`;
     const dayItems = itemsForDay(dayKey);
     const hasIssue = dayItems.some((item) => item.status === 'failed' || item.video_status === 'publish_failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state));
-    const languageDots = languages.map((language) => {
-      const languageItems = dayItems.filter((item) => (item.content_language || 'en') === language);
+    const activeLanguages = languages.filter((language) => dayItems.some((item) => String(item.content_language || 'en').toLowerCase() === language));
+    const languageDots = activeLanguages.slice(0, 4).map((language) => {
+      const languageItems = dayItems.filter((item) => String(item.content_language || 'en').toLowerCase() === language);
       const failed = languageItems.some((item) => item.status === 'failed' || item.video_status === 'publish_failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state));
-      return `<span class="schedule-calendar-dot ${language}${languageItems.length ? ' filled' : ''}${failed ? ' error' : ''}" title="${facebookScheduleLanguage(language).name}: ${languageItems.length} bài"></span>`;
-    }).join('');
+      const info = facebookScheduleLanguage(language);
+      return `<span class="schedule-calendar-dot ${scheduleLanguageClass(language)} filled${failed ? ' error' : ''}" title="${escapeHtml(info.name)}: ${languageItems.length} bài"></span>`;
+    }).join('') + (activeLanguages.length > 4 ? `<span class="schedule-calendar-more">+${activeLanguages.length - 4}</span>` : '');
     const daySummary = dayItems.length ? `${dayItems.length} bài` : 'Chưa có lịch';
     const classes = [
       'schedule-calendar-day',
-      dayKey === scheduleSelectedDay ? 'selected' : '',
+      scheduleDetailsOpen && dayKey === scheduleSelectedDay ? 'selected' : '',
       dayKey === todayKey ? 'today' : '',
       dayItems.length ? 'has-schedule' : '',
       hasIssue ? 'has-issue' : ''
     ].filter(Boolean).join(' ');
-    return `<button type="button" class="${classes}" data-schedule-day="${dayKey}" aria-pressed="${dayKey === scheduleSelectedDay}"><span class="schedule-calendar-date">${dayNumber}</span><span class="schedule-calendar-summary">${daySummary}</span><span class="schedule-calendar-dots" aria-hidden="true">${languageDots}</span></button>`;
+    return `<button type="button" class="${classes}" data-schedule-day="${dayKey}" aria-pressed="${scheduleDetailsOpen && dayKey === scheduleSelectedDay}"><span class="schedule-calendar-date">${dayNumber}</span><span class="schedule-calendar-summary">${daySummary}</span><span class="schedule-calendar-dots" aria-hidden="true">${languageDots}</span></button>`;
   }).join('');
-  const selectedItems = itemsForDay(scheduleSelectedDay);
-  const selectedDateLabel = scheduleDayLabel(scheduleSelectedDay);
+  const selectedItems = scheduleSelectedDay ? itemsForDay(scheduleSelectedDay) : [];
+  const selectedDateLabel = scheduleSelectedDay ? scheduleDayLabel(scheduleSelectedDay) : '';
   const selectedIsTomorrow = scheduleSelectedDay === tomorrowKey;
-  const detailCards = languages.map((language) => {
+  const selectedLanguages = languages.filter((language) => selectedItems.some((item) => String(item.content_language || 'en').toLowerCase() === language));
+  if (scheduleLanguageFilter !== 'all' && !selectedLanguages.includes(scheduleLanguageFilter)) scheduleLanguageFilter = 'all';
+  const visibleLanguages = scheduleLanguageFilter === 'all' ? selectedLanguages : selectedLanguages.filter((language) => language === scheduleLanguageFilter);
+  const filterButtons = [
+    `<button type="button" class="schedule-language-filter${scheduleLanguageFilter === 'all' ? ' active' : ''}" data-schedule-language-filter="all" aria-pressed="${scheduleLanguageFilter === 'all'}">Tất cả <span>${selectedItems.length}</span></button>`,
+    ...selectedLanguages.map((language) => {
+      const info = facebookScheduleLanguage(language);
+      const count = selectedItems.filter((item) => String(item.content_language || 'en').toLowerCase() === language).length;
+      return `<button type="button" class="schedule-language-filter${scheduleLanguageFilter === language ? ' active' : ''}" data-schedule-language-filter="${escapeHtml(language)}" aria-pressed="${scheduleLanguageFilter === language}"><i class="schedule-calendar-dot ${scheduleLanguageClass(language)} filled"></i>${escapeHtml(info.name)} <span>${count}</span></button>`;
+    })
+  ].join('');
+  const detailGroups = visibleLanguages.map((language) => {
     const info = facebookScheduleLanguage(language);
-    const items = selectedItems.filter((item) => (item.content_language || 'en') === language);
+    const items = selectedItems.filter((item) => String(item.content_language || 'en').toLowerCase() === language);
     const coverage = scheduleCoverage(items);
-    return `<div class="schedule-language-cell ${coverage.className}"><strong>Page ${info.name} (${info.code})</strong><small>${coverage.text}</small></div>`;
+    const rows = [...items].sort((left, right) => Date.parse(left.scheduled_at) - Date.parse(right.scheduled_at)).map((item) => {
+      const timestamp = Date.parse(item.scheduled_at);
+      const time = Number.isFinite(timestamp) ? dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit' }) : '—';
+      const title = item.topic || item.title || 'Nội dung';
+      const status = scheduleItemStatusLabel(item);
+      const statusClass = ['Cần kiểm tra', 'Chưa xác minh trên Facebook'].includes(status) ? 'error' : status === 'Đã đăng' || status === 'Đã lên lịch Facebook' ? 'ok' : 'pending';
+      return `<li class="schedule-detail-item"><time>${escapeHtml(time)}</time><div><strong>${escapeHtml(title)}</strong><small class="${statusClass}">${escapeHtml(status)}</small></div></li>`;
+    }).join('');
+    return `<section class="schedule-language-group ${coverage.className}"><header><i class="schedule-calendar-dot ${scheduleLanguageClass(language)} filled"></i><strong>${escapeHtml(info.name)} (${escapeHtml(info.code)})</strong><small>${escapeHtml(coverage.text)}</small></header><ul>${rows}</ul></section>`;
   }).join('');
+  const selectedDetails = scheduleDetailsOpen ? `<div class="schedule-selected-day"><div class="schedule-selected-day-heading"><div><strong>${selectedIsTomorrow ? 'Ngày mai · ' : ''}${escapeHtml(selectedDateLabel)}</strong><small>${selectedItems.length ? `${selectedItems.length} lịch tổng cộng` : 'Ngày này chưa có lịch đăng.'}</small></div><button type="button" class="schedule-details-close" data-hide-schedule-details aria-label="Ẩn chi tiết lịch">Ẩn</button></div>${selectedItems.length ? `<div class="schedule-language-filters" aria-label="Lọc lịch theo loại nội dung">${filterButtons}</div><div class="schedule-language-groups">${detailGroups}</div>` : '<p class="schedule-details-empty">Chọn ngày có lịch để xem nội dung và trạng thái đăng.</p>'}</div>` : '';
 
-  container.innerHTML = `<section class="schedule-language-overview"><div class="schedule-language-overview-heading"><div><strong>Tình trạng lịch theo Page</strong><small>Chọn một ngày trong tháng để xem lịch riêng theo từng Page/ngôn ngữ.</small></div></div><div class="schedule-calendar"><div class="schedule-calendar-toolbar"><button type="button" class="schedule-calendar-nav" data-schedule-month="-1" aria-label="Tháng trước">‹</button><strong>${monthLabel}</strong><button type="button" class="schedule-calendar-nav" data-schedule-month="1" aria-label="Tháng sau">›</button></div><div class="schedule-calendar-legend"><span><i class="schedule-calendar-dot en filled"></i>EN</span><span><i class="schedule-calendar-dot zh filled"></i>ZH</span><span><i class="schedule-calendar-dot ja filled"></i>JA</span></div><div class="schedule-calendar-weekdays">${['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) => `<span>${day}</span>`).join('')}</div><div class="schedule-calendar-grid">${blanks}${calendarDays}</div></div><div class="schedule-selected-day"><div class="schedule-selected-day-heading"><strong>${selectedIsTomorrow ? 'Ngày mai · ' : ''}${selectedDateLabel}</strong><small>${selectedItems.length ? `${selectedItems.length} lịch tổng cộng` : 'Chưa có lịch trong ngày này'}</small></div><div class="schedule-language-cells">${detailCards}</div></div></section>`;
+  container.innerHTML = `<section class="schedule-language-overview"><div class="schedule-language-overview-heading"><div><strong>Tình trạng lịch theo Page</strong><small>Bấm vào một ngày để mở chi tiết lịch theo loại nội dung.</small></div></div><div class="schedule-calendar"><div class="schedule-calendar-toolbar"><button type="button" class="schedule-calendar-nav" data-schedule-month="-1" aria-label="Tháng trước">‹</button><strong>${monthLabel}</strong><button type="button" class="schedule-calendar-nav" data-schedule-month="1" aria-label="Tháng sau">›</button></div><div class="schedule-calendar-legend">${languageLegend}</div><div class="schedule-calendar-weekdays">${['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) => `<span>${day}</span>`).join('')}</div><div class="schedule-calendar-grid">${blanks}${calendarDays}</div></div>${selectedDetails}</section>`;
   $$('[data-schedule-day]', container).forEach((button) => button.addEventListener('click', () => {
-    scheduleSelectedDay = button.dataset.scheduleDay;
+    const dayKey = button.dataset.scheduleDay;
+    if (scheduleDetailsOpen && scheduleSelectedDay === dayKey) scheduleDetailsOpen = false;
+    else { scheduleSelectedDay = dayKey; scheduleDetailsOpen = true; }
+    scheduleLanguageFilter = 'all';
     renderScheduleLanguageOverview();
   }));
   $$('[data-schedule-month]', container).forEach((button) => button.addEventListener('click', () => {
     scheduleCalendarMonth = shiftScheduleMonth(scheduleCalendarMonth, Number(button.dataset.scheduleMonth));
-    scheduleSelectedDay = `${scheduleCalendarMonth}-01`;
+    scheduleSelectedDay = '';
+    scheduleDetailsOpen = false;
+    scheduleLanguageFilter = 'all';
     renderScheduleLanguageOverview();
   }));
+  $$('[data-schedule-language-filter]', container).forEach((button) => button.addEventListener('click', () => {
+    scheduleLanguageFilter = button.dataset.scheduleLanguageFilter;
+    renderScheduleLanguageOverview();
+  }));
+  $('[data-hide-schedule-details]', container)?.addEventListener('click', () => {
+    scheduleDetailsOpen = false;
+    renderScheduleLanguageOverview();
+  });
 }
 
 function renderSchedules() {
@@ -496,13 +569,16 @@ function renderSchedules() {
       ? `<small class="schedule-error">Page ${escapeHtml(String(item.content_language || 'en').toUpperCase())} chưa được xác minh hoặc token chưa sẵn sàng.</small>` : '';
     const error = failed && item.error ? `<small class="schedule-error">${escapeHtml(item.error)}</small>` : retryHint;
     const retryButton = canRetry ? `<button class="button button-outline button-small schedule-retry" data-retry-schedule-id="${escapeHtml(item.id)}">Đăng lại</button>` : '';
+    const deleteButton = canRetry ? `<button class="mini-action danger-action" data-delete-schedule-id="${escapeHtml(item.id)}">Xóa</button>` : '';
+    const scheduleActions = canRetry ? `<div class="button-row">${retryButton}${deleteButton}</div>` : '';
     const language = facebookScheduleLanguage(item.content_language || 'en');
     const languageStateLabel = item.facebook_schedule_state === 'scheduled'
       ? `Đã lên lịch nội dung Facebook ${language.name} (${language.code})`
       : `Nội dung Facebook ${language.name} (${language.code}) · ${stateLabel}`;
-    return `<article class="schedule-row${failed ? ' failed' : ''}"><span class="schedule-date">${dateText(item.scheduled_at, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.topic)}</strong><small>${escapeHtml(item.title)} · ${languageStateLabel}</small>${error}</div><div class="schedule-time-actions"><span class="schedule-time">${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span>${retryButton}</div></article>`;
+    return `<article class="schedule-row${failed ? ' failed' : ''}"><span class="schedule-date">${dateText(item.scheduled_at, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.topic)}</strong><small>${escapeHtml(item.title)} · ${languageStateLabel}</small>${error}</div><div class="schedule-time-actions"><span class="schedule-time">${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span>${scheduleActions}</div></article>`;
   }).join('') : `<div class="empty-state"><strong>Chưa có lịch đăng</strong>Bật “Tự đăng theo lịch” trong cài đặt để xếp video sẵn sàng tự động.</div>`;
   $$('[data-retry-schedule-id]').forEach((button) => button.addEventListener('click', retryScheduledPost));
+  $$('[data-delete-schedule-id]').forEach((button) => button.addEventListener('click', deleteScheduledPost));
   $('#published-list').innerHTML = state.publishedSchedules.length ? state.publishedSchedules.map((item) => {
     const mode = item.adapter === 'mock' ? ' · Bản chạy thử' : '';
     const language = facebookScheduleLanguage(item.content_language || 'en');
@@ -1031,7 +1107,7 @@ async function loadSettings() {
   if (state.settingsDirty) return;
   if (!state.createLanguageSelectionTouched) $('#content-language').value = settings.contentLanguage || 'en';
   const visibleLanguage = $('#content-language').value;
-  if (visibleLanguage !== 'english-shadowing') syncTtsProviderForContentLanguage(settings.contentLanguage || 'en', settings);
+  if (visibleLanguage !== 'english-shadowing') syncTtsProviderForContentLanguage(visibleLanguage, settings);
   const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
   if (heroCopy) heroCopy.textContent = contentLanguageDescription(visibleLanguage);
   selectSavedVoice($('#vieneu-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
@@ -1144,6 +1220,7 @@ async function generateVideo() {
       payload = { contentLanguage };
     } else {
       await state.contentLanguageSavePromise;
+      syncTtsProviderForContentLanguage(contentLanguage, state.settings || {});
       payload = {
         topicId: $('#topic-select').value || null,
         contentLanguage,
@@ -1676,6 +1753,30 @@ async function deletePublishedSchedule(event) {
     await loadSchedules();
   } catch (error) {
     toast('Không xóa được thông tin lịch sử', true, error.message);
+    button.disabled = false;
+  }
+}
+
+async function deleteScheduledPost(event) {
+  const button = event.currentTarget;
+  const schedule = state.schedules.find((item) => item.id === button.dataset.deleteScheduleId);
+  if (!schedule) return;
+  const title = schedule.title || schedule.topic || 'nội dung này';
+  const remoteMayExist = Boolean(schedule.facebook_video_id) || schedule.facebook_schedule_state === 'uncertain';
+  const confirmation = [
+    `Xóa lịch “${title}” khỏi tool? Video và file đã tải về sẽ được giữ nguyên.`,
+    'Thao tác này không gỡ bài đã đăng và không hủy lịch trực tiếp trên Facebook.'
+  ];
+  if (remoteMayExist) confirmation.push('Kết quả Facebook chưa chắc chắn; bài hoặc lịch Facebook có thể vẫn còn. Hãy kiểm tra Page/Planner nếu cần.');
+  if (!window.confirm(confirmation.join('\n\n'))) return;
+  button.disabled = true;
+  try {
+    await api(`/api/schedules/${encodeURIComponent(schedule.id)}`, { method: 'DELETE' });
+    toast('Đã xóa lịch khỏi tool', false, 'Video và file đã tải về vẫn được giữ; Facebook không bị thay đổi.');
+    await loadSchedules();
+    await loadOverview();
+  } catch (error) {
+    toast('Không xóa được lịch', true, error.message);
     button.disabled = false;
   }
 }

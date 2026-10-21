@@ -1,7 +1,7 @@
 import { TOPICS } from '../topics.mjs';
 import { db, getSettings, pickTopic, insertScript, log } from '../database/db.mjs';
 import { chatgptStatus, generateWithChatGPT } from './chatgpt-plan.mjs';
-import { assertDistinctFromHistory, validateScript } from './validator.mjs';
+import { validateScript } from './validator.mjs';
 import { generateCaption } from './caption-service.mjs';
 import { assertChineseReviewResponse, buildChineseReviewPrompt } from './chinese-quality.mjs';
 import { assertEnglishReviewResponse, buildEnglishReviewPrompt } from './english-quality.mjs';
@@ -76,14 +76,16 @@ function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopic
       thumbnailTitle: 'Tiêu đề thumbnail tiếng Việt'
     };
     const styleInstructions = {
-      'dialogue-cards': 'Create exactly two consecutive turns in one short, natural everyday conversation. Turn 1 is a concise Vietnamese question or request with its faithful Simplified Chinese translation; turn 2 is a natural Vietnamese reply with its faithful Chinese translation. Keep each Chinese sentence at most 12 Hanzi. Do not add vocabulary explanations; the video supplies repeat pauses.',
-      'numbered-scenario': 'Create exactly three consecutive, natural beats in one practical everyday scenario. Each beat has one Vietnamese line of at most 6 words, one Chinese sentence of at most 5 Hanzi, one key phrase copied from that sentence, and a very short Vietnamese meaning/use note. Keep meaningVi plus noteVi to at most 4 Vietnamese words total and leave grammarNote empty. The video repeats each Chinese line twice, so make every beat very brief.',
+      'dialogue-cards': 'Create exactly two consecutive turns in one short, natural everyday conversation. Turn 1 is a concise Vietnamese question or request with its faithful Simplified Chinese translation; turn 2 is a natural Vietnamese reply with its faithful Chinese translation. Keep each Chinese sentence at most 12 Hanzi. For each turn, fill term, termPinyin, meaningVi, and noteVi: choose one useful key phrase copied exactly from that Chinese sentence, give its standard Pinyin, a concise Vietnamese meaning, and a brief usage note. Do not add extra dialogue or a separate grammar explanation. The spoken order for each turn is Vietnamese source, full Chinese sentence, its full Chinese repetition, key phrase in Chinese, then the Vietnamese phrase meaning. Scene descriptions must cover all of this speech, including phrase practice after the second reply; the last scene and script must end only after the final Vietnamese phrase meaning is read.',
+      'numbered-scenario': 'Create exactly three consecutive, natural beats in one practical everyday scenario. Each beat has one Vietnamese line of at most 6 words, one Chinese sentence of at most 5 Hanzi, one key phrase copied from that sentence, and a very short Vietnamese meaning/use note. Keep meaningVi plus noteVi to at most 4 Vietnamese words total and leave grammarNote empty. The video repeats each Chinese line twice, so make every beat very brief. Give each lesson a concise Vietnamese scene description for that beat; it must not imply that the beat ends after the full Chinese sentence, since the Chinese key phrase and Vietnamese meaning/use note are spoken afterward. The final beat and video end only after its Chinese phrase and Vietnamese meaning/use note are spoken.',
       'inline-meaning': 'Create exactly one practical spoken sentence. Keep the Vietnamese source to at most 12 words and the Chinese translation to one sentence of at most 16 Hanzi. The Vietnamese source is shown in a card; the Chinese translation is a direct text line below it, without a filled Chinese card. Include one accurate, concise explanation of the key phrase.',
       'inline-keyphrase': 'Create exactly one practical spoken sentence. Keep the Vietnamese source to at most 12 words and the Chinese translation to one sentence of at most 16 Hanzi. The Vietnamese source is shown in a card; the Chinese translation is a direct text line below it, without a filled Chinese card. Choose one memorable key phrase that appears exactly in the sentence and explain it briefly; do not add spoken word-tracking or highlight instructions.'
     }[presentationStyle];
     return `Create a practical Vietnamese–Simplified Chinese learning video for a beginner. Return valid JSON only, matching this schema: ${JSON.stringify(schema)}\n` +
       `Presentation style: ${presentationStyle}. ${styleInstructions}\n` +
-      `Requirements: return exactly ${lessonCount} items in lessons. Each lessons[].chinese value must be a single short spoken sentence, with no newline or second sentence; obey the Hanzi limit for its presentation style. Use natural Simplified Chinese only and never insert Pinyin there. Provide standard Hanyu Pinyin for every full Chinese sentence and key phrase, mark lexical tones, allow unmarked neutral tones, and count syllables with the normal 儿化 exception where 儿 joins the preceding syllable. Make every Vietnamese translation faithful, and explain only verified meanings and usage within the style word limits. Write Chinese as natural spoken dialogue, not a textbook definition. Use punctuation that matches sentence intent, including a question mark for genuine questions. Never put Pinyin, pronunciation notes, bracketed stage directions, or voice instructions inside text to be spoken. Do not include any follow, subscribe, or follow-the-channel call to action in the title, hook, spoken content, or caption. The video must end when the final lesson speech ends. Do not generate English learning content, Japanese, Traditional Chinese, or invented facts. Provide 2–4 relevant scene descriptions in Vietnamese. Keep title, hook, explanation, and thumbnail text in Vietnamese.\n` +
+      `Requirements: return exactly ${lessonCount} items in lessons. Each lessons[].chinese value must be a single short spoken sentence, with no newline or second sentence; obey the Hanzi limit for its presentation style. Use natural Simplified Chinese only and never insert Pinyin there. Provide standard Hanyu Pinyin for every full Chinese sentence and key phrase, mark lexical tones, and allow unmarked neutral tones. Follow standard Pinyin word spacing: write syllables in one lexical word together, separate different words with spaces, and use hyphens only where standard orthography requires them (including established four-syllable idioms); never split each Hanzi into a separate word. Count syllables with the normal 儿化 exception where 儿 joins the preceding syllable. Make every Vietnamese translation faithful, and explain only verified meanings and usage within the style word limits. Write Chinese as natural spoken dialogue, not a textbook definition. Use punctuation that matches sentence intent, including a question mark for genuine questions.\n` +
+      `For every lesson, the spoken order is fixed: Vietnamese source once; full Chinese sentence once; the same full Chinese sentence a second time; the exact Chinese key phrase once; then Vietnamese phrase explanation once, combining meaningVi, noteVi, and grammarNote in that order when present. The phrase must always be spoken in Chinese before its Vietnamese explanation; never omit either language when a phrase card is present, move the phrase to the end, add another reading, or add speech not represented in the lesson fields. Write 2–4 Vietnamese scene descriptions that are consistent with this full spoken sequence; scenes must not imply that a lesson or the video ends before its phrase and complete Vietnamese explanation have been spoken. The final scene and video end only after the last Vietnamese phrase explanation.\n` +
+      `Never put Pinyin, pronunciation notes, bracketed stage directions, or voice instructions inside text to be spoken. Do not include any follow, subscribe, or follow-the-channel call to action in the title, hook, spoken content, or caption. Do not generate English learning content, Japanese, Traditional Chinese, or invented facts. Keep title, hook, explanation, and thumbnail text in Vietnamese.\n` +
       `Avoid Chinese phrases and lesson angles similar to these saved Chinese lessons: ${recent.join(' | ') || 'none'}.` +
       openTopicInstruction;
   }
@@ -183,6 +185,7 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
   let script;
   let provider;
   let englishPresentationReviewPassed = false;
+  let chineseCaptionError = null;
   const errors = [];
   for (const [name, call] of providers) {
     let repairPrompt = prompt;
@@ -196,9 +199,14 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
         ].some((placeholder) => [candidate.topic, candidate.category].some((value) => String(value || '').trim().toLocaleLowerCase() === placeholder.toLocaleLowerCase()))) {
           throw new Error('ChatGPT Plan phải điền chủ đề thực tế và nhóm chủ đề, không để nguyên nội dung giữ chỗ trong mẫu JSON.');
         }
-        assertDistinctFromHistory(candidate, history);
         if (contentLanguage === 'zh') {
-          const caption = await generateCaption(candidate);
+          let caption;
+          try {
+            caption = await generateCaption(candidate);
+          } catch (error) {
+            chineseCaptionError = error;
+            break;
+          }
           candidate.caption = caption.caption;
           candidate.hashtags = caption.hashtags;
           await reviewChineseScript(candidate);
@@ -235,6 +243,7 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
     }
     if (script) break;
   }
+  if (chineseCaptionError) throw chineseCaptionError;
   if (!script) throw new Error(`ChatGPT Plan không tạo được kịch bản hợp lệ. Hãy kiểm tra kết nối rồi thử lại. ${errors.join(' | ')}`);
   if (contentLanguage !== 'zh' && !englishPresentationReviewPassed) {
     try {

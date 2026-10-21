@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { ROOT, PORT, HOST, PATHS, PYTHON_BIN, FFMPEG_BIN, FFPROBE_BIN, COSYVOICE_REFERENCE_PATH, COSYVOICE_PROFILES_DIR } from './config.mjs';
 import {
   db, getSettings, saveSettings, getOverview, listTopics, listVideos, listJobs,
-  listPublishHistory, listSchedules, listPublishedSchedules, deletePublishedSchedule, queueJob, createSchedule, approveVideoAndCreateRandomSchedule, queueFacebookSchedule, completePublishedSchedule, log, getScript, updateVideo, addTopic, deleteVideo,
+  listPublishHistory, listSchedules, listPublishedSchedules, deletePublishedSchedule, deleteScheduleFromApp, queueJob, createSchedule, approveVideoAndCreateRandomSchedule, queueFacebookSchedule, completePublishedSchedule, log, getScript, updateVideo, addTopic, deleteVideo,
   listFacebookPageProfiles, getFacebookPageProfile, getFacebookPageForLanguage, facebookPageProfileLanguage, facebookPageProfileMatchesLanguage, facebookPageProfileHasActiveWork, saveFacebookPageProfile, setFacebookPageVerification, setFacebookPageRoute, clearFacebookPageRoute, getFacebookPageRoutes, deleteFacebookPageProfile,
   getEnglishShadowingSettings, saveEnglishShadowingSettings
 } from './database/db.mjs';
@@ -910,6 +910,17 @@ async function handleApi(req, res, url) {
   if (req.method === 'DELETE' && publishedScheduleMatch) {
     const deleted = deletePublishedSchedule(publishedScheduleMatch[1]);
     return deleted ? json(res, 200, { deleted: true, id: publishedScheduleMatch[1] }) : json(res, 404, { error: 'KhÃ´ng tÃ¬m tháº¥y thÃ´ng tin bÃ i Ä‘Ã£ Ä‘Äƒng.' });
+  }
+  const deleteScheduleMatch = url.pathname.match(/^\/api\/schedules\/([\w-]+)$/u);
+  if (req.method === 'DELETE' && deleteScheduleMatch) {
+    try {
+      const schedule = deleteScheduleFromApp(deleteScheduleMatch[1]);
+      if (!schedule) return json(res, 404, { error: 'Không tìm thấy lịch cần xóa.' });
+      log('INFO', 'SCHEDULE_REMOVED_FROM_APP', `Đã xóa lịch ${schedule.id} khỏi tool; video ${schedule.video_id} vẫn được giữ.`);
+      return json(res, 200, { deleted: true, id: schedule.id, videoId: schedule.video_id });
+    } catch (error) {
+      return json(res, error.statusCode || 409, { error: error.message });
+    }
   }
   if (route === 'GET /api/publish-history') return json(res, 200, { history: listPublishHistory() });
   if (route === 'GET /api/logs') return json(res, 200, { logs: db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id DESC LIMIT 100').all() });

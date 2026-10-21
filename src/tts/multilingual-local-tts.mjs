@@ -197,7 +197,7 @@ function configFor(provider, settings) {
     return {
       language: 'zh', provider: 'COSYVOICE', python: COSYVOICE_PYTHON_BIN, worker: COSYVOICE_WORKER,
       modelVersion: COSYVOICE_VERSION, voice: 'cosyvoice3-reference',
-      speed: 1,
+      speed: 0.9,
       sourceDir: COSYVOICE_SOURCE_DIR, modelDir: COSYVOICE_MODEL_DIR,
       referenceText, referencePath,
       referenceHash: crypto.createHash('sha256').update(fs.readFileSync(referencePath)).digest('hex')
@@ -225,7 +225,10 @@ export async function synthesizeMultilingualSegments(segments, videoId, { provid
     const text = segment.speechText || segment.text;
     const isCosyVoice = provider === 'vieneu-cosyvoice3';
     const ttsDirection = isCosyVoice ? String(segment.ttsDirection || '').trim() : '';
-    const ttsSpeed = config.speed;
+    const requestedTtsSpeed = Number(segment.ttsSpeed);
+    const ttsSpeed = isCosyVoice && config.language === 'zh'
+      ? Math.max(0.7, Math.min(1.3, Number.isFinite(requestedTtsSpeed) && requestedTtsSpeed > 0 ? requestedTtsSpeed : config.speed))
+      : config.speed;
     const cacheKey = [config.modelVersion, config.voice, config.style || '', config.speed, config.referenceHash || '', config.referenceText || ''];
     if (isCosyVoice) cacheKey.push(ttsDirection, ttsSpeed);
     cacheKey.push(text);

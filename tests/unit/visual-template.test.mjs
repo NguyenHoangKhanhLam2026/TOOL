@@ -149,6 +149,90 @@ test('Chinese preview reveals its text with the Chinese voice and omits the foll
   assert.doesNotMatch(cta, /data-layer-id="cta"/);
 });
 
+test('all four Chinese presentation styles rasterize lesson and phrase cards with full explanations', async () => {
+  const template = readVisualTemplate({ contentLanguage: 'zh' });
+  const styles = [
+    ['inline-meaning', 1],
+    ['inline-keyphrase', 1],
+    ['dialogue-cards', 2],
+    ['numbered-scenario', 3]
+  ];
+
+  for (const [presentationStyle, lessonCount] of styles) {
+    const dialogues = Array.from({ length: lessonCount }, (_, index) => ({
+      vietnamese: `Câu tiếng Việt ${index + 1}.`,
+      chinese: '\u4f60\u60f3\u4e70\u4f1e\u5417\uff1f',
+      pinyin: 'Nǐ xiǎng mǎi sǎn ma?',
+      term: '\u4e70\u4f1e',
+      termPinyin: 'mǎi sǎn',
+      meaningVi: 'mua ô',
+      noteVi: 'Câu dùng khi cần mua ô.',
+      grammarNote: ''
+    }));
+    const styledScript = {
+      contentLanguage: 'zh', presentationStyle, title: 'Thử bố cục tiếng Trung', dialogues
+    };
+
+    for (const [index, dialogue] of dialogues.entries()) {
+      const chineseScene = await buildSceneSvg({
+        template, script: styledScript, state: 'bilingual', index, totalCount: lessonCount,
+        speechSegment: {
+          segmentId: `zh-preview-${presentationStyle}-${index + 1}`,
+          text: dialogue.chinese,
+          target: { layerId: 'chinese-card', dialogueIndex: index, pinyinVisible: true }
+        }
+      });
+      const phraseScene = await buildSceneSvg({
+        template, script: styledScript, state: 'vocabulary', index, totalCount: lessonCount,
+        speechSegment: {
+          segmentId: `zh-phrase-${presentationStyle}-${index + 1}`,
+          text: dialogue.term,
+          target: { layerId: 'vocabulary', dialogueIndex: index }
+        }
+      });
+      assert.match(chineseScene, /data-layer-id="chinese-card"/u, presentationStyle);
+      assert.match(chineseScene, /data-layer-id="pinyin"/u, presentationStyle);
+      assert.match(phraseScene, /data-layer-id="vocabulary"/u, presentationStyle);
+      const vocabularyStart = phraseScene.indexOf('<g id="layer-vocabulary"');
+      const vocabularyEnd = phraseScene.indexOf('</g>', vocabularyStart);
+      const vocabularyGroup = phraseScene.slice(vocabularyStart, vocabularyEnd);
+      for (const text of [dialogue.term, dialogue.meaningVi, dialogue.noteVi]) assert.ok(vocabularyGroup.includes(text), `${presentationStyle}: card shows ${text}`);
+      assert.match(vocabularyGroup, /font-size="28"/u, `${presentationStyle}: key phrase remains readable`);
+      assert.match(vocabularyGroup, /font-size="22"/u, `${presentationStyle}: explanation remains readable`);
+      const rect = vocabularyGroup.match(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/u);
+      assert.ok(rect, `${presentationStyle}: phrase card box exists`);
+      const [, , cardY, , cardHeight] = rect.map(Number);
+      const textBaselines = [...vocabularyGroup.matchAll(/\by="([\d.]+)"/gu)].map((item) => Number(item[1]));
+      assert.ok(Math.max(...textBaselines) < cardY + cardHeight - 18, `${presentationStyle}: text fits inside phrase card`);
+
+      if (index === 0) {
+        const png = await rasterizeScene({
+          template, script: styledScript, state: 'bilingual', index, totalCount: lessonCount,
+          speechSegment: {
+            segmentId: `zh-raster-${presentationStyle}`,
+            text: dialogue.chinese,
+            target: { layerId: 'chinese-card', dialogueIndex: index, pinyinVisible: true }
+          }
+        });
+        const metadata = await sharp(png).metadata();
+        assert.equal(metadata.width, 1080, presentationStyle);
+        assert.equal(metadata.height, 1920, presentationStyle);
+        const vocabularyPng = await rasterizeScene({
+          template, script: styledScript, state: 'vocabulary', index, totalCount: lessonCount,
+          speechSegment: {
+            segmentId: `zh-raster-phrase-${presentationStyle}`,
+            text: dialogue.term,
+            target: { layerId: 'vocabulary', dialogueIndex: index }
+          }
+        });
+        const vocabularyMetadata = await sharp(vocabularyPng).metadata();
+        assert.equal(vocabularyMetadata.width, 1080, `${presentationStyle}: vocabulary width`);
+        assert.equal(vocabularyMetadata.height, 1920, `${presentationStyle}: vocabulary height`);
+      }
+    }
+  }
+});
+
 test('scene rasterizes as portrait PNG and wraps long Vietnamese dialogue', async () => {
   const template = readVisualTemplate();
   const png = await rasterizeScene({ template, script, state: 'bilingual', index: 0 });
