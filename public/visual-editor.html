@@ -7,14 +7,34 @@
   <title>Visual Editor · Auto English Reels Studio</title>
   <link rel="stylesheet" href="/visual-editor.css" />
   <link rel="stylesheet" href="/visual-editor-overrides.css" />
+  <style>
+    .visual-language-switch button { border: 0; border-radius: 9px; padding: 10px 13px; background: transparent; color: #53616a; font: inherit; cursor: pointer; }
+    .visual-language-switch button.active { background: #315f54; color: #fff; font-weight: 700; }
+    body.shadowing-mode .workspace, body.shadowing-mode .top-actions { display: none; }
+    .shadowing-workspace { min-height: calc(100vh - 76px); padding: 28px; background: #f3eee5; }
+    .shadowing-editor-card { max-width: 1050px; margin: 0 auto; padding: 28px; border: 1px solid #e6dfd3; border-radius: 18px; background: #fffdf9; box-shadow: 0 12px 36px #24334412; }
+    .shadowing-editor-card h1 { margin: 0 0 8px; color: #173553; font-size: 26px; }
+    .shadowing-editor-card p { max-width: 680px; color: #6c777a; line-height: 1.6; }
+    .shadowing-editor-preview { display: block; width: min(100%, 350px); margin: 24px auto 12px; border-radius: 14px; box-shadow: 0 12px 30px #24334424; }
+    .shadowing-editor-note { text-align: center; font-size: 12px; }
+    @media (max-width: 720px) { .shadowing-workspace { padding: 12px; } .shadowing-editor-card { padding: 18px; } }
+  </style>
   <script type="module" src="/visual-editor.js"></script>
 </head>
 <body>
-  <header class="topbar"><a class="wordmark" href="/">← Studio</a><div><strong>Visual Editor</strong><span id="template-language-label">Branded Dialogue V2 · 1080 × 1920</span></div><div class="visual-language-switch" role="group" aria-label="Ngôn ngữ template"><button type="button" data-editor-language="en" class="active">Tiếng Anh</button><button type="button" data-editor-language="zh">Tiếng Trung</button></div><div class="top-actions"><span id="connection" class="connection">Đang kết nối…</span><button id="undo" class="button light">↶ Hoàn tác</button><button id="reset" class="button light">Đặt lại</button><button id="save" class="button primary">Lưu template</button></div></header>
-  <main class="workspace">
+  <header class="topbar"><a class="wordmark" href="/">← Studio</a><div><strong>Visual Editor</strong><span id="template-language-label">Branded Dialogue V2 · 1080 × 1920</span></div><div class="visual-language-switch" role="group" aria-label="Ngôn ngữ template"><button type="button" data-editor-language="en" class="active">Tiếng Anh</button><button type="button" data-editor-language="zh">Tiếng Trung</button><button type="button" id="shadowing-editor-button">Shadowing</button></div><div class="top-actions"><span id="connection" class="connection">Đang kết nối…</span><button id="undo" class="button light">↶ Hoàn tác</button><button id="reset" class="button light">Đặt lại</button><button id="save" class="button primary">Lưu template</button></div></header>
+  <main id="workspace" class="workspace">
     <aside class="panel left-panel"><section><h2>Trạng thái scene</h2><div id="states" class="states"></div></section><section><div class="section-head"><h2>Layers</h2><span id="layer-count"></span></div><div id="layers" class="layers"></div></section><a class="asset-link" href="/assets">Quản lý tài nguyên <span>↗</span></a></aside>
     <section class="preview-area"><div class="preview-toolbar"><div><strong id="preview-title">Bản xem trước</strong><small id="preview-subtitle">Kéo layer trên canvas để chỉnh vị trí</small></div><label class="scene-index">Câu <select id="scene-index"><option value="0">01</option><option value="1">02</option><option value="2">03</option></select></label></div><div id="canvas" class="canvas" aria-label="Canvas xem trước"></div><div class="preview-controls"><button id="preview" class="button light">↻ Cập nhật preview</button><button id="render-test" class="button light">▶ Render thử 5 giây</button><button id="render-full" class="button primary">Render video đầy đủ</button></div><div id="test-output" class="test-output" hidden></div><p class="hint">Preview và video được dựng từ cùng template với renderer. Video đầy đủ dùng kịch bản đã lưu gần nhất, không gọi AI.</p></section>
     <aside class="panel right-panel"><section><h2>Thuộc tính layer</h2><p id="selected-name" class="muted">Chọn một layer</p><div id="properties" class="properties"></div></section><section><h2>Thương hiệu</h2><div id="brand-properties" class="properties"></div></section><section><h2>Nhịp dựng (giây)</h2><div id="timing-properties" class="properties"></div></section><div id="status" role="status" class="status">Đang tải template…</div><div id="render-progress" class="progress-wrap" hidden><div class="progress-track"><span id="progress-bar"></span></div><small id="progress-label">Render: 0%</small></div></aside>
+  </main>
+  <main class="shadowing-workspace" id="shadowing-workspace" hidden>
+    <section class="shadowing-editor-card">
+      <h1>Preset dựng video EnglishShadowing</h1>
+      <p>Shadowing dùng preset riêng: nền giấy ấm, tiêu đề navy và burgundy, toàn bộ đoạn tiếng Anh luôn hiển thị, từ đang đọc được tô nổi bật. Đây là khu vực riêng; các layer EN/ZH bên cạnh không được dùng cho video Shadowing.</p>
+      <img class="shadowing-editor-preview" src="/api/english-shadowing/visual-preview.svg" alt="Xem trước preset hình ảnh EnglishShadowing" />
+      <p class="shadowing-editor-note" id="shadowing-editor-status" role="status">Preset tự động đang sẵn sàng. Phần chỉnh nền, chữ và tiêu đề riêng sẽ được mở rộng sau.</p>
+    </section>
   </main>
 </body>
 </html>

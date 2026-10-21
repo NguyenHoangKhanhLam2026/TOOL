@@ -18,6 +18,17 @@ export const BACKGROUND_EFFECTS = Object.freeze([
 
 const EFFECT_IDS = new Set(BACKGROUND_EFFECTS.map((effect) => effect.id));
 const VOCABULARY = Object.freeze(['hello', 'learn', 'speak', 'dream', 'grow', 'A2']);
+const VOCABULARY_BY_LANGUAGE = Object.freeze({
+  en: VOCABULARY,
+  zh: Object.freeze(['你好', '学习', '表达', '梦想', '成长', '中文', '词语', '坚持']),
+  ja: Object.freeze(['こんにちは', '学ぶ', '会話', '夢', '成長', '日本語', '言葉', '挑戦'])
+});
+const VOCABULARY_FONT_FAMILY_BY_LANGUAGE = Object.freeze({
+  en: 'Be Vietnam Pro, Segoe UI, sans-serif',
+  zh: 'Microsoft YaHei, Noto Sans CJK SC, SimHei, sans-serif',
+  ja: 'Yu Gothic, Meiryo, Noto Sans CJK JP, sans-serif'
+});
+export const BACKGROUND_EFFECT_LANGUAGES = Object.freeze(['en', 'zh', 'ja']);
 
 export function normalizeBackgroundEffect(value) {
   return EFFECT_IDS.has(String(value || '')) ? String(value) : 'bubbles';
@@ -36,6 +47,27 @@ export function normalizeBackgroundEffectDensity(value) {
 export function normalizeBackgroundEffectOpacity(value) {
   const opacity = Number(value);
   return Number.isFinite(opacity) ? Math.min(70, Math.max(10, Math.round(opacity))) : 32;
+}
+
+export function normalizeBackgroundEffectProfile(value, fallback = {}) {
+  const profile = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const base = fallback && typeof fallback === 'object' && !Array.isArray(fallback) ? fallback : {};
+  const requestedEffect = String(profile.backgroundEffect ?? '');
+  return {
+    backgroundEffect: EFFECT_IDS.has(requestedEffect) ? requestedEffect : normalizeBackgroundEffect(base.backgroundEffect),
+    backgroundEffectDensity: normalizeBackgroundEffectDensity(profile.backgroundEffectDensity ?? base.backgroundEffectDensity),
+    backgroundEffectSpeed: normalizeBackgroundEffectSpeed(profile.backgroundEffectSpeed ?? base.backgroundEffectSpeed),
+    backgroundEffectOpacity: normalizeBackgroundEffectOpacity(profile.backgroundEffectOpacity ?? base.backgroundEffectOpacity)
+  };
+}
+
+export function normalizeBackgroundEffectProfiles(value, fallback = {}) {
+  const profiles = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const fallbackProfile = normalizeBackgroundEffectProfile(fallback);
+  return Object.fromEntries(BACKGROUND_EFFECT_LANGUAGES.map((language) => [
+    language,
+    normalizeBackgroundEffectProfile(profiles[language], fallbackProfile)
+  ]));
 }
 
 function hash(value) {
@@ -81,15 +113,18 @@ function sparklesMarkup({ width, height, time, seed, motionScale, opacityScale, 
   }).join('');
 }
 
-function vocabularyMarkup({ width, height, time, seed, motionScale, opacityScale, density }) {
+function vocabularyMarkup({ width, height, time, seed, motionScale, opacityScale, density, contentLanguage }) {
+  const language = contentLanguage === 'zh' || contentLanguage === 'ja' ? contentLanguage : 'en';
+  const words = VOCABULARY_BY_LANGUAGE[language];
+  const fontFamily = VOCABULARY_FONT_FAMILY_BY_LANGUAGE[language];
   return Array.from({ length: density }, (_, index) => {
     const x = edgeX(index, width, seed);
     const y = mod(random(seed, index, 'y') * height - time * (9 + random(seed, index, 'speed') * 13) * motionScale, height);
     const size = 23 + random(seed, index, 'size') * 22;
     const rotation = (random(seed, index, 'rotate') - 0.5) * 18;
-    const word = VOCABULARY[Math.floor(random(seed, index, 'word') * VOCABULARY.length)];
+    const word = words[Math.floor(random(seed, index, 'word') * words.length)];
     const color = random(seed, index, 'color') > 0.5 ? '#17395D' : '#D98B65';
-    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" transform="rotate(${rotation.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})" fill="${color}" opacity="${(0.11 * opacityScale).toFixed(3)}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="${size.toFixed(1)}" font-weight="600">${word}</text>`;
+    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" transform="rotate(${rotation.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})" fill="${color}" opacity="${(0.11 * opacityScale).toFixed(3)}" font-family="${fontFamily}" font-size="${size.toFixed(1)}" font-weight="600">${word}</text>`;
   }).join('');
 }
 
@@ -229,7 +264,7 @@ function ringsMarkup({ width, height, time, seed, motionScale, opacityScale, den
   }).join('');
 }
 
-export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 1920, time = 0, seed = 'preview', density = 28, speed = 58, opacity = 32 } = {}) {
+export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 1920, time = 0, seed = 'preview', density = 28, speed = 58, opacity = 32, contentLanguage = 'en' } = {}) {
   const effect = normalizeBackgroundEffect(effectId);
   if (effect === 'none') return '';
   const speedMultiplier = normalizeBackgroundEffectSpeed(speed) / 58;
@@ -240,6 +275,7 @@ export function renderBackgroundEffectMarkup(effectId, { width = 1080, height = 
     time: Math.max(0, Number(time) || 0) * speedMultiplier,
     seed: String(seed || 'preview'),
     density: normalizeBackgroundEffectDensity(density),
+    contentLanguage: String(contentLanguage || 'en'),
     opacityScale,
     // The settings preview is 360x640 CSS pixels; keep its normalized drift
     // rate when rendering the 1080x1920 output canvas.

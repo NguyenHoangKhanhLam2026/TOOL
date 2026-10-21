@@ -5,6 +5,12 @@ import { PATHS, DEFAULTS } from '../config.mjs';
 import { TOPICS } from '../topics.mjs';
 import { ensureBrandHashtag, formatCaption } from '../ai/hashtag-utils.mjs';
 import { localScheduleSlot, randomNextScheduledTime } from '../scheduler/time.mjs';
+import { formatEnglishShadowingCaption } from '../english-shadowing/caption.mjs';
+import { normalizeEnglishShadowingSettings } from '../english-shadowing/settings.mjs';
+import {
+  getEnglishShadowingBackgroundTheme,
+  getNextEnglishShadowingBackgroundThemeId
+} from '../english-shadowing/background-themes.mjs';
 
 for (const dir of [path.dirname(PATHS.database), PATHS.output, PATHS.temporary, PATHS.logs, PATHS.private, PATHS.backups]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -93,15 +99,41 @@ db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(4
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)');
 const now = new Date().toISOString();
+const hadLanguageBackgroundEffectProfiles = Boolean(db.prepare("SELECT 1 FROM settings WHERE key='backgroundEffectProfiles'").get());
 // Move the former shared VieNeu speed to the Vietnamese control. English gets
 // the new slower default unless a separate English speed was already saved.
 const legacyVieNeuSpeed = db.prepare("SELECT value FROM settings WHERE key='vieneuSpeed'").get();
 if (legacyVieNeuSpeed) insertSetting.run('vieneuViSpeed', legacyVieNeuSpeed.value, now);
 db.prepare("DELETE FROM settings WHERE key='vieneuSpeed'").run();
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(5,?)').run(now);
+const legacyVietnameseVoice = db.prepare("SELECT value FROM settings WHERE key='vieneuViVoice'").get()?.value || JSON.stringify(DEFAULTS.vieneuViVoice);
+for (const key of ['vieneuJaViVoice', 'vieneuZhViVoice']) {
+  const savedVoice = db.prepare('SELECT value FROM settings WHERE key=?').get(key);
+  if (!savedVoice || JSON.parse(savedVoice.value) == null) {
+    db.prepare('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at')
+      .run(key, legacyVietnameseVoice, now);
+  }
+}
 for (const [key, value] of Object.entries(DEFAULTS)) insertSetting.run(key, JSON.stringify(value), now);
 db.prepare('DELETE FROM settings WHERE key IN (?,?)').run('ollamaBaseUrl', 'ollamaModel');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(8,?)').run(now);
+if (!hadLanguageBackgroundEffectProfiles) {
+  const readSetting = (key, fallback) => {
+    try {
+      const row = db.prepare('SELECT value FROM settings WHERE key=?').get(key);
+      return row ? JSON.parse(row.value) : fallback;
+    } catch { return fallback; }
+  };
+  const legacyEffectProfile = {
+    backgroundEffect: readSetting('backgroundEffect', 'bubbles'),
+    backgroundEffectDensity: readSetting('backgroundEffectDensity', 28),
+    backgroundEffectSpeed: readSetting('backgroundEffectSpeed', 58),
+    backgroundEffectOpacity: readSetting('backgroundEffectOpacity', 32)
+  };
+  const profiles = Object.fromEntries(['en', 'zh', 'ja'].map((language) => [language, { ...legacyEffectProfile }]));
+  db.prepare('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at')
+    .run('backgroundEffectProfiles', JSON.stringify(profiles), now);
+}
 const scheduleColumns = new Set(db.prepare('PRAGMA table_info(scheduled_posts)').all().map((column) => column.name));
 for (const [name, definition] of [
   ['facebook_schedule_state', "TEXT NOT NULL DEFAULT 'local'"],
@@ -153,6 +185,27 @@ for (const [name, definition] of [['target_page_profile_id', 'TEXT'], ['target_p
   catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
 }
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(13,?)').run(now);
+if (!db.prepare('PRAGMA table_info(videos)').all().some((column) => column.name === 'background_effect_json')) {
+  try { db.exec('ALTER TABLE videos ADD COLUMN background_effect_json TEXT'); }
+  catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
+}
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(14,?)').run(now);
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(15,?)').run(now);
+if (!db.prepare('PRAGMA table_info(videos)').all().some((column) => column.name === 'english_shadowing_profile_json')) {
+  try { db.exec('ALTER TABLE videos ADD COLUMN english_shadowing_profile_json TEXT'); }
+  catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
+}
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(16,?)').run(now);
+if (!db.prepare('PRAGMA table_info(videos)').all().some((column) => column.name === 'english_shadowing_theme_id')) {
+  try { db.exec('ALTER TABLE videos ADD COLUMN english_shadowing_theme_id TEXT'); }
+  catch (error) { if (!/duplicate column name/i.test(error.message)) throw error; }
+}
+db.exec(`CREATE TABLE IF NOT EXISTS english_shadowing_state (
+  key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL
+)`);
+db.prepare('INSERT OR IGNORE INTO english_shadowing_state(key,value,updated_at) VALUES(?,?,?)')
+  .run('next_background_theme_id', getNextEnglishShadowingBackgroundThemeId(null), now);
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(17,?)').run(now);
 const insertTopic = db.prepare('INSERT OR IGNORE INTO topics(id,category,title,created_at) VALUES(?,?,?,?)');
 for (const topic of TOPICS) insertTopic.run(topic.id, topic.category, topic.title, now);
 
@@ -174,6 +227,20 @@ export function saveSettings(patch) {
     upsert.run(key, JSON.stringify(value), new Date().toISOString());
   }
   return getSettings();
+}
+
+export function getEnglishShadowingSettings() {
+  const row = db.prepare('SELECT value FROM settings WHERE key=?').get('englishShadowingProfile');
+  if (!row) return normalizeEnglishShadowingSettings();
+  try { return normalizeEnglishShadowingSettings(JSON.parse(row.value)); }
+  catch { return normalizeEnglishShadowingSettings(); }
+}
+
+export function saveEnglishShadowingSettings(settings) {
+  const normalized = normalizeEnglishShadowingSettings(settings);
+  db.prepare('INSERT INTO settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at')
+    .run('englishShadowingProfile', JSON.stringify(normalized), new Date().toISOString());
+  return normalized;
 }
 
 export function listFacebookPageProfiles() {
@@ -235,10 +302,20 @@ export function setFacebookPageVerification(profileId, { verified, pageName = nu
 
 export function setFacebookPageRoute(contentLanguage, profileId) {
   const language = String(contentLanguage || '');
-  if (!['en', 'ja', 'zh'].includes(language)) throw new Error('Ngôn ngữ nội dung không hợp lệ.');
+  if (!['en', 'ja', 'zh', 'english-shadowing'].includes(language)) throw new Error('Ngôn ngữ nội dung không hợp lệ.');
+  if (language === 'english-shadowing' && String(profileId) === 'legacy') throw new Error('EnglishShadowing cần Page profile riêng; không thể gắn Page dùng chung hiện tại.');
   if (profileId === 'legacy') {
     if (!getFacebookPageProfile('legacy')) throw new Error('Chưa cấu hình Facebook Page hiện tại.');
   } else if (!getFacebookPageProfile(profileId)) throw new Error('Không tìm thấy Facebook Page đã chọn.');
+  const existingRoute = db.prepare('SELECT profile_id FROM facebook_page_routes WHERE content_language=?').get(language)?.profile_id;
+  if (existingRoute && existingRoute !== String(profileId) && facebookPageProfileHasActiveWork(existingRoute)) {
+    throw Object.assign(new Error('Không thể đổi Page của ngôn ngữ này khi còn bài đang lên lịch hoặc đang đăng.'), { statusCode: 409 });
+  }
+  const otherRoute = db.prepare('SELECT content_language FROM facebook_page_routes WHERE profile_id=? AND content_language<>? LIMIT 1').get(String(profileId), language)?.content_language;
+  if (otherRoute && facebookPageProfileHasActiveWork(profileId)) {
+    throw Object.assign(new Error('Không thể chuyển Page sang ngôn ngữ khác khi còn bài đang lên lịch hoặc đang đăng.'), { statusCode: 409 });
+  }
+  if (otherRoute) db.prepare('DELETE FROM facebook_page_routes WHERE profile_id=? AND content_language<>?').run(String(profileId), language);
   db.prepare(`INSERT INTO facebook_page_routes(content_language,profile_id,updated_at) VALUES(?,?,?)
     ON CONFLICT(content_language) DO UPDATE SET profile_id=excluded.profile_id,updated_at=excluded.updated_at`)
     .run(language, String(profileId), new Date().toISOString());
@@ -251,16 +328,41 @@ export function getFacebookPageRoutes() {
 
 export function clearFacebookPageRoute(contentLanguage) {
   const language = String(contentLanguage || '');
-  if (!['en', 'ja', 'zh'].includes(language)) throw new Error('Ngôn ngữ nội dung không hợp lệ.');
+  if (!['en', 'ja', 'zh', 'english-shadowing'].includes(language)) throw new Error('Ngôn ngữ nội dung không hợp lệ.');
+  const profileId = db.prepare('SELECT profile_id FROM facebook_page_routes WHERE content_language=?').get(language)?.profile_id;
+  if (profileId && facebookPageProfileHasActiveWork(profileId)) {
+    throw Object.assign(new Error('Không thể gỡ Page khi còn bài đang lên lịch hoặc đang đăng.'), { statusCode: 409 });
+  }
   db.prepare('DELETE FROM facebook_page_routes WHERE content_language=?').run(language);
   return { contentLanguage: language, profileId: null };
 }
 
+export function facebookPageProfileLanguage(profileId) {
+  const id = String(profileId || '');
+  if (!id) return null;
+  if (id === 'legacy') {
+    const routes = db.prepare('SELECT content_language FROM facebook_page_routes WHERE profile_id=?').all(id);
+    if (routes.length === 1) return routes[0].content_language;
+    if (routes.length > 1) return null;
+    const savedLanguage = String(getSettings().facebookPageLanguage || 'en');
+    return ['en', 'ja', 'zh'].includes(savedLanguage) ? savedLanguage : 'en';
+  }
+  const routes = db.prepare('SELECT content_language FROM facebook_page_routes WHERE profile_id=?').all(id);
+  return routes.length === 1 ? routes[0].content_language : null;
+}
+
+export function facebookPageProfileMatchesLanguage(profileId, contentLanguage) {
+  const language = String(contentLanguage || 'en');
+  if (language === 'english-shadowing' && String(profileId) === 'legacy') return false;
+  return ['en', 'ja', 'zh', 'english-shadowing'].includes(language) && facebookPageProfileLanguage(profileId) === language;
+}
+
 export function getFacebookPageForLanguage(contentLanguage = 'en') {
-  const language = ['en', 'ja', 'zh'].includes(String(contentLanguage)) ? String(contentLanguage) : 'en';
+  const language = ['en', 'ja', 'zh', 'english-shadowing'].includes(String(contentLanguage)) ? String(contentLanguage) : 'en';
   const route = db.prepare('SELECT profile_id FROM facebook_page_routes WHERE content_language=?').get(language)?.profile_id;
-  if (route) return getFacebookPageProfile(route);
-  return language === 'en' ? getFacebookPageProfile('legacy') : null;
+  if (route) return facebookPageProfileMatchesLanguage(route, language) ? getFacebookPageProfile(route) : null;
+  if (language === 'english-shadowing') return null;
+  return facebookPageProfileMatchesLanguage('legacy', language) ? getFacebookPageProfile('legacy') : null;
 }
 
 export function deleteFacebookPageProfile(profileId) {
@@ -377,8 +479,14 @@ export function getOverview() {
         AND p.status='scheduled' AND p.facebook_schedule_state='scheduled')
     ORDER BY v.created_at DESC LIMIT 12`).all()
     .map((row) => {
-      const hashtags = ensureBrandHashtag(JSON.parse(row.hashtags_json), row.content_language || 'en');
-      return { ...row, hashtags, captionText: formatCaption(row.caption, hashtags, row.content_language || 'en') };
+      const contentLanguage = row.content_language || 'en';
+      const hashtags = contentLanguage === 'english-shadowing'
+        ? JSON.parse(row.hashtags_json)
+        : ensureBrandHashtag(JSON.parse(row.hashtags_json), contentLanguage);
+      const captionText = contentLanguage === 'english-shadowing'
+        ? formatEnglishShadowingCaption(row.caption, hashtags)
+        : formatCaption(row.caption, hashtags, contentLanguage);
+      return { ...row, backgroundEffectConfig: parseVideoBackgroundEffect(row.background_effect_json), hashtags, captionText };
     });
   const contentHistory = db.prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(length(CAST(topic || category || level || title || hook || dialogues_json || caption || hashtags_json || thumbnail_title || content_hash AS BLOB))),0) AS bytes FROM scripts`).get();
   return {
@@ -434,6 +542,23 @@ export function insertScript(script, topicId, provider) {
   return script.id;
 }
 
+export function insertEnglishShadowingScript(script) {
+  const hashtags = Array.isArray(script.hashtags) ? script.hashtags : [];
+  const captionText = formatEnglishShadowingCaption(script.caption, hashtags);
+  const normalizedTags = captionText.match(/#[\p{L}\p{N}_]+/gu) || [];
+  const caption = captionText.replace(/#[\p{L}\p{N}_]+/gu, '').trim();
+  const speechSegments = Array.isArray(script.speechSegments) ? script.speechSegments : [];
+  const existing = db.prepare('SELECT id FROM scripts WHERE content_hash=?').get(script.contentHash);
+  if (existing) throw new Error('EnglishShadowing: kịch bản đã tồn tại trong thư viện.');
+  db.prepare(`INSERT INTO scripts(id,topic_id,topic,category,level,title,hook,dialogues_json,speech_segments_json,caption,hashtags_json,thumbnail_title,provider,content_hash,created_at,content_language)
+    VALUES(?,NULL,?,'EnglishShadowing','shadowing',?,?,?,?,?,?,?,?,?,?,?)`).run(
+    script.id, script.topic, script.title, script.scriptText, JSON.stringify([{ english: script.scriptText }]),
+    JSON.stringify(speechSegments), caption, JSON.stringify(normalizedTags), script.thumbnailTitle || script.title,
+    'english-shadowing-kokoro', script.contentHash, script.createdAt, 'english-shadowing'
+  );
+  return script.id;
+}
+
 export function insertVideo(scriptId, status = 'script_ready') {
   const id = crypto.randomUUID();
   const stamp = new Date().toISOString();
@@ -441,20 +566,64 @@ export function insertVideo(scriptId, status = 'script_ready') {
   return id;
 }
 
+export function insertEnglishShadowingVideo(scriptId, profile = {}, status = 'processing') {
+  const id = crypto.randomUUID();
+  const stamp = new Date().toISOString();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const script = db.prepare("SELECT content_language FROM scripts WHERE id=?").get(scriptId);
+    if (script?.content_language !== 'english-shadowing') throw new Error('EnglishShadowing: video cáº§n ká»‹ch báº£n Ä‘Ãºng luá»“ng.');
+    const sequenceState = db.prepare("SELECT value FROM english_shadowing_state WHERE key='next_background_theme_id'").get();
+    const themeId = getEnglishShadowingBackgroundTheme(sequenceState?.value)
+      ? sequenceState.value
+      : getNextEnglishShadowingBackgroundThemeId(null);
+    const nextThemeId = getNextEnglishShadowingBackgroundThemeId(themeId);
+    db.prepare('INSERT INTO videos(id,script_id,status,english_shadowing_profile_json,english_shadowing_theme_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)')
+      .run(id, scriptId, status, JSON.stringify(normalizeEnglishShadowingSettings(profile)), themeId, stamp, stamp);
+    db.prepare(`INSERT INTO english_shadowing_state(key,value,updated_at) VALUES('next_background_theme_id',?,?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`).run(nextThemeId, stamp);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return id;
+}
+
 export function getScript(scriptId) {
   const row = db.prepare('SELECT * FROM scripts WHERE id=?').get(scriptId);
   if (!row) return null;
   const contentLanguage = row.content_language || 'en';
-  const hashtags = ensureBrandHashtag(JSON.parse(row.hashtags_json), contentLanguage);
-  return { ...row, dialogues: JSON.parse(row.dialogues_json), speechSegments: JSON.parse(row.speech_segments_json || '[]'), hashtags, captionText: formatCaption(row.caption, hashtags, contentLanguage), thumbnailTitle: row.thumbnail_title, createdAt: row.created_at, contentHash: row.content_hash, contentLanguage };
+  const storedHashtags = JSON.parse(row.hashtags_json);
+  const hashtags = contentLanguage === 'english-shadowing' ? storedHashtags : ensureBrandHashtag(storedHashtags, contentLanguage);
+  const captionText = contentLanguage === 'english-shadowing'
+    ? formatEnglishShadowingCaption(row.caption, hashtags)
+    : formatCaption(row.caption, hashtags, contentLanguage);
+  return { ...row, dialogues: JSON.parse(row.dialogues_json), speechSegments: JSON.parse(row.speech_segments_json || '[]'), hashtags, captionText, thumbnailTitle: row.thumbnail_title, createdAt: row.created_at, contentHash: row.content_hash, contentLanguage };
+}
+
+function parseVideoBackgroundEffect(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
 }
 
 export function getVideo(videoId) {
-  return db.prepare('SELECT * FROM videos WHERE id=?').get(videoId) || null;
+  const video = db.prepare('SELECT * FROM videos WHERE id=?').get(videoId);
+  return video ? { ...video, backgroundEffectConfig: parseVideoBackgroundEffect(video.background_effect_json), englishShadowingProfile: parseEnglishShadowingProfile(video.english_shadowing_profile_json) } : null;
 }
 
 export function findVideoByScriptId(scriptId) {
-  return db.prepare('SELECT * FROM videos WHERE script_id=? ORDER BY created_at DESC LIMIT 1').get(scriptId) || null;
+  const video = db.prepare('SELECT * FROM videos WHERE script_id=? ORDER BY created_at DESC LIMIT 1').get(scriptId);
+  return video ? { ...video, backgroundEffectConfig: parseVideoBackgroundEffect(video.background_effect_json), englishShadowingProfile: parseEnglishShadowingProfile(video.english_shadowing_profile_json) } : null;
+}
+
+function parseEnglishShadowingProfile(value) {
+  if (!value) return null;
+  try { return normalizeEnglishShadowingSettings(JSON.parse(value)); }
+  catch { return normalizeEnglishShadowingSettings(); }
 }
 
 export function updateVideo(videoId, patch) {
@@ -547,8 +716,13 @@ export function listVideos() {
     LEFT JOIN scheduled_posts p ON p.video_id=v.id
     WHERE v.archived_at IS NULL ORDER BY v.created_at DESC`).all()
     .map((video) => {
-      const hashtags = ensureBrandHashtag(JSON.parse(video.hashtags_json), video.content_language || 'en');
-      return { ...video, dialogues: JSON.parse(video.dialogues_json), hashtags, captionText: formatCaption(video.caption, hashtags, video.content_language || 'en') };
+      const contentLanguage = video.content_language || 'en';
+      const storedHashtags = JSON.parse(video.hashtags_json);
+      const hashtags = contentLanguage === 'english-shadowing' ? storedHashtags : ensureBrandHashtag(storedHashtags, contentLanguage);
+      const captionText = contentLanguage === 'english-shadowing'
+        ? formatEnglishShadowingCaption(video.caption, hashtags)
+        : formatCaption(video.caption, hashtags, contentLanguage);
+      return { ...video, backgroundEffectConfig: parseVideoBackgroundEffect(video.background_effect_json), englishShadowingProfile: parseEnglishShadowingProfile(video.english_shadowing_profile_json), dialogues: JSON.parse(video.dialogues_json), hashtags, captionText };
     });
 }
 
@@ -611,13 +785,29 @@ function insertSchedule(videoId, scheduledAt) {
   return { id, videoId, scheduledAt, status: 'scheduled', facebookScheduleState: 'local', targetPageProfileId: targetPage?.id || null, targetPageId: targetPage?.pageId || null };
 }
 
-function occupiedScheduleTimes(excludeScheduleId = null) {
-  if (excludeScheduleId) {
-    return db.prepare(`SELECT scheduled_at FROM scheduled_posts WHERE id<>?
-      UNION ALL SELECT scheduled_at FROM published_schedule_history`).all(excludeScheduleId);
-  }
-  return db.prepare(`SELECT scheduled_at FROM scheduled_posts
-    UNION ALL SELECT scheduled_at FROM published_schedule_history`).all();
+function videoContentLanguage(videoId) {
+  return db.prepare("SELECT COALESCE(s.content_language,'en') AS content_language FROM scripts s JOIN videos v ON v.script_id=s.id WHERE v.id=?").get(videoId)?.content_language || 'en';
+}
+
+function occupiedScheduleTimes({ contentLanguage = null, excludeScheduleId = null } = {}) {
+  // Keep local/in-flight/uncertain rows as reservations; known failures release the daily slot.
+  const scheduled = db.prepare(`SELECT p.scheduled_at,
+      CASE WHEN p.status IN ('scheduled','publishing') AND p.facebook_schedule_state<>'failed' THEN 1 ELSE 0 END AS counts_toward_limit
+    FROM scheduled_posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id
+    WHERE (? IS NULL OR COALESCE(s.content_language,'en')=?) AND (? IS NULL OR p.id<>?)`)
+    .all(contentLanguage, contentLanguage, excludeScheduleId, excludeScheduleId);
+  const published = db.prepare(`SELECT h.scheduled_at,1 AS counts_toward_limit
+    FROM published_schedule_history h JOIN videos v ON v.id=h.video_id JOIN scripts s ON s.id=v.script_id
+    WHERE (? IS NULL OR COALESCE(s.content_language,'en')=?) AND (? IS NULL OR h.id<>?)`)
+    .all(contentLanguage, contentLanguage, excludeScheduleId, excludeScheduleId);
+  return [...scheduled, ...published];
+}
+
+function scheduledCalendarDays(timeZone, after = new Date()) {
+  const firstDay = localScheduleSlot(after, timeZone).day;
+  return [...new Set(occupiedScheduleTimes()
+    .map((row) => localScheduleSlot(row.scheduled_at, timeZone).day)
+    .filter((day) => day >= firstDay))].sort();
 }
 
 function scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay) {
@@ -625,14 +815,15 @@ function scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay) {
   if (!video) throw new Error('Không tìm thấy video.');
   if (video.archived_at || !['ready', 'scheduled'].includes(video.status)) throw new Error('Video chưa sẵn sàng để lên lịch.');
   if (db.prepare('SELECT 1 FROM scheduled_posts WHERE video_id=? LIMIT 1').get(videoId)) throw new Error('Video này đã có trong lịch đăng.');
+  const contentLanguage = videoContentLanguage(videoId);
   const slot = localScheduleSlot(scheduledAt, timeZone);
-  const sameDay = occupiedScheduleTimes()
-    .map((row) => localScheduleSlot(row.scheduled_at, timeZone))
+  const sameDay = occupiedScheduleTimes({ contentLanguage })
+    .map((row) => ({ ...localScheduleSlot(row.scheduled_at, timeZone), countsTowardLimit: row.counts_toward_limit !== 0 }))
     .filter((item) => item.day === slot.day);
   if (sameDay.some((item) => item.minute === slot.minute)) {
     throw Object.assign(new Error('Ngày này đã có video được xếp ở khung giờ này.'), { statusCode: 409 });
   }
-  if (sameDay.length >= Math.max(1, Math.min(4, Number(postsPerDay) || 1))) {
+  if (sameDay.filter((item) => item.countsTowardLimit).length >= Math.max(1, Math.min(4, Number(postsPerDay) || 1))) {
     throw Object.assign(new Error('Ngày này đã đủ số video theo giới hạn đăng mỗi ngày.'), { statusCode: 409 });
   }
 }
@@ -654,8 +845,10 @@ export function createSchedule(videoId, scheduledAt) {
 export function createRandomSchedule(videoId, timeZone = getSettings().timezone, postsPerDay = getSettings().postsPerDay, after = new Date()) {
   db.exec('BEGIN IMMEDIATE');
   try {
-    const schedules = occupiedScheduleTimes();
-    const scheduledAt = randomNextScheduledTime(after, timeZone, postsPerDay, schedules).toISOString();
+    const contentLanguage = videoContentLanguage(videoId);
+    const schedules = occupiedScheduleTimes({ contentLanguage });
+    const candidateDays = scheduledCalendarDays(timeZone, after);
+    const scheduledAt = randomNextScheduledTime(after, timeZone, postsPerDay, schedules, { preferUnderfilledDay: true, candidateDays }).toISOString();
     scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay);
     const schedule = insertSchedule(videoId, scheduledAt);
     db.exec('COMMIT');
@@ -681,8 +874,10 @@ export function approveVideoAndCreateRandomSchedule(videoId, timeZone = getSetti
       throw Object.assign(new Error('Video này đã có lịch đăng.'), { statusCode: 409 });
     }
     if (video.status !== 'ready') throw Object.assign(new Error('Chỉ có thể duyệt video đã render xong.'), { statusCode: 409 });
-    const schedules = occupiedScheduleTimes();
-    const scheduledAt = randomNextScheduledTime(after, timeZone, postsPerDay, schedules).toISOString();
+    const contentLanguage = videoContentLanguage(videoId);
+    const schedules = occupiedScheduleTimes({ contentLanguage });
+    const candidateDays = scheduledCalendarDays(timeZone, after);
+    const scheduledAt = randomNextScheduledTime(after, timeZone, postsPerDay, schedules, { preferUnderfilledDay: true, candidateDays }).toISOString();
     scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay);
     const schedule = insertSchedule(videoId, scheduledAt);
     db.exec('COMMIT');
@@ -694,12 +889,18 @@ export function approveVideoAndCreateRandomSchedule(videoId, timeZone = getSetti
 }
 
 export function listSchedules() {
-  return db.prepare(`SELECT p.*,v.status AS video_status,COALESCE(p.facebook_error,v.last_error,(SELECT h.error FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1)) AS error,s.topic,s.title,s.caption FROM scheduled_posts p
+  return db.prepare(`SELECT p.*,v.status AS video_status,
+    (SELECT h.status FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1) AS last_publish_status,
+    COALESCE(p.facebook_error,v.last_error,(SELECT h.error FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1)) AS error,s.topic,s.title,s.caption,s.content_language FROM scheduled_posts p
     JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id WHERE p.status<>'published' ORDER BY p.scheduled_at`).all();
 }
 
 export function listPublishedSchedules() {
-  return db.prepare('SELECT * FROM published_schedule_history ORDER BY published_at DESC,created_at DESC').all();
+  return db.prepare(`SELECT h.*,COALESCE(s.content_language,'en') AS content_language
+    FROM published_schedule_history h
+    LEFT JOIN videos v ON v.id=h.video_id
+    LEFT JOIN scripts s ON s.id=v.script_id
+    ORDER BY h.published_at DESC,h.created_at DESC`).all();
 }
 
 export function deletePublishedSchedule(scheduleId) {
@@ -742,23 +943,49 @@ export function completePublishedSchedule(scheduleId, { facebookId = null, url =
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 
-export function queueFacebookSchedule(scheduleId) {
+export function queueFacebookSchedule(scheduleId, { manualRetry = false, expectedFacebookId = null, expectedState = null, targetPageProfileId = null, targetPageId = null } = {}) {
   db.exec('BEGIN IMMEDIATE');
   try {
-    const schedule = db.prepare("SELECT id,video_id,scheduled_at,facebook_schedule_state,status FROM scheduled_posts WHERE id=?").get(scheduleId);
+    let schedule = db.prepare("SELECT id,video_id,scheduled_at,facebook_schedule_state,facebook_video_id,status,target_page_profile_id,target_page_id FROM scheduled_posts WHERE id=?").get(scheduleId);
+    if (manualRetry && schedule) {
+      const activeJobs = db.prepare("SELECT type,payload_json FROM jobs WHERE type IN ('schedule_facebook_video','publish_video') AND status IN ('pending','running')").all();
+      const alreadyActive = activeJobs.some(({ type, payload_json }) => {
+        try {
+          const payload = JSON.parse(payload_json);
+          return type === 'schedule_facebook_video' ? payload.scheduleId === schedule.id
+            : payload.scheduleId === schedule.id || payload.videoId === schedule.video_id;
+        } catch { return false; }
+      });
+      if (alreadyActive) { db.exec('COMMIT'); return null; }
+    }
+    if (manualRetry && schedule && (schedule.facebook_video_id !== expectedFacebookId || schedule.facebook_schedule_state !== expectedState)) {
+      db.exec('COMMIT');
+      return null;
+    }
+    if (manualRetry && schedule && ['scheduled', 'failed'].includes(schedule.status)) {
+      db.prepare(`UPDATE scheduled_posts SET status='scheduled',facebook_schedule_state='local',facebook_video_id=NULL,
+        target_page_profile_id=?,target_page_id=?,
+        facebook_upload_session_id=NULL,facebook_upload_offset=NULL,facebook_upload_end_offset=NULL,facebook_error=NULL,updated_at=? WHERE id=?`)
+        .run(targetPageProfileId ?? schedule.target_page_profile_id, targetPageId ?? schedule.target_page_id, new Date().toISOString(), scheduleId);
+      db.prepare("UPDATE videos SET status='scheduled',last_error=NULL,updated_at=? WHERE id=? AND status='publish_failed'")
+        .run(new Date().toISOString(), schedule.video_id);
+      schedule = { ...schedule, status: 'scheduled', facebook_schedule_state: 'local' };
+    }
     if (!schedule || schedule.status !== 'scheduled' || schedule.facebook_schedule_state !== 'local') {
       db.exec('COMMIT');
       return null;
     }
     const settings = getSettings();
     if (new Date(schedule.scheduled_at).getTime() < Date.now() + 15 * 60_000) {
-      const otherSchedules = occupiedScheduleTimes(schedule.id);
-      const revisedAt = randomNextScheduledTime(new Date(), settings.timezone, settings.postsPerDay, otherSchedules).toISOString();
+      const contentLanguage = videoContentLanguage(schedule.video_id);
+      const otherSchedules = occupiedScheduleTimes({ contentLanguage, excludeScheduleId: schedule.id });
+      const candidateDays = scheduledCalendarDays(settings.timezone);
+      const revisedAt = randomNextScheduledTime(new Date(), settings.timezone, settings.postsPerDay, otherSchedules, { preferUnderfilledDay: true, candidateDays }).toISOString();
       db.prepare('UPDATE scheduled_posts SET scheduled_at=?,updated_at=? WHERE id=?').run(revisedAt, new Date().toISOString(), schedule.id);
       db.prepare('UPDATE videos SET scheduled_at=?,updated_at=? WHERE id=?').run(revisedAt, new Date().toISOString(), schedule.video_id);
       log('WARN', 'FACEBOOK_SCHEDULE_TIME_ADJUSTED', `Lịch Facebook cũ đã quá sát giờ đăng; hệ thống chuyển lịch ${schedule.id} sang ${revisedAt} để Facebook kịp nhận.`);
     }
-    const jobId = queueJob('schedule_facebook_video', { scheduleId: schedule.id, videoId: schedule.video_id });
+    const jobId = queueJob('schedule_facebook_video', { scheduleId: schedule.id, videoId: schedule.video_id, ...(manualRetry ? { manualRetry: true } : {}) });
     db.prepare("UPDATE scheduled_posts SET facebook_schedule_state='queued',facebook_error=NULL,updated_at=? WHERE id=? AND facebook_schedule_state='local'")
       .run(new Date().toISOString(), schedule.id);
     db.exec('COMMIT');

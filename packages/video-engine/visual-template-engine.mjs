@@ -63,17 +63,65 @@ const CHINESE_PRESENTATION_LAYOUTS = {
     }
   }
 };
+const ENGLISH_PRESENTATION_LAYOUTS = {
+  'dialogue-cards': {
+    inlineTarget: false,
+    layers: {
+      'scene-number': { visible: false },
+      'vietnamese-card': { x: 80, y: 475, width: 920, height: 210, fontSize: 51, padding: 42, textAlign: 'center', accentBar: false, fill: '#E1E1DE', stroke: '#C8C8C4' },
+      'english-card': { x: 80, y: 735, width: 920, height: 230, fontSize: 48, padding: 42, textAlign: 'center', accentBar: false, fill: '#DEE4F0', stroke: '#BCC6D8', color: '#1D355A' },
+      vocabulary: { visible: false }
+    }
+  },
+  'numbered-scenario': {
+    inlineTarget: false,
+    layers: {
+      'scene-number': { visible: true, x: 80, y: 410, width: 70, height: 48, fontSize: 22, fill: '#DDE2E9', stroke: '#C3CAD4', color: '#33445F' },
+      'vietnamese-card': { x: 80, y: 480, width: 920, height: 210, fontSize: 50, padding: 42, fill: '#E1E1DE', stroke: '#C8C8C4', accent: '#193C74' },
+      'english-card': { x: 80, y: 730, width: 920, height: 205, fontSize: 47, padding: 42, fill: '#DEE4F0', stroke: '#BCC6D8', color: '#1D355A', accent: '#193C74' },
+      vocabulary: { x: 80, y: 1000, width: 920, height: 180, fontSize: 29, padding: 28, fill: '#E1E1DE', stroke: '#C8C8C4' }
+    }
+  },
+  'inline-meaning': {
+    inlineTarget: true,
+    layers: {
+      'scene-number': { visible: false },
+      'vietnamese-card': { x: 55, y: 385, width: 970, height: 205, fontSize: 50, padding: 38, fill: '#E1E1DE', stroke: '#C8C8C4', accent: '#E2860B' },
+      'english-card': { x: 55, y: 615, width: 970, height: 90, fontSize: 46, padding: 0, textAlign: 'start' },
+      vocabulary: { x: 55, y: 790, width: 970, height: 180, fontSize: 27, padding: 24, color: '#263244', fill: '#DEDEDC', stroke: '#C3C3C0' }
+    }
+  },
+  'inline-keyphrase': {
+    inlineTarget: true,
+    layers: {
+      'scene-number': { visible: false },
+      'vietnamese-card': { x: 55, y: 385, width: 970, height: 205, fontSize: 50, padding: 38, fill: '#E1E1DE', stroke: '#C8C8C4', accent: '#E2860B' },
+      'english-card': { x: 55, y: 615, width: 970, height: 90, fontSize: 46, padding: 0, textAlign: 'start' },
+      vocabulary: { x: 55, y: 790, width: 970, height: 180, fontSize: 27, padding: 24, color: '#263244', fill: '#DEDEDC', stroke: '#C3C3C0' }
+    }
+  }
+};
+const ENGLISH_PHRASE_COLORS = { orange: '#E78300', blue: '#55A9EC' };
 
 function chinesePresentationStyle(script) {
   const requested = String(script?.presentationStyle || script?.dialogues?.[0]?.presentationStyle || 'inline-meaning');
   return CHINESE_PRESENTATION_LAYOUTS[requested] ? requested : 'inline-meaning';
 }
 
+function englishPresentationStyle(script) {
+  const requested = String(script?.presentationStyle || script?.dialogues?.[0]?.presentationStyle || 'legacy');
+  return ENGLISH_PRESENTATION_LAYOUTS[requested] ? requested : null;
+}
+
 function presentationLayer(template, script, layerId) {
   const layer = getLayer(template, layerId);
-  if (!layer || script?.contentLanguage !== 'zh') return layer;
-  const style = CHINESE_PRESENTATION_LAYOUTS[chinesePresentationStyle(script)];
-  return { ...layer, ...(style.layers[layerId] || {}) };
+  if (!layer) return layer;
+  const style = script?.contentLanguage === 'zh'
+    ? CHINESE_PRESENTATION_LAYOUTS[chinesePresentationStyle(script)]
+    : script?.contentLanguage === 'en'
+      ? ENGLISH_PRESENTATION_LAYOUTS[englishPresentationStyle(script)]
+      : null;
+  return style ? { ...layer, ...(style.layers[layerId] || {}) } : layer;
 }
 
 export function makeDefaultChineseTemplate() {
@@ -462,9 +510,10 @@ async function measureWordBoxes(layout, { fontSize, lineHeight, weight, fontFami
   return rememberWordMetrics(cacheKey, measured);
 }
 
-async function dialogueTextMarkup(layout, { x, y, fontSize, lineHeight, color: fill, weight = 700, fontFamily = 'Be Vietnam Pro', highlight, highlightSettings, anchor = 'start', staticHighlightTokenIds = null, staticHighlightColor = null }) {
+async function dialogueTextMarkup(layout, { x, y, fontSize, lineHeight, color: fill, weight = 700, fontFamily = 'Be Vietnam Pro', highlight, highlightSettings, anchor = 'start', staticHighlightTokenIds = null, staticHighlightColor = null, staticHighlightColorByTokenId = null, staticHighlightActive = false }) {
   const activeIds = new Set(highlightSettings?.highlightEnabled === false || highlight?.segmentId !== layout.segmentId ? [] : highlight.tokenIds || []);
   const staticIds = staticHighlightTokenIds instanceof Set ? staticHighlightTokenIds : new Set(staticHighlightTokenIds || []);
+  const staticColors = staticHighlightColorByTokenId instanceof Map ? staticHighlightColorByTokenId : new Map();
   const settings = highlightSettings || {};
   const padding = Math.max(0, Math.min(24, Number(settings.highlightPadding ?? 6)));
   const radius = Math.max(0, Math.min(32, Number(settings.highlightRadius ?? 8)));
@@ -477,8 +526,10 @@ async function dialogueTextMarkup(layout, { x, y, fontSize, lineHeight, color: f
   };
   const selectedMetrics = activeIds.size ? await measureWordBoxes(layout, { fontSize, lineHeight, weight, fontFamily }) : [];
   const selectedBoxes = boxesFor(selectedMetrics, activeIds);
+  const lineWidths = selectedMetrics.map((boxes) => boxes.reduce((width, box) => Math.max(width, box.x + box.width), 0));
   const rects = selectedBoxes.map((box) => {
     const lineBoxes = selectedMetrics[box.lineIndex] || [];
+    const anchorOffset = anchor === 'center' ? Number(lineWidths[box.lineIndex] || 0) / 2 : 0;
     const previous = lineBoxes
       .filter((candidate) => !activeIds.has(candidate.tokenId) && candidate.x + candidate.width <= box.x)
       .sort((left, right) => right.x - left.x)[0];
@@ -489,10 +540,14 @@ async function dialogueTextMarkup(layout, { x, y, fontSize, lineHeight, color: f
     const rightGap = next ? next.x - (box.x + box.width) : Infinity;
     const padLeft = Math.min(padding, Number.isFinite(leftGap) ? Math.max(0, leftGap / 2 - 0.5) : padding);
     const padRight = Math.min(padding, Number.isFinite(rightGap) ? Math.max(0, rightGap / 2 - 0.5) : padding);
-    return `<rect x="${x + box.x - padLeft}" y="${y + box.y - padding}" width="${Math.max(1, box.width + padLeft + padRight)}" height="${box.height + padding * 2}" rx="${radius}" fill="${highlightColor}"/>`;
+    return `<rect x="${x + box.x - anchorOffset - padLeft}" y="${y + box.y - padding}" width="${Math.max(1, box.width + padLeft + padRight)}" height="${box.height + padding * 2}" rx="${radius}" fill="${highlightColor}"/>`;
   }).join('');
   const anchorAttribute = anchor === 'center' ? ' text-anchor="middle"' : '';
-  const text = `<text x="${x}" y="${y}"${anchorAttribute} fill="${color(fill, '#263244')}" font-family="${xml(fontFamily)}, Segoe UI, sans-serif" font-size="${fontSize}" font-weight="${weight}" dominant-baseline="alphabetic">${layout.lines.map((line, index) => `<tspan x="${x}" y="${y + index * lineHeight}">${line.fragments.map((fragment) => tokenFragmentMarkup(fragment, activeIds, staticIds.has(fragment.tokenId) ? staticHighlightColor : null)).join('')}</tspan>`).join('')}</text>`;
+  const text = `<text x="${x}" y="${y}"${anchorAttribute} fill="${color(fill, '#263244')}" font-family="${xml(fontFamily)}, Segoe UI, sans-serif" font-size="${fontSize}" font-weight="${weight}" dominant-baseline="alphabetic">${layout.lines.map((line, index) => `<tspan x="${x}" y="${y + index * lineHeight}">${line.fragments.map((fragment) => {
+    const phraseColor = staticColors.get(fragment.tokenId) || staticHighlightColor;
+    const useStaticColor = staticIds.has(fragment.tokenId) && phraseColor && (!staticHighlightActive || !activeIds.has(fragment.tokenId));
+    return tokenFragmentMarkup(fragment, activeIds, useStaticColor ? phraseColor : null);
+  }).join('')}</tspan>`).join('')}</text>`;
   return `${rects}${text}`;
 }
 
@@ -513,14 +568,25 @@ function textLines(lines, options = {}) {
 function layerGeometry(template, script, index, speechSegment = null) {
   const map = layerMap(template);
   const contentLanguage = script.contentLanguage === 'ja' || script.contentLanguage === 'zh' ? script.contentLanguage : 'en';
-  const styleName = contentLanguage === 'zh' ? chinesePresentationStyle(script) : null;
-  const style = styleName ? CHINESE_PRESENTATION_LAYOUTS[styleName] : null;
-  const vi = (contentLanguage === 'zh' ? presentationLayer(template, script, 'vietnamese-card') : map.get('vietnamese-card')) || { x: 0, y: 0, width: 920, height: 202, fontSize: 53, padding: 43 };
-  const en = (contentLanguage === 'zh' ? presentationLayer(template, script, 'chinese-card') : null) || map.get('english-card') || { x: 0, y: 0, width: 920, height: 220, fontSize: 49, padding: 42 };
-  const vocab = (contentLanguage === 'zh' ? presentationLayer(template, script, 'vocabulary') : map.get('vocabulary')) || { x: 0, y: 0, width: 800, height: 190, fontSize: 25, padding: 28 };
+  const styleName = contentLanguage === 'zh' ? chinesePresentationStyle(script) : contentLanguage === 'en' ? englishPresentationStyle(script) : null;
+  const style = styleName
+    ? contentLanguage === 'zh' ? CHINESE_PRESENTATION_LAYOUTS[styleName] : ENGLISH_PRESENTATION_LAYOUTS[styleName]
+    : null;
+  const hasPresentationLayout = contentLanguage === 'zh' || Boolean(style);
+  const vi = (hasPresentationLayout ? presentationLayer(template, script, 'vietnamese-card') : map.get('vietnamese-card')) || { x: 0, y: 0, width: 920, height: 202, fontSize: 53, padding: 43 };
+  const en = (contentLanguage === 'zh' ? presentationLayer(template, script, 'chinese-card') : style ? presentationLayer(template, script, 'english-card') : null) || map.get('english-card') || { x: 0, y: 0, width: 920, height: 220, fontSize: 49, padding: 42 };
+  const vocab = (hasPresentationLayout ? presentationLayer(template, script, 'vocabulary') : map.get('vocabulary')) || { x: 0, y: 0, width: 800, height: 190, fontSize: 25, padding: 28 };
   const dialogue = { ...(script.dialogues?.[index] || { vietnamese: 'Hôm nay mình cùng luyện nói tiếng Anh nhé.', english: "Let's practice English together today.", term: 'practice English', meaningVi: 'luyện nói tiếng Anh' }) };
   const targetField = contentLanguage === 'ja' ? 'japanese' : contentLanguage === 'zh' ? 'chinese' : 'english';
   if (targetField !== 'english') dialogue.english = dialogue[targetField] || '';
+  if (contentLanguage === 'en' && speechSegment?.target?.layerId === 'vocabulary' && Array.isArray(dialogue.vocabularyCards)) {
+    const vocabularyIndex = Number(speechSegment.target?.vocabularyIndex);
+    const vocabularyCard = Number.isInteger(vocabularyIndex) ? dialogue.vocabularyCards[vocabularyIndex] : null;
+    if (vocabularyCard) {
+      dialogue.term = vocabularyCard.term || '';
+      dialogue.meaningVi = vocabularyCard.meaningVi || '';
+    }
+  }
   if (speechSegment && Number(speechSegment.target?.dialogueIndex) === index) {
     if (speechSegment.target.layerId === 'vietnamese-card') dialogue.vietnamese = speechSegment.text;
     if (speechSegment.target.layerId === 'english-card' || speechSegment.target.layerId === 'chinese-card') dialogue.english = speechSegment.text;
@@ -537,26 +603,110 @@ function layerGeometry(template, script, index, speechSegment = null) {
   const enText = layoutWordLines(dialogue.english, enTextWidth, enLayout.fontSize, enSegmentId, contentLanguage);
   const termText = `${dialogue.term || ''} = ${dialogue.meaningVi || ''}`;
   const vocabLines = wrapText(termText, vocab.width - (vocab.padding || 28) * 2, Number(vocab.fontSize || 32));
-  const viHeight = contentLanguage === 'zh' ? viLayout.height : viLayout.height;
+  const viHeight = viLayout.height;
   const enHeight = contentLanguage === 'zh'
     ? Math.max(en.height, enLayout.textHeight + (inlineTarget ? 0 : 64 + 40))
+    : contentLanguage === 'en' && inlineTarget
+      ? enLayout.lines.length * enLayout.lineHeight + 4
     : Math.max(en.height, 110 + enLayout.lines.length * enLayout.lineHeight + 6);
   const enY = Math.max(en.y, vi.y + viHeight + (contentLanguage === 'zh' ? 30 : 24));
   const vocabGap = contentLanguage === 'zh' ? (inlineTarget ? 48 : 22) : 24;
   const vocabY = Math.max(vocab.y, enY + enHeight + vocabGap);
-  const vocabHeight = Math.max(vocab.height, 76 + vocabLines.length * (Number(vocab.fontSize || 32) + 10));
+  const inlineVocabularyStyle = contentLanguage === 'en' && ['inline-meaning', 'inline-keyphrase'].includes(styleName);
+  const vocabularyInnerWidth = Math.max(1, Number(vocab.width) - Number(vocab.padding || 24) * 2);
+  const vocabularyCardLayouts = inlineVocabularyStyle
+    ? (Array.isArray(dialogue.vocabularyCards) ? dialogue.vocabularyCards : []).map((card, cardIndex) => {
+      const sourceFontSize = 26;
+      const termFontSize = 27;
+      const explanationFontSize = 22;
+      const sourceLineHeight = 30;
+      const termLineHeight = 31;
+      const explanationLineHeight = 25;
+      const sourceLines = wrapText(card.sourceVi || '', vocabularyInnerWidth, sourceFontSize);
+      const termLines = wrapText(card.term || '', vocabularyInnerWidth, termFontSize);
+      const explanationLines = wrapText(card.meaningVi || '', vocabularyInnerWidth, explanationFontSize);
+      const sourceBaselineOffset = 16 + sourceFontSize;
+      const arrowBaselineOffset = sourceBaselineOffset + (sourceLines.length - 1) * sourceLineHeight + 22;
+      const termBaselineOffset = arrowBaselineOffset + 13 + termFontSize;
+      const explanationBaselineOffset = termBaselineOffset + Math.max(termFontSize, termLines.length * termLineHeight) + 5 + explanationFontSize;
+      const height = explanationBaselineOffset + Math.max(0, explanationLines.length - 1) * explanationLineHeight + 16;
+      return {
+        sourceVi: card.sourceVi || '', term: card.term || '', meaningVi: card.meaningVi || '', cardIndex,
+        sourceLines, termLines, explanationLines,
+        sourceFontSize, termFontSize, explanationFontSize,
+        sourceLineHeight, termLineHeight, explanationLineHeight,
+        sourceBaselineOffset, arrowBaselineOffset, termBaselineOffset, explanationBaselineOffset,
+        height
+      };
+    })
+    : [];
+  const activeVocabularyIndex = Number(speechSegment?.target?.vocabularyIndex);
+  const visibleVocabularyCount = inlineVocabularyStyle && Number.isInteger(activeVocabularyIndex)
+    ? Math.min(vocabularyCardLayouts.length, Math.max(0, activeVocabularyIndex) + 1)
+    : vocabularyCardLayouts.length;
+  let vocabularyCardY = vocabY;
+  for (const card of vocabularyCardLayouts) {
+    card.y = vocabularyCardY;
+    vocabularyCardY += card.height + 14;
+  }
+  const scenarioMeaningLines = contentLanguage === 'en' && styleName === 'numbered-scenario'
+    ? wrapText(dialogue.meaningVi || '', vocabularyInnerWidth, 22)
+    : [];
+  const scenarioVocabularyHeight = scenarioMeaningLines.length ? 24 + 27 + 8 + scenarioMeaningLines.length * 25 + 18 : 120;
+  const vocabHeight = inlineVocabularyStyle
+    ? Math.max(Number(vocab.height || 0), vocabularyCardLayouts.reduce((sum, card, index) => sum + card.height + (index ? 14 : 0), 0))
+    : contentLanguage === 'en' && styleName === 'numbered-scenario'
+      ? Math.max(Number(vocab.height || 0), scenarioVocabularyHeight)
+      : Math.max(vocab.height, 76 + vocabLines.length * (Number(vocab.fontSize || 32) + 10));
   const pinyinLayer = contentLanguage === 'zh' ? presentationLayer(template, script, 'pinyin') : null;
   const pinyinFontSize = Number(pinyinLayer?.fontSize || 28);
   const cardTextHeight = Math.max(enLayout.fontSize, enLayout.lines.length * enLayout.lineHeight);
   const cardTextTop = enY + (enHeight - cardTextHeight - (inlineTarget ? 0 : pinyinFontSize + 32)) / 2;
   const chineseTextFirstBaseline = inlineTarget
-    ? enY + enLayout.fontSize
+    ? enY + enLayout.fontSize + (contentLanguage === 'zh' ? 0 : 12)
     : cardTextTop + enLayout.fontSize;
   const chineseTextLastBaseline = chineseTextFirstBaseline + Math.max(0, enLayout.lines.length - 1) * enLayout.lineHeight;
   const pinyinBaseline = contentLanguage === 'zh'
     ? chineseTextLastBaseline + pinyinFontSize + (inlineTarget ? 12 : 18)
     : null;
   const staticHighlightTokenIds = new Set();
+  const staticHighlightColorByTokenId = new Map();
+  const staticHighlightColor = contentLanguage === 'en' && ['inline-meaning', 'inline-keyphrase', 'numbered-scenario'].includes(styleName)
+    ? ENGLISH_PHRASE_COLORS.blue
+    : null;
+  if (contentLanguage === 'en' && ['inline-meaning', 'inline-keyphrase', 'numbered-scenario'].includes(styleName)) {
+    const keyphrases = styleName === 'numbered-scenario'
+      ? [String(dialogue.term || '').trim()].filter(Boolean)
+      : Array.isArray(dialogue.vocabularyCards)
+        ? dialogue.vocabularyCards.map((card) => String(card?.term || '').trim()).filter(Boolean)
+        : [String(dialogue.term || '').trim()].filter(Boolean);
+    const englishText = String(dialogue.english || '');
+    const lowerEnglish = englishText.toLocaleLowerCase('en-US');
+    const tokens = tokenizeText(englishText, enSegmentId, 'en');
+    for (const [phraseIndex, keyphrase] of keyphrases.entries()) {
+      const phraseColor = styleName === 'inline-keyphrase' && phraseIndex === 0
+        ? ENGLISH_PHRASE_COLORS.orange
+        : ENGLISH_PHRASE_COLORS.blue;
+      const lowerKeyphrase = keyphrase.toLocaleLowerCase('en-US');
+      let phraseStart = lowerEnglish.indexOf(lowerKeyphrase);
+      while (phraseStart >= 0) {
+        const phraseEnd = phraseStart + lowerKeyphrase.length;
+        const previousCharacter = Array.from(englishText.slice(0, phraseStart)).at(-1) || '';
+        const nextCharacter = Array.from(englishText.slice(phraseEnd))[0] || '';
+        const hasWordBoundary = (!previousCharacter || !/[\p{L}\p{N}]/u.test(previousCharacter))
+          && (!nextCharacter || !/[\p{L}\p{N}]/u.test(nextCharacter));
+        if (hasWordBoundary) {
+          for (const token of tokens) {
+            if (token.start < phraseEnd && token.end > phraseStart) {
+              staticHighlightTokenIds.add(token.id);
+              if (!staticHighlightColorByTokenId.has(token.id)) staticHighlightColorByTokenId.set(token.id, phraseColor);
+            }
+          }
+        }
+        phraseStart = lowerEnglish.indexOf(lowerKeyphrase, phraseStart + lowerKeyphrase.length);
+      }
+    }
+  }
   return {
     dialogue,
     styleName,
@@ -575,12 +725,17 @@ function layerGeometry(template, script, index, speechSegment = null) {
     pinyinBaseline,
     pinyinFontSize,
     staticHighlightTokenIds,
-    staticHighlightColor: null,
+    staticHighlightColor,
+    staticHighlightColorByTokenId,
     vocabLines,
     enHeight,
     enY,
     vocabY,
-    vocabHeight
+    vocabHeight,
+    vocabularyCardLayouts,
+    visibleVocabularyCount,
+    scenarioMeaningLines,
+    scenarioVocabularyHeight
   };
 }
 
@@ -694,7 +849,10 @@ async function layerMarkup(layerId, context) {
   }
   if (layerId === 'scene-number') {
     const x = layer.x; const y = layer.y; const w = layer.width; const h = layer.height;
-    return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 22}" fill="${color(layer.fill, '#E4F0EC')}" stroke="${color(layer.stroke, '#B9D3CD')}" stroke-width="3"/><text x="${x + w / 2}" y="${y + h / 2 + 9}" text-anchor="middle" fill="${color(layer.color, brand.primaryColor)}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="${layer.fontSize || 27}" font-weight="700">${String(index + 1).padStart(2, '0')}  /  ${String(totalCount || 1).padStart(2, '0')}</text></g>`;
+    const label = contentLanguage === 'en' && geometry.styleName === 'numbered-scenario'
+      ? String(index + 1)
+      : `${String(index + 1).padStart(2, '0')}  /  ${String(totalCount || 1).padStart(2, '0')}`;
+    return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 22}" fill="${color(layer.fill, '#E4F0EC')}" stroke="${color(layer.stroke, '#B9D3CD')}" stroke-width="3"/><text x="${x + w / 2}" y="${y + h / 2 + 9}" text-anchor="middle" fill="${color(layer.color, brand.primaryColor)}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="${layer.fontSize || 27}" font-weight="700">${xml(label)}</text></g>`;
   }
   if (layerId === 'vietnamese-card' || layerId === 'english-card' || layerId === 'chinese-card') {
     const isVi = layerId === 'vietnamese-card';
@@ -706,16 +864,21 @@ async function layerMarkup(layerId, context) {
     const accent = color(layer.accent, isVi ? brand.primaryColor : brand.secondaryColor);
     const targetLanguage = contentLanguage === 'ja' ? 'JAPANESE' : contentLanguage === 'zh' ? 'CHINESE' : 'ENGLISH';
     let label = isVi ? 'CÂU TIẾNG VIỆT' : isChineseCard ? 'CÂU TIẾNG TRUNG' : `SAY IT IN ${targetLanguage}`;
+    if (contentLanguage === 'en' && geometry.styleName) label = '';
     if (contentLanguage === 'zh' && brand.sampleStyle === true) label = '';
     const fallbackFonts = contentLanguage === 'ja' ? ', Yu Gothic UI, Meiryo' : contentLanguage === 'zh' ? ', Microsoft YaHei' : '';
     const dialogueFontFamily = contentLanguage === 'en' ? brand.fontFamily : `${brand.fontFamily || 'Be Vietnam Pro'}${fallbackFonts}`;
     const defaultSegmentId = isVi ? defaultDialogueSegmentId(index, 'vi', geometry.dialogue) : defaultDialogueSegmentId(index, contentLanguage, geometry.dialogue);
-    const centered = contentLanguage === 'zh' && layer.textAlign === 'center';
-    const isInlineTarget = isChineseCard && geometry.inlineTarget;
+    const centered = contentLanguage === 'zh' && layer.textAlign === 'center'
+      || contentLanguage === 'en' && geometry.styleName === 'dialogue-cards';
+    const isInlineTarget = Boolean(geometry.inlineTarget
+      && (isChineseCard && contentLanguage === 'zh' || !isVi && !isChineseCard && contentLanguage === 'en'));
     const textX = isInlineTarget ? Number(geometry.enX) : centered ? x + w / 2 : x + padding;
     const textY = contentLanguage === 'zh'
       ? isVi ? geometry.viTextBaseline : geometry.enTextFirstBaseline
-      : y + 112;
+      : isInlineTarget ? geometry.enTextFirstBaseline
+        : contentLanguage === 'en' && geometry.styleName ? isVi ? geometry.viTextBaseline : geometry.enTextFirstBaseline
+          : y + 112;
     const textMarkup = await dialogueTextMarkup(textLayout, {
       x: textX, y: textY, fontSize, lineHeight,
       color: color(layer.color, isVi ? brand.bodyColor : brand.primaryColor),
@@ -723,17 +886,73 @@ async function layerMarkup(layerId, context) {
       highlight: highlight || (highlightSettings?.highlightEnabled ? null : { segmentId: defaultSegmentId, tokenIds: [] }),
       highlightSettings,
       anchor: centered ? 'center' : 'start',
-      staticHighlightTokenIds: isChineseCard && contentLanguage === 'zh' ? geometry.staticHighlightTokenIds : null,
-      staticHighlightColor: isChineseCard && contentLanguage === 'zh' ? geometry.staticHighlightColor : null
+      staticHighlightTokenIds: isChineseCard && contentLanguage === 'zh'
+        || contentLanguage === 'en' && ['inline-meaning', 'inline-keyphrase', 'numbered-scenario'].includes(geometry.styleName)
+        ? geometry.staticHighlightTokenIds
+        : null,
+      staticHighlightColor: contentLanguage === 'en' && geometry.styleName === 'inline-keyphrase'
+        ? geometry.staticHighlightColor
+        : isChineseCard && contentLanguage === 'zh' ? geometry.staticHighlightColor : null,
+      staticHighlightColorByTokenId: contentLanguage === 'en' ? geometry.staticHighlightColorByTokenId : null,
+      staticHighlightActive: contentLanguage === 'en' && ['inline-meaning', 'inline-keyphrase', 'numbered-scenario'].includes(geometry.styleName)
     });
     if (isInlineTarget) return `${groupStart}${textMarkup}</g>`;
-    return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 28}" fill="${fill}" stroke="${color(layer.stroke, '#CFD9D6')}" stroke-width="2" filter="url(#softShadow)"/><rect x="${x + 8}" y="${y + 24}" width="10" height="${Math.max(1, h - 48)}" rx="5" fill="${accent}"/><text x="${x + padding}" y="${y + 44}" fill="${accent}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="21" font-weight="700" letter-spacing="1.5">${label}</text>${textMarkup}</g>`;
+    const accentRail = layer.accentBar === false ? '' : `<rect x="${x + 8}" y="${y + 24}" width="10" height="${Math.max(1, h - 48)}" rx="5" fill="${accent}"/>`;
+    const cardLabel = label ? `<text x="${centered ? x + w / 2 : x + padding}" y="${y + 44}"${centered ? ' text-anchor="middle"' : ''} fill="${accent}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="21" font-weight="700" letter-spacing="1.5">${label}</text>` : '';
+    return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 28}" fill="${fill}" stroke="${color(layer.stroke, '#CFD9D6')}" stroke-width="2" filter="url(#softShadow)"/>${accentRail}${cardLabel}${textMarkup}</g>`;
   }
   if (layerId === 'vocabulary') {
     const x = layer.x; const y = geometry.vocabY; const h = geometry.vocabHeight;
     const character = presentationLayer(template, script, 'character');
-    const rightEdge = contentLanguage === 'zh' ? template.canvas.width - 32 : character ? character.x : template.canvas.width - 32;
+    const rightEdge = contentLanguage === 'zh' || (contentLanguage === 'en' && geometry.styleName)
+      ? template.canvas.width - 32
+      : character ? character.x : template.canvas.width - 32;
     const w = Math.max(1, Math.min(layer.width, rightEdge - layer.x - 38));
+    if (contentLanguage === 'en' && ['inline-meaning', 'inline-keyphrase'].includes(geometry.styleName)) {
+      const padding = Number(layer.padding || 24);
+      const textX = x + padding;
+      const cards = geometry.vocabularyCardLayouts.slice(0, geometry.visibleVocabularyCount);
+      const markup = cards.map((card) => {
+        const cardIndex = card.cardIndex;
+        const cardY = card.y;
+        const termColor = geometry.styleName === 'inline-keyphrase' && cardIndex === 0
+          ? ENGLISH_PHRASE_COLORS.orange
+          : ENGLISH_PHRASE_COLORS.blue;
+        const sourceMarkup = textLines(card.sourceLines, {
+          x: textX, y: cardY + card.sourceBaselineOffset, fontSize: card.sourceFontSize,
+          lineHeight: card.sourceLineHeight, color: color(layer.color, brand.bodyColor), weight: 500, fontFamily: brand.fontFamily
+        });
+        const arrowMarkup = textLines(['→'], {
+          x: textX, y: cardY + card.arrowBaselineOffset, fontSize: 22, lineHeight: 24,
+          color: '#73777A', weight: 500, fontFamily: brand.fontFamily
+        });
+        const termMarkup = textLines(card.termLines, {
+          x: textX, y: cardY + card.termBaselineOffset, fontSize: card.termFontSize,
+          lineHeight: card.termLineHeight, color: termColor, weight: 600, fontFamily: brand.fontFamily
+        });
+        const explanationMarkup = textLines(card.explanationLines, {
+          x: textX, y: cardY + card.explanationBaselineOffset, fontSize: card.explanationFontSize,
+          lineHeight: card.explanationLineHeight, color: '#565C62', weight: 400, fontFamily: brand.fontFamily
+        });
+        return `<g data-vocabulary-card="${cardIndex}"><rect x="${x}" y="${cardY}" width="${w}" height="${card.height}" rx="${layer.radius || 22}" fill="${color(layer.fill, '#DEDEDC')}" stroke="${color(layer.stroke, '#C3C3C0')}" stroke-width="2" filter="url(#softShadow)"/>${sourceMarkup}${arrowMarkup}${termMarkup}${explanationMarkup}</g>`;
+      }).join('');
+      return `${groupStart}${markup}</g>`;
+    }
+    if (contentLanguage === 'en' && geometry.styleName === 'numbered-scenario') {
+      const padding = Number(layer.padding || 28);
+      const textX = x + padding;
+      const meaningLines = geometry.scenarioMeaningLines;
+      const termLines = wrapText(geometry.dialogue.term || '', w - padding * 2, 27);
+      const termMarkup = textLines(termLines, {
+        x: textX, y: y + 50, fontSize: 27, lineHeight: 31,
+        color: ENGLISH_PHRASE_COLORS.blue, weight: 600, fontFamily: brand.fontFamily
+      });
+      const meaningMarkup = textLines(meaningLines, {
+        x: textX, y: y + 82, fontSize: 22, lineHeight: 25,
+        color: '#565C62', weight: 400, fontFamily: brand.fontFamily
+      });
+      return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 22}" fill="${color(layer.fill, '#E1E1DE')}" stroke="${color(layer.stroke, '#C8C8C4')}" stroke-width="2" filter="url(#softShadow)"/>${termMarkup}${meaningMarkup}</g>`;
+    }
     const fontSize = Number(layer.fontSize || 32); const lines = wrapText(`${geometry.dialogue.term || ''}  =  ${geometry.dialogue.meaningVi || ''}`, w - Number(layer.padding || 28) * 2, fontSize);
     const textMarkup = textLines(lines, { x: x + Number(layer.padding || 28), y: y + 78, fontSize, lineHeight: fontSize + 10, color: color(layer.color, brand.secondaryColor), weight: Number(layer.fontWeight || 600), phrase: contentLanguage === 'zh' ? '' : geometry.dialogue.term, highlightColor: brand.accentColor, fontFamily: brand.fontFamily });
     return `${groupStart}<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 26}" fill="${color(layer.fill, '#FFFFFF')}" stroke="${color(layer.stroke, '#C7DCD7')}" stroke-width="2" filter="url(#softShadow)"/><text x="${x + Number(layer.padding || 28)}" y="${y + 40}" fill="${brand.secondaryColor}" font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="20" font-weight="700" letter-spacing="1.4">CỤM TỪ</text>${textMarkup}</g>`;
@@ -786,7 +1005,7 @@ export async function buildSceneSvg({ template = readVisualTemplate(), script, s
     if (markup) groups.push({ id, markup });
   }
   if (!forceLayer && includeBackground && backgroundEffect !== 'none') {
-    const effect = renderBackgroundEffectMarkup(backgroundEffect, { width, height, time: effectTime, seed: effectSeed, density: backgroundEffectDensity, speed: backgroundEffectSpeed, opacity: backgroundEffectOpacity });
+    const effect = renderBackgroundEffectMarkup(backgroundEffect, { width, height, time: effectTime, seed: effectSeed, density: backgroundEffectDensity, speed: backgroundEffectSpeed, opacity: backgroundEffectOpacity, contentLanguage: sceneScript.contentLanguage || 'en' });
     if (effect) {
       const backgroundIndex = groups.findIndex((group) => group.id === 'background');
       groups.splice(backgroundIndex < 0 ? 0 : backgroundIndex + 1, 0, { id: 'background-effect', markup: effect });

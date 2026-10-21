@@ -28,6 +28,23 @@ function chineseFixture(style) {
   };
 }
 
+function englishInlineFixture(presentationStyle = 'inline-keyphrase') {
+  return {
+    topic: 'Ăn chay', category: 'Sinh hoạt', level: 'A2', title: 'Tôi là người ăn chay',
+    hook: 'Một câu tiếng Anh trong đời sống.', caption: 'Học cách nói về chế độ ăn.',
+    thumbnailTitle: 'Người ăn chay', presentationStyle,
+    dialogues: [{
+      vietnamese: 'Tôi là người ăn chay nên tôi không thể ăn thịt được.',
+      english: 'I am a vegetarian, so I cannot eat any meat.',
+      vocabularyCards: [
+        { sourceVi: 'người ăn chay', term: 'a vegetarian', meaningVi: 'Danh từ này chỉ người theo chế độ ăn không có thịt cá.' },
+        { sourceVi: 'không thể ăn thịt', term: 'cannot eat any meat', meaningVi: 'Cụm này nhấn mạnh người nói hoàn toàn không ăn các loại thịt.' }
+      ]
+    }],
+    hashtags: []
+  };
+}
+
 test('topic library contains one hundred distinct topics', () => {
   assert.equal(TOPICS.length, 100);
   assert.equal(new Set(TOPICS.map((topic) => topic.title)).size, 100);
@@ -44,6 +61,32 @@ test('local template creates exactly three valid bilingual cards', () => {
 test('local template refuses topics without a matching content set', () => {
   const friendTopic = TOPICS.find((topic) => topic.category === 'Bạn bè');
   assert.throws(() => makeLocalScript(friendTopic), /chưa có mẫu nội dung cục bộ phù hợp/);
+});
+
+test('English inline sample scripts keep Vietnamese-to-English phrase pairs in spoken order', () => {
+  for (const style of ['inline-meaning', 'inline-keyphrase']) {
+    const script = validateScript(englishInlineFixture(style), { contentLanguage: 'en', presentationStyle: style });
+    assert.equal(script.dialogues[0].vocabularyCards.length, 2, style);
+    assert.deepEqual(script.dialogues[0].vocabularyCards.map((card) => card.sourceVi), ['người ăn chay', 'không thể ăn thịt'], style);
+    assert.deepEqual(
+      script.speechSegments.map((segment) => [segment.language, segment.text, segment.target.vocabularyIndex]),
+      [
+        ['vi', script.dialogues[0].vietnamese, undefined],
+        ['en', script.dialogues[0].english, undefined],
+        ['en', 'a vegetarian', 0],
+        ['vi', script.dialogues[0].vocabularyCards[0].meaningVi, 0],
+        ['en', 'cannot eat any meat', 1],
+        ['vi', script.dialogues[0].vocabularyCards[1].meaningVi, 1]
+      ],
+      style
+    );
+  }
+});
+
+test('English inline sample validation rejects phrase mappings not found in source lines', () => {
+  const script = englishInlineFixture();
+  script.dialogues[0].vocabularyCards[1].sourceVi = 'ăn chay trường';
+  assert.throws(() => validateScript(script, { contentLanguage: 'en', presentationStyle: 'inline-keyphrase' }), /không xuất hiện nguyên văn trong câu tiếng Việt/);
 });
 
 test('script validator rejects missing vocabulary term and duplicate English lines', () => {
@@ -72,21 +115,21 @@ test('near duplicate English lines are detected locally', () => {
   assert.throws(() => assertDistinctFromRecent(script, [script.dialogues[0].english]), /quá giống/);
 });
 
-test('validator accepts flexible dialogue turns and long text for automatic speech segments', () => {
+test('validator accepts long spoken turns while keeping the three-scene format', () => {
   const script = validateScript({
     topic: 'Long roleplay', category: 'Travel', level: 'B1', title: 'At the station', hook: 'Try this exchange.',
     caption: 'Learn useful English.', hashtags: [], thumbnailTitle: 'At the station',
-    dialogues: Array.from({ length: 5 }, (_, index) => ({
+    dialogues: Array.from({ length: 3 }, (_, index) => ({
       id: `exchange-${index + 1}`,
       turns: [
         { speakerId: 'traveler', language: 'en', text: `${'Could you please help me '.repeat(12)}with the next train?` },
-        { speakerId: 'staff', language: 'vi', text: `Lượt trả lời ${index + 1}.` }
+        { speakerId: 'staff', language: 'vi', text: 'Tôi sẽ trả lời câu hỏi này cho bạn sớm.' }
       ]
     }))
   });
   const segments = createSpeechSegments(script);
-  assert.equal(script.dialogues.length, 5);
-  assert.equal(segments.length, 10);
+  assert.equal(script.dialogues.length, 3);
+  assert.equal(segments.length, 7);
   assert.ok(segments[0].text.length > 150);
   assert.equal(segments[0].speakerId, 'traveler');
   assert.equal(segments[1].language, 'vi');
@@ -94,8 +137,9 @@ test('validator accepts flexible dialogue turns and long text for automatic spee
 
 test('an empty canonical speechSegments array falls back to audioSegments', () => {
   const segments = createSpeechSegments({ speechSegments: [], audioSegments: [{ id: 'narrator', language: 'en', text: 'Welcome back.' }] });
-  assert.equal(segments.length, 1);
+  assert.equal(segments.length, 2);
   assert.equal(segments[0].segmentId, 'narrator');
+  assert.equal(segments[1].target.layerId, 'cta');
 });
 
 test('all four Chinese lesson formats produce the expected spoken order without a follow CTA', () => {

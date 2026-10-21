@@ -24,10 +24,14 @@ export async function synthesizeLocalAiScript(script, videoId, { settings = {}, 
   const targetSegments = segments.filter((segment) => segment.language === providerLanguage);
   const generated = [];
   const total = Math.max(1, segments.length);
+  const vietnameseVoice = script.contentLanguage === 'zh'
+    ? settings.vieneuZhViVoice
+    : script.contentLanguage === 'ja' ? settings.vieneuJaViVoice : settings.vieneuViVoice;
+  const vietnameseSettings = vietnameseVoice ? { ...settings, vieneuViVoice: vietnameseVoice } : settings;
 
   if (vietnamese.length) {
     const audio = await withLocalTtsModel('VieNeu-TTS v3 Turbo', (lease) => synthesizeVieNeuScript(script, videoId, {
-      settings,
+      settings: vietnameseSettings,
       segments: vietnamese,
       onProgress: (progress, detail = {}) => {
         if (detail.event === 'memory') {

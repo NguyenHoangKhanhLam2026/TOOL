@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/tts-multilingual.css" />
     <link rel="stylesheet" href="/navigation-links.css" />
     <link rel="stylesheet" href="/highlight-settings.css" />
+    <link rel="stylesheet" href="/studio-polish.css?v=20261019" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -55,8 +56,8 @@
             <div class="welcome-row">
               <div>
                 <div class="eyebrow"><span class="eyebrow-line"></span>HỌC MỘT CÂU MỖI NGÀY</div>
-                <h1>Hôm nay mình <em>nói tiếng Anh nhé.</em></h1>
-                <p class="lead">Tạo video song ngữ, nghe phát âm và sắp lịch bài đăng video Facebook từ một nơi.</p>
+                <h1>Học ngoại ngữ mỗi ngày. <em>Bắt đầu bằng một câu.</em></h1>
+                <p class="lead">Tạo video tiếng Anh, tiếng Trung hoặc tiếng Nhật, rồi quản lý lịch đăng Facebook trong cùng một không gian.</p>
               </div>
               <div class="welcome-date" id="today-date"></div>
             </div>
@@ -65,21 +66,20 @@
               <div class="hero-copy">
                 <div class="hero-kicker"><span class="tiny-star">✳</span> STUDIO SẴN SÀNG</div>
                 <h2>Biến một chủ đề<br />thành <span>video học nhanh.</span></h2>
-                <p>Ba câu giao tiếp thật. Giọng đọc Việt – Anh. Một video dọc sẵn sàng đăng lên Facebook.</p>
+                <p>Chọn ngôn ngữ, tạo nội dung học thực tế và chuẩn bị video dọc để đăng lên Facebook.</p>
                 <div class="hero-controls">
-                  <label class="select-wrap" id="content-language-wrap"><span class="sr-only">Chọn ngôn ngữ nội dung</span><select id="content-language"><option value="en">Nội dung: Tiếng Việt + Tiếng Anh</option><option value="ja">Nội dung: Tiếng Việt + Tiếng Nhật</option><option value="zh">Nội dung: Tiếng Việt + Tiếng Trung</option></select><span class="select-chevron">⌄</span></label>
+                  <label class="select-wrap" id="content-language-wrap"><span class="sr-only">Chọn ngôn ngữ nội dung</span><select id="content-language"><option value="en">Nội dung: Tiếng Việt + Tiếng Anh</option><option value="ja">Nội dung: Tiếng Việt + Tiếng Nhật</option><option value="zh">Nội dung: Tiếng Việt + Tiếng Trung</option><option value="english-shadowing">EnglishShadowing</option></select><span class="select-chevron">⌄</span></label>
                   <label class="select-wrap"><span class="sr-only">Chọn chủ đề</span><select id="topic-select"><option value="">AI t&#7921; ch&#7885;n ch&#7911; &#273;&#7873;</option></select><span class="select-chevron">⌄</span></label>
                   <button class="button button-outline" id="add-topic">+ Thêm chủ đề</button>
                   <button class="button button-dark" id="generate-button"><span>✳</span> Tạo video mới <span class="button-arrow">↗</span></button>
                 </div>
                 <p class="content-history-note" id="content-history-note" aria-live="polite"></p>
-                <label class="checkline"><input type="checkbox" id="local-template" /> Chỉ dùng mẫu cục bộ phù hợp nếu AI chưa kết nối</label>
               </div>
               <div class="hero-art" aria-hidden="true">
                 <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
                 <div class="art-sun"></div>
-                <div class="art-card card-back"><span>ENGLISH</span><b>say it<br />with ease</b><i>03 / 03</i></div>
-                <div class="art-card card-front"><span class="art-label">✦ DAILY PHRASE</span><b>Keep me<br /><em>posted.</em></b><span class="art-translation">Cập nhật cho mình nhé.</span><div class="art-chip">/ kiːp miː ˈpoʊstɪd /</div></div>
+                <div class="art-card card-back"><span>EN · 中文 · 日本語</span><b>learn it<br />with ease</b><i>03 / 03</i></div>
+                <div class="art-card card-front"><span class="art-label">✦ HỌC MỖI NGÀY</span><b>Say it<br /><em>naturally.</em></b><span class="art-translation">Một câu nói đúng ngữ cảnh.</span><div class="art-chip">EN · 中文 · 日本語</div></div>
                 <div class="art-sticker">A<br /><small>+1</small></div>
                 <div class="art-scribble">speak with<br />confidence ↗</div>
               </div>
@@ -103,14 +103,14 @@
 
           <section class="view" id="view-library">
             <div class="page-title-row"><div><div class="eyebrow">TUS VIDEO CỦA BẠN</div><h1>Thư viện video</h1><p class="lead">Video Facebook đã nhận lịch được tách khỏi danh sách Tất cả; xem lại ở tab Đã lên lịch hoặc mục Lịch đăng.</p></div><button class="button button-dark" data-generate><span>✳</span> Tạo video mới</button></div>
-            <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><label class="content-language-filter">Ngôn ngữ<select id="content-language-filter"><option value="all">Tất cả</option><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option></select></label><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
+            <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><label class="content-language-filter">Ngôn ngữ<select id="content-language-filter"><option value="all">Tất cả</option><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option><option value="english-shadowing">EnglishShadowing</option></select></label><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
             <div class="library-list" id="library-list"></div>
           </section>
 
           <section class="view" id="view-schedule">
             <div class="page-title-row"><div><div class="eyebrow">LỊCH NỘI DUNG</div><h1>Lịch đăng video Facebook</h1><p class="lead">Worker tự chọn video sẵn sàng cũ nhất và đặt lịch theo múi giờ Việt Nam.</p></div></div>
             <div class="schedule-layout"><div class="panel schedule-form-panel"><div class="panel-heading"><div><span class="panel-icon icon-peach">▦</span><h2>Thêm lịch đăng thủ công</h2></div><span class="panel-caption">Chỉ video đã sẵn sàng</span></div><form id="schedule-form" class="form-stack"><label>Video<select id="schedule-video" required><option value="">Chọn video</option></select></label><label>Ngày và giờ<input type="datetime-local" id="schedule-time" required /></label><button class="button button-dark" type="submit">Thêm vào lịch <span class="button-arrow">↗</span></button></form></div><div class="panel schedule-info"><div class="eyebrow">TỰ ĐỘNG HÓA</div><h2>Chọn video cũ,<br /><em>ngẫu nhiên 5–8 giờ.</em></h2><p>Bật “Tự đăng theo lịch”. Video tiếp theo cách lịch gần nhất một khoảng ngẫu nhiên 5–8 giờ khi ngày đó còn suất. Khi đủ giới hạn bài/ngày, lịch chuyển sang ngày kế tiếp; giờ trong ngày và múi giờ Việt Nam vẫn được giữ.</p><button class="text-button" data-go="settings">Thiết lập tự đăng <span>↗</span></button></div></div>
-            <div class="section-heading schedule-list-heading"><div><div class="eyebrow">LỊCH VÀ KẾT QUẢ</div><h2>Lịch đăng và lỗi</h2></div><span class="timezone-badge">◷ Asia / Ho Chi Minh</span></div><div class="schedule-list" id="schedule-list"></div>
+            <div class="section-heading schedule-list-heading"><div><div class="eyebrow">LỊCH VÀ KẾT QUẢ</div><h2>Lịch đăng và lỗi</h2></div><span class="timezone-badge">◷ Asia / Ho Chi Minh</span></div><div id="schedule-language-overview"></div><div class="schedule-list" id="schedule-list"></div>
           </section>
 
           <section class="view" id="view-settings">
@@ -124,20 +124,11 @@
                 <label>Chế độ kết nối<select id="facebook-adapter"><option value="mock">Mock — thử nghiệm an toàn</option><option value="meta">Meta Graph API — đăng thật</option></select></label>
                 <label>Facebook Page ID<input id="page-id" inputmode="numeric" placeholder="Ví dụ: 123456789012345" /></label>
                 <label>Page Access Token<input id="page-token" type="password" autocomplete="new-password" placeholder="Chỉ cần nhập khi thêm hoặc thay token" /></label>
-                <div class="button-row"><button class="button button-outline button-small" id="save-facebook">Lưu thông tin</button><button class="button button-quiet button-small" id="test-facebook">Kiểm tra Page</button></div><p id="facebook-result" class="inline-status"></p><button id="clear-facebook" class="danger-link" hidden>Xóa token đã lưu</button>
-                <div class="facebook-pages-extension">
-                  <div class="facebook-pages-heading"><strong>Page theo ngôn ngữ nội dung</strong><button class="button button-outline button-small" id="add-facebook-page" type="button">＋ Thêm Page</button></div>
-                  <div class="facebook-page-routes">
-                    <label>Tiếng Anh<select id="facebook-route-en" data-route-language="en"></select></label>
-                    <label>Tiếng Trung<select id="facebook-route-zh" data-route-language="zh"></select></label>
-                    <label>Tiếng Nhật<select id="facebook-route-ja" data-route-language="ja"></select></label>
-                  </div>
-                  <div id="facebook-pages-list" class="facebook-pages-list"></div>
-                  <p class="facebook-pages-note">Mỗi lịch đã duyệt sẽ ghi nhớ Page đích tại thời điểm xếp lịch. Token được lưu cục bộ và không hiển thị lại.</p>
-                </div>
+                <div class="button-row"><button class="button button-outline button-small" id="save-facebook">Lưu thông tin</button><button class="button button-quiet button-small" id="test-facebook">Kiểm tra Page</button><label class="facebook-language-select"><span class="sr-only">Ngôn ngữ nội dung</span><select id="facebook-quick-route-language" aria-label="Ngôn ngữ nội dung"><option value="zh">Tiếng Trung</option><option value="en">Tiếng Anh</option><option value="ja">Tiếng Nhật</option><option value="english-shadowing">EnglishShadowing</option></select></label></div>
+                <p id="facebook-result" class="inline-status"></p><button id="clear-facebook" class="danger-link" hidden>Xóa token đã lưu</button>
               </article>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-mint">♫</span><div><h2>Giọng đọc & video</h2><p class="panel-caption">Chọn model tại đây. Chọn model Nhật hoặc Trung sẽ tự chuyển sang cặp nội dung tương ứng.</p></div></div></div>
+              <article class="panel settings-panel span-two" id="voice-video-panel"><div class="panel-heading"><div><span class="panel-icon icon-mint">♫</span><div><h2>Giọng đọc & video</h2><p class="panel-caption">Chọn model tại đây. Chọn model Nhật hoặc Trung sẽ tự chuyển sang cặp nội dung tương ứng.</p></div></div></div>
                 <div class="tts-provider-select">
                   <span class="tts-provider-label" id="tts-provider-label">Nhà cung cấp giọng đọc</span>
                   <div class="tts-provider-combobox" id="tts-provider-combobox">
@@ -146,6 +137,13 @@
                     <select id="tts-provider" class="tts-provider-native" aria-hidden="true" tabindex="-1"><option value="vieneu">Local AI TTS · VieNeu tiếng Việt + Kokoro tiếng Anh</option><option value="vieneu-sbv2">Local AI TTS · VieNeu tiếng Việt + Style-Bert-VITS2 tiếng Nhật</option><option value="vieneu-cosyvoice3">Local AI TTS · VieNeu tiếng Việt + CosyVoice 3.0 tiếng Trung</option></select>
                   </div>
                   <span class="tts-provider-hint">Menu sẽ giữ mở khi rê chuột; bấm một model để chọn, hoặc bấm ngoài để đóng.</span>
+                </div>
+                <div class="english-shadowing-voice-settings vieneu-settings tts-provider-panel" hidden>
+                  <div class="vieneu-voice-grid">
+                    <label>Giọng đọc EasyEnglishShadowing<select id="english-shadowing-voice"><option value="af_heart">Heart · Nữ · Mỹ</option></select></label>
+                  </div>
+                  <div class="button-row vieneu-preview-actions"><button class="button button-outline button-small" id="preview-english-shadowing-voice" type="button">▶ Nghe thử giọng Shadowing</button></div>
+                  <p class="panel-caption">Nhịp đọc và cách nhấn nhá theo preset của EasyEnglishShadowing. Lưu thay đổi bằng nút “Lưu cài đặt” ở cuối trang.</p>
                 </div>
                 <div id="vieneu-tts-settings" class="tts-provider-panel vieneu-settings" hidden>
                   <div class="vieneu-voice-grid">
@@ -197,17 +195,23 @@
                 <div class="tool-checks" id="tool-checks"></div>
               </article>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng nền video</h2><p class="panel-caption">Chọn một hiệu ứng chuyển động nhẹ cho nền của video mới.</p></div></div></div>
-                <label>Hiệu ứng<select id="background-effect"><option value="bubbles">Đang tải danh sách hiệu ứng…</option></select></label>
-                <p class="panel-caption background-effect-note">Hiệu ứng được giữ ổn định theo từng video khi render lại. Thay đổi chỉ áp dụng cho video tạo sau khi lưu.</p>
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng nền video</h2><p class="panel-caption">Chọn hiệu ứng mặc định cho video mới theo từng ngôn ngữ nội dung.</p></div></div></div>
+                <div class="background-effect-controls">
+                  <label>Ngôn ngữ nội dung<select id="background-effect-language"><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option><option value="english-shadowing">EasyEnglishShadowing</option></select></label>
+                  <label>Hiệu ứng<select id="background-effect"><option value="bubbles">Đang tải danh sách hiệu ứng…</option></select></label>
+                </div>
+                <p class="panel-caption background-effect-note">EN, ZH và JA lưu theo hồ sơ hiện có. EasyEnglishShadowing có hồ sơ hiệu ứng riêng; chọn nội dung EasyEnglishShadowing, chỉnh hiệu ứng rồi dùng nút “Lưu cài đặt” ở cuối trang.</p>
               </article>
 
               <section class="background-effect-preview span-two" aria-label="Xem thử và chỉnh hiệu ứng nền">
                 <iframe id="background-effect-preview-frame" src="/bubble-effect-preview.html" title="Xem thử hiệu ứng nền video" loading="lazy"></iframe>
               </section>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Các model cung cấp mốc lời nói; ứng dụng căn chỉnh audio cục bộ khi cần.</p></div></div></div>
-                <div class="highlight-settings-grid">
+              <article class="panel settings-panel span-two" id="highlight-settings-panel"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Chọn nội dung để chỉnh Highlight. Cài đặt EnglishShadowing được lưu tách biệt khỏi EN, ZH và JA.</p></div></div></div>
+                <div class="background-effect-controls">
+                  <label>Nội dung<select id="voice-highlight-content-profile"><option value="standard">Tiếng Anh · Tiếng Trung · Tiếng Nhật</option><option value="english-shadowing">EasyEnglishShadowing</option></select></label>
+                </div>
+                <div class="highlight-settings-grid" id="standard-highlight-controls">
                   <label class="switch-row highlight-enable"><input type="checkbox" id="highlight-enabled" checked /><span class="switch"></span><span><strong>Bật highlight đồng bộ</strong><small>Áp dụng tự động cho video mới.</small></span></label>
                   <label>Kiểu highlight<select id="highlight-mode"><option value="word">Từng từ</option><option value="phrase">Từng cụm từ</option></select></label>
                   <label>Màu highlight<input id="highlight-color" type="color" value="#FF8066" /></label>
@@ -218,6 +222,17 @@
                   <label class="highlight-preview-source">Câu nghe thử<textarea id="highlight-preview-source">Xin chào, hôm nay mình cùng luyện nói tiếng Anh nhé.</textarea></label>
                   <div class="highlight-preview-actions"><button class="button button-outline button-small" id="highlight-preview-play" type="button">▶ Nghe thử Highlight</button><span class="muted-copy" id="highlight-preview-status" aria-live="polite">Mẫu thử sẽ dùng giọng đang chọn ở trên.</span></div>
                   <div class="highlight-preview-text" id="highlight-preview-words" aria-label="Văn bản xem trước highlight"></div>
+                </div>
+                <div id="english-shadowing-highlight-controls" style="display:none">
+                <div class="highlight-settings-grid">
+                  <label class="switch-row highlight-enable"><input type="checkbox" id="english-shadowing-highlight-enabled" checked /><span class="switch"></span><span><strong>Bật Highlight đồng bộ</strong><small>Chỉ áp dụng cho EasyEnglishShadowing.</small></span></label>
+                  <label>Kiểu hiệu ứng<select id="english-shadowing-highlight-style"><option value="text">Chữ đổi màu · theo mẫu Shadowing</option><option value="tool">Nền màu bo góc · kiểu Highlight của tool</option></select></label>
+                  <label>Kiểu Highlight<select id="english-shadowing-highlight-mode"><option value="word">Từng từ</option><option value="phrase">Từng cụm từ</option></select></label>
+                  <label>Màu Highlight<input id="english-shadowing-highlight-color" type="color" value="#E5794F" /></label>
+                  <label>Padding · chỉ kiểu nền màu (px)<input id="english-shadowing-highlight-padding" type="number" min="0" max="24" step="1" value="6" /></label>
+                  <label>Bo góc · chỉ kiểu nền màu (px)<input id="english-shadowing-highlight-radius" type="number" min="0" max="32" step="1" value="8" /></label>
+                </div>
+                <p class="panel-caption">Chọn đổi màu chữ theo mẫu Shadowing hoặc nền màu bo góc theo kiểu Highlight của tool. Cả hai đồng bộ với giọng đọc và được lưu riêng cho Shadowing.</p>
                 </div>
               </article>
 
@@ -238,5 +253,6 @@
     </div>
     <div class="toast-region" id="toast-region" aria-live="polite"></div>
     <dialog id="detail-dialog" class="detail-dialog"><form method="dialog"><button class="dialog-close" aria-label="Đóng">×</button></form><div id="dialog-content"></div></dialog>
+    <dialog id="background-effect-dialog" class="detail-dialog background-effect-dialog"><form method="dialog"><button class="dialog-close" aria-label="Đóng">×</button></form><div id="background-effect-dialog-content"></div></dialog>
   </body>
 </html>

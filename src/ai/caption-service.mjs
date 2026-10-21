@@ -97,6 +97,7 @@ function lessonData(script) {
       vietnamese: line.vietnamese,
       ...(targetField === 'english' ? { english: line.english } : { [targetField]: line[targetField] }),
       term: line.term, meaningVi: line.meaningVi, noteVi: line.noteVi, grammarNote: line.grammarNote,
+      ...(Array.isArray(line.vocabularyCards) ? { vocabularyCards: line.vocabularyCards.map(({ term, meaningVi }) => ({ term, meaningVi })) } : {}),
       ...(Array.isArray(line.turns) ? { turns: line.turns.map(({ speakerId, language, text }) => ({ speakerId, language, text })) } : {})
     })),
     speechSegments: speechSegmentsFor(script).map(({ speakerId, language, text }) => ({ speakerId, language, text }))
@@ -128,7 +129,7 @@ function fallbackCaption(script, length, style) {
     return [opening, body, closing].filter(Boolean).join('\n\n');
   }
   const topic = script.topic || 'giao tiếp tiếng Anh';
-  const termCount = lines.filter((line) => line.term).length;
+  const termCount = lines.reduce((count, line) => count + (Array.isArray(line.vocabularyCards) ? line.vocabularyCards.length : line.term ? 1 : 0), 0);
   const countPhrase = termCount ? `${termCount} cụm từ` : 'các lượt hội thoại';
   const openings = {
     story: `Muốn nói về “${topic}” tự nhiên hơn? Học tiếng Anh giao tiếp qua ${countPhrase}.`,
@@ -139,10 +140,15 @@ function fallbackCaption(script, length, style) {
     knowledge: `Học tiếng Anh giao tiếp theo ngữ cảnh giúp bạn nhớ cách nói về “${topic}”.`
   };
   let opening = openings[style.id];
-  const body = lines.flatMap((line) => line.term
-    ? [`“${line.term}” nghĩa là “${line.meaningVi}”.`]
-    : (line.turns || []).filter((turn) => /^(en|english)(-|$)/i.test(turn.language || '')).map((turn) => `Luyện câu “${turn.text}” để quen phản xạ theo ngữ cảnh.`));
-  if (!body.length) body.push(...speechSegmentsFor(script).slice(0, 3).map((segment) => `Luyện câu “${segment.text}” theo đúng tình huống.`));
+  const body = lines.flatMap((line) => {
+    if (Array.isArray(line.vocabularyCards) && line.vocabularyCards.length) {
+      return line.vocabularyCards.map((card) => `“${card.term}” nghĩa là “${card.meaningVi}”.`);
+    }
+    if (line.term) return [`“${line.term}” nghĩa là “${line.meaningVi}”.`];
+    return (line.turns || []).filter((turn) => /^(en|english)(-|$)/i.test(turn.language || ''))
+      .map((turn) => `Luyện câu “${turn.text}” để quen phản xạ theo ngữ cảnh.`);
+  });
+  if (!body.length) body.push(...speechSegmentsFor(script).filter((segment) => /^(en|english)(-|$)/i.test(segment.language || '')).slice(0, 3).map((segment) => `Luyện câu “${segment.text}” theo đúng tình huống.`));
   const keypointCount = body.length;
   const details = lines.filter((line) => line.english).map((line, index) => `Câu ${index + 1}: “${line.english}”. ${[line.noteVi, line.grammarNote].filter(Boolean).join(' ')}`.trim());
   const closing = ['Chọn một cụm từ và thử đặt câu về trải nghiệm của bạn.'];
@@ -241,7 +247,8 @@ async function generateChineseCaption(script) {
   let caption = '';
   let supplied = [];
   let feedback = '';
-  if (chatgptStatus().connected) {
+  const planConnected = chatgptStatus().connected;
+  if (planConnected) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const result = parseResponse(await generateWithChatGPT(
@@ -258,9 +265,10 @@ async function generateChineseCaption(script) {
     }
   }
   if (!caption) {
-    caption = buildChineseCaptionFallback(script);
-    const issue = validateChineseCaption(caption);
-    if (issue) throw new Error(`Không tạo được caption tiếng Trung hợp lệ: ${issue}`);
+    const reason = planConnected
+      ? `ChatGPT Plan không tạo được caption tiếng Trung hợp lệ sau 3 lần thử. ${feedback}`
+      : 'ChatGPT Plan chưa kết nối';
+    throw new Error(`${reason}. Kiểm tra kết nối rồi thử lại.`);
   }
   return { caption, hashtags: chineseHashtags(script, supplied), length: 'chinese', style: 'lesson' };
 }
@@ -296,6 +304,14 @@ export async function generateCaption(script) {
       feedback = error.message;
     }
   }
-  if (!caption) caption = fallbackCaption(script, length, style);
+  if (!caption) {
+    if (script.contentLanguage !== 'ja') {
+      const reason = providers.length
+        ? `ChatGPT Plan không tạo được caption hợp lệ sau 3 lần thử. ${feedback}`
+        : 'ChatGPT Plan chưa kết nối';
+      throw new Error(`${reason}. Kiểm tra kết nối rồi thử lại.`);
+    }
+    caption = fallbackCaption(script, length, style);
+  }
   return { caption, hashtags: tagsFor(script, suppliedTags), length: length.id, style: style.id };
 }

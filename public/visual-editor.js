@@ -8,16 +8,35 @@ function status(message, error = false) { $('#status').textContent = message; $(
 function templateApiPath() { return `/api/visual-template?lang=${activeLanguage}`; }
 function templateResetPath() { return `/api/visual-template/reset?lang=${activeLanguage}`; }
 async function switchEditorLanguage(language) {
-  if (!['en','zh'].includes(language) || language === activeLanguage) return;
+  if (!['en','zh'].includes(language)) return;
+  document.body.classList.remove('shadowing-mode');
+  $('#workspace').hidden = false;
+  $('#shadowing-workspace').hidden = true;
+  if (language === activeLanguage) {
+    for (const button of document.querySelectorAll('[data-editor-language]')) button.classList.toggle('active', button.dataset.editorLanguage === language);
+    $('#shadowing-editor-button').classList.remove('active');
+    $('#template-language-label').textContent = language === 'zh' ? 'Template Việt–Trung · Hanzi + Pinyin · 1080 × 1920' : 'Branded Dialogue V2 · 1080 × 1920';
+    return;
+  }
   templateCache.set(activeLanguage, clone(template)); undoCache.set(activeLanguage, undoStack);
   activeLanguage = language; activeState = 'bilingual'; selectedId = language === 'zh' ? 'chinese-card' : 'english-card';
   const cached = templateCache.get(language);
   if (cached) { template = clone(cached); undoStack = undoCache.get(language) || []; }
   else { const result = await api(templateApiPath()); template = result.template; undoStack = []; }
   for (const button of document.querySelectorAll('[data-editor-language]')) button.classList.toggle('active', button.dataset.editorLanguage === language);
+  $('#shadowing-editor-button').classList.remove('active');
   $('#template-language-label').textContent = language === 'zh' ? 'Template Việt–Trung · Hanzi + Pinyin · 1080 × 1920' : 'Branded Dialogue V2 · 1080 × 1920';
   $('#scene-index').innerHTML = language === 'zh' ? '<option value="0">01</option>' : '<option value="0">01</option><option value="1">02</option><option value="2">03</option>';
   renderAll(); status(language === 'zh' ? 'Đã mở template tiếng Trung riêng.' : 'Đã mở template tiếng Anh hiện tại.');
+}
+function openShadowingEditor() {
+  document.body.classList.add('shadowing-mode');
+  $('#workspace').hidden = true;
+  $('#shadowing-workspace').hidden = false;
+  for (const button of document.querySelectorAll('[data-editor-language]')) button.classList.remove('active');
+  $('#shadowing-editor-button').classList.add('active');
+  $('#template-language-label').textContent = 'EnglishShadowing · preset riêng · 1080 × 1920';
+  $('#shadowing-editor-status').textContent = 'Preset tự động đang hoạt động. Các tùy chỉnh riêng sẽ được thêm tại đây sau.';
 }
 function snapshot() { undoStack.push(clone(template)); if (undoStack.length > 40) undoStack.shift(); $('#undo').disabled = !undoStack.length; }
 function debouncePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 120); }
@@ -80,4 +99,5 @@ function renderAll(){renderStates();renderLayers();renderProperties();renderBran
 async function init(){try{const [templateResponse,assetResponse]=await Promise.all([api(templateApiPath()),api('/api/assets')]);template=templateResponse.template;templateCache.set(activeLanguage,clone(template));assets=assetResponse.assets;renderAll();status('Template đã tải.');const ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);ws.addEventListener('open',()=>$('#connection').classList.add('online'));ws.addEventListener('close',()=>{$('#connection').classList.remove('online');$('#connection').textContent='Mất kết nối';});ws.addEventListener('message',(event)=>{const message=JSON.parse(event.data);if(message.type==='render:progress'){const value=Math.round(Number(message.data?.detail?.progress||0)*100);$('#render-progress').hidden=false;$('#progress-bar').style.width=`${value}%`;$('#progress-label').textContent=`Render: ${value}%`;}if(message.type==='job:status'&&message.data?.job_id===fullRenderJobId){if(message.data.code==='JOB_COMPLETED')status('Render đầy đủ hoàn tất; video đã vào thư viện.');if(message.data.code==='JOB_FAILED')status(message.data.message||'Render đầy đủ thất bại.',true);}if(message.type==='template:saved'&&(!message.data?.contentLanguage||message.data.contentLanguage===activeLanguage))api(templateApiPath()).then((result)=>{template=result.template;renderAll();}).catch(()=>{});if(message.type==='asset:updated')api('/api/assets').then((result)=>{assets=result.assets;renderProperties();}).catch(()=>{});});}catch(error){status(error.message,true);}}
 document.addEventListener('keydown',(event)=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();$('#undo').click();}});
 for (const button of document.querySelectorAll('[data-editor-language]')) button.addEventListener('click',()=>switchEditorLanguage(button.dataset.editorLanguage).catch((error)=>status(error.message,true)));
+$('#shadowing-editor-button').addEventListener('click', openShadowingEditor);
 init();

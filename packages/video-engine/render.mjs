@@ -87,6 +87,45 @@ async function createCrossfadeFrames(previousPath, nextPath, duration, outputDir
   return frames;
 }
 
+export function sequentialTransitionOpacities(frameIndex, frameCount) {
+  const count = Math.max(1, Math.floor(Number(frameCount) || 1));
+  const index = Math.max(0, Math.min(count - 1, Math.floor(Number(frameIndex) || 0)));
+  if (count === 1) return { previous: 0, next: 1 };
+
+  const fadeOutFrames = Math.ceil(count / 2);
+  const fadeInFrames = count - fadeOutFrames;
+  if (index < fadeOutFrames) {
+    return {
+      previous: fadeOutFrames === 1 ? 1 : 1 - index / (fadeOutFrames - 1),
+      next: 0
+    };
+  }
+
+  const fadeInIndex = index - fadeOutFrames;
+  return {
+    previous: 0,
+    next: fadeInFrames === 1 ? 1 : fadeInIndex / (fadeInFrames - 1)
+  };
+}
+
+export async function createSequentialTransitionFrames(previousPath, nextPath, basePath, duration, outputDir, prefix) {
+  const frameCount = Math.max(1, Math.round(duration * OUTPUT_FRAME_RATE));
+  const frames = [];
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const file = path.join(outputDir, `${prefix}-${String(frame + 1).padStart(2, '0')}.png`);
+    const opacities = sequentialTransitionOpacities(frame, frameCount);
+    const overlays = [];
+    if (opacities.previous > 0) overlays.push({ input: previousPath, blend: 'over', opacity: opacities.previous });
+    if (opacities.next > 0) overlays.push({ input: nextPath, blend: 'over', opacity: opacities.next });
+    await sharp(basePath)
+      .composite(overlays)
+      .png({ compressionLevel: 9 })
+      .toFile(file);
+    frames.push({ file, duration: 1 / OUTPUT_FRAME_RATE });
+  }
+  return frames;
+}
+
 function launch(command, args, options = {}) {
   try {
     return spawn(command, args, { cwd: ROOT, windowsHide: true, ...options });
@@ -184,9 +223,11 @@ async function probeAudio(file) {
 }
 
 export async function renderVideo(script, videoId, audioFiles, {
-  onProgress = () => {}, onTimeline = () => {}, onAlignmentWarning = () => {}, highlightSettings = {}
+  onProgress = () => {}, onTimeline = () => {}, onAlignmentWarning = () => {}, highlightSettings = {}, templateSnapshot = null, outputFileName = 'final.mp4'
 } = {}) {
-  const template = readVisualTemplate({ contentLanguage: script.contentLanguage || 'en' });
+  const template = templateSnapshot && typeof templateSnapshot === 'object'
+    ? templateSnapshot
+    : readVisualTemplate({ contentLanguage: script.contentLanguage || 'en' });
   const tempDir = path.join(PATHS.temporary, videoId);
   const layerDir = path.join(tempDir, 'visual-layers-v2');
   const outDir = path.join(PATHS.output, videoId);
@@ -196,6 +237,11 @@ export async function renderVideo(script, videoId, audioFiles, {
   if (!Array.isArray(audioFiles) || audioFiles.length === 0) throw new Error('Kịch bản không có đoạn audio TTS nào để render.');
   const settings = { ...DEFAULT_HIGHLIGHT_SETTINGS, ...highlightSettings, highlightTransition: 'instant' };
   if (script.contentLanguage === 'zh') settings.highlightEnabled = false;
+  const requestedEnglishPresentationStyle = script.presentationStyle || script.dialogues?.[0]?.presentationStyle;
+  const englishPresentationStyle = script.contentLanguage === 'en'
+    && ['dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'].includes(requestedEnglishPresentationStyle)
+    ? requestedEnglishPresentationStyle
+    : null;
   settings.backgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
   settings.backgroundEffectDensity = normalizeBackgroundEffectDensity(settings.backgroundEffectDensity);
   settings.backgroundEffectSpeed = normalizeBackgroundEffectSpeed(settings.backgroundEffectSpeed);
@@ -205,12 +251,13 @@ export async function renderVideo(script, videoId, audioFiles, {
   for (const [audioIndex, item] of renderAudioFiles.entries()) {
     if (!fs.existsSync(item.path)) throw new Error(`Thiếu audio cho đoạn ${item.segmentId || item.index || '?'} (${item.language || 'không rõ ngôn ngữ'}).`);
     const duration = await probeAudio(item.path);
-    const source = script.contentLanguage === 'zh'
+    const source = script.contentLanguage === 'zh' || englishPresentationStyle
       ? (script.speechSegments || []).find((segment) => String(segment.segmentId || segment.id || '') === String(item.segmentId || item.id || ''))
       : null;
     const requestedPause = Number(item.pauseAfterSeconds ?? source?.pauseAfterSeconds);
     const isFinalChineseSpeech = script.contentLanguage === 'zh' && audioIndex === renderAudioFiles.length - 1;
-    const pauseAfterSeconds = script.contentLanguage === 'zh' && Number.isFinite(requestedPause)
+    const supportsSpeechPauses = script.contentLanguage === 'zh' || Boolean(englishPresentationStyle);
+    const pauseAfterSeconds = supportsSpeechPauses && Number.isFinite(requestedPause)
       ? isFinalChineseSpeech ? 0 : Math.max(0, Math.min(2, requestedPause))
       : 0;
     durations.push({ ...item, target: resolveSpeechTarget(template, item), duration, pauseAfterSeconds });
@@ -242,7 +289,7 @@ export async function renderVideo(script, videoId, audioFiles, {
   const configuredVocabularyHold = Math.max(0, Number(timing.vocabularyHold) || 0);
   const vocabularyHold = fitVocabularyHold({
     configuredHold: configuredVocabularyHold,
-    groupCount: script.contentLanguage === 'zh' ? Math.max(0, groups.length - 1) : groups.length,
+    groupCount: script.contentLanguage === 'zh' || englishPresentationStyle ? Math.max(0, groups.length - 1) : groups.length,
     speechDuration,
     intro: Number(timing.intro),
     cta: Number(timing.cta),
@@ -256,6 +303,22 @@ export async function renderVideo(script, videoId, audioFiles, {
       // Chinese lesson clips keep the generated speech order: Vietnamese source,
       // Chinese first read, second read, then the spoken explanation/practice.
       // English retains its existing dialogue/vocabulary grouping below.
+      for (const item of group.items) {
+        const requestedIndex = Number(item.target?.dialogueIndex);
+        const index = Array.isArray(script.dialogues) && script.dialogues.length
+          ? Math.max(0, Math.min(script.dialogues.length - 1, Number.isInteger(requestedIndex) ? requestedIndex : groupIndex))
+          : groupIndex;
+        const state = ['vietnamese', 'bilingual', 'vocabulary'].includes(item.state)
+          ? item.state
+          : item.target?.layerId === 'vietnamese-card' ? 'vietnamese' : 'bilingual';
+        sequence.push({ ...item, type: 'speech', state, index, target: { ...(item.target || {}), dialogueIndex: index }, duration: item.duration });
+        sequenceCursor += item.duration;
+        if (item.pauseAfterSeconds > 0.0001) {
+          sequence.push({ type: 'silence', state, index, duration: item.pauseAfterSeconds });
+          sequenceCursor += item.pauseAfterSeconds;
+        }
+      }
+    } else if (englishPresentationStyle) {
       for (const item of group.items) {
         const requestedIndex = Number(item.target?.dialogueIndex);
         const index = Array.isArray(script.dialogues) && script.dialogues.length
@@ -298,9 +361,11 @@ export async function renderVideo(script, videoId, audioFiles, {
     const index = Array.isArray(script.dialogues) && script.dialogues.length && Number.isInteger(requestedIndex)
       ? Math.max(0, Math.min(script.dialogues.length - 1, requestedIndex))
       : groupIndex;
-    const hasNextChineseGroup = script.contentLanguage !== 'zh' || groupIndex < groups.length - 1;
-    const groupVocabularyHold = hasNextChineseGroup ? vocabularyHold : 0;
-    const groupTransitionFrames = hasNextChineseGroup ? transitionFrames : 0;
+    const hasNextPresentationGroup = script.contentLanguage === 'zh' || englishPresentationStyle
+      ? groupIndex < groups.length - 1
+      : true;
+    const groupVocabularyHold = hasNextPresentationGroup ? vocabularyHold : 0;
+    const groupTransitionFrames = hasNextPresentationGroup ? transitionFrames : 0;
     const transitionStart = groupTransitionFrames > 0
       ? alignUpToFrame(sequenceCursor + groupVocabularyHold)
       : sequenceCursor + groupVocabularyHold;
@@ -434,18 +499,22 @@ export async function renderVideo(script, videoId, audioFiles, {
   let pinyinVisibleForTimeline = !hasExplicitPinyinSequence;
   const stateLayers = {
     intro: [...persistentLayers, 'title'],
-    vietnamese: [...persistentLayers, 'scene-number', 'vietnamese-card'],
-    bilingual: [...persistentLayers, 'scene-number', 'vietnamese-card', targetCardLayer, ...pinyinLayer],
-    vocabulary: [...persistentLayers, 'scene-number', 'vietnamese-card', targetCardLayer, ...pinyinLayer, 'vocabulary'],
+    vietnamese: [...persistentLayers, ...(englishPresentationStyle && ['dialogue-cards', 'inline-meaning', 'inline-keyphrase'].includes(englishPresentationStyle) ? [] : ['scene-number']), 'vietnamese-card'],
+    bilingual: [...persistentLayers, ...(englishPresentationStyle && ['dialogue-cards', 'inline-meaning', 'inline-keyphrase'].includes(englishPresentationStyle) ? [] : ['scene-number']), 'vietnamese-card', targetCardLayer, ...pinyinLayer],
+    vocabulary: [...persistentLayers, ...(englishPresentationStyle && ['dialogue-cards', 'inline-meaning', 'inline-keyphrase'].includes(englishPresentationStyle) ? [] : ['scene-number']), 'vietnamese-card', targetCardLayer, ...pinyinLayer, 'vocabulary'],
     transition: [],
     cta: [...persistentLayers, 'cta']
   };
   const imageEntries = [];
   let visualCursor = 0;
   let backgroundBaseFile = null;
+  let transitionBaseFile = null;
   if (settings.backgroundEffect !== 'none') {
     backgroundBaseFile = path.join(layerDir, 'background-base.png');
     await rasterizeScene({ template, script, state: 'intro', index: 0, outputPath: backgroundBaseFile, includeLayers: ['background'] });
+  } else if (script.contentLanguage === 'en' && transitionFrames > 0 && groups.length > 1) {
+    transitionBaseFile = path.join(layerDir, 'transition-base.png');
+    await rasterizeScene({ template, script, state: 'intro', index: 0, outputPath: transitionBaseFile, includeLayers: persistentLayers });
   }
   const pinyinAnimationElapsed = new Map();
   for (let index = 0; index < visualPlan.length; index += 1) {
@@ -547,16 +616,24 @@ export async function renderVideo(script, videoId, audioFiles, {
           seed: videoId,
           density: settings.backgroundEffectDensity,
           speed: settings.backgroundEffectSpeed,
-          opacity: settings.backgroundEffectOpacity
+          opacity: settings.backgroundEffectOpacity,
+          contentLanguage: script.contentLanguage || 'en'
         });
         const effectSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${template.canvas.width}" height="${template.canvas.height}" viewBox="0 0 ${template.canvas.width} ${template.canvas.height}">${effectMarkup}</svg>`);
         const overlays = [{ input: effectSvg, blend: 'over' }];
         if (item.transition && previous?.file && next?.file) {
-          const progress = Math.max(0, Math.min(1, (frameTime - visualStart) / Math.max(item.duration, 1e-9)));
-          overlays.push(
-            { input: previous.file, blend: 'over', opacity: 1 - progress },
-            { input: next.file, blend: 'over', opacity: progress }
-          );
+          if (script.contentLanguage === 'en') {
+            const frameCount = Math.max(1, endOutputFrame - firstOutputFrame);
+            const opacities = sequentialTransitionOpacities(frameIndex - firstOutputFrame, frameCount);
+            if (opacities.previous > 0) overlays.push({ input: previous.file, blend: 'over', opacity: opacities.previous });
+            if (opacities.next > 0) overlays.push({ input: next.file, blend: 'over', opacity: opacities.next });
+          } else {
+            const progress = Math.max(0, Math.min(1, (frameTime - visualStart) / Math.max(item.duration, 1e-9)));
+            overlays.push(
+              { input: previous.file, blend: 'over', opacity: 1 - progress },
+              { input: next.file, blend: 'over', opacity: progress }
+            );
+          }
         } else if (item.file) {
           overlays.push({ input: item.file, blend: 'over' });
         } else if (previous?.file || next?.file) {
@@ -581,7 +658,12 @@ export async function renderVideo(script, videoId, audioFiles, {
       const previous = [...renderedImageEntries].reverse().find((entry) => entry.file);
       const next = imageEntries.slice(index + 1).find((entry) => entry.file);
       if (previous?.file && next?.file) {
-        renderedImageEntries.push(...await createCrossfadeFrames(previous.file, next.file, item.duration, layerDir, `transition-${String(index + 1).padStart(4, '0')}`));
+        const prefix = `transition-${String(index + 1).padStart(4, '0')}`;
+        if (script.contentLanguage === 'en' && transitionBaseFile) {
+          renderedImageEntries.push(...await createSequentialTransitionFrames(previous.file, next.file, transitionBaseFile, item.duration, layerDir, prefix));
+        } else {
+          renderedImageEntries.push(...await createCrossfadeFrames(previous.file, next.file, item.duration, layerDir, prefix));
+        }
       } else if (previous?.file || next?.file) {
         renderedImageEntries.push({ file: previous?.file || next.file, duration: item.duration });
       }
@@ -621,14 +703,16 @@ export async function renderVideo(script, videoId, audioFiles, {
   audioFilters.push(`${audioItems.map((_, index) => `[a${index}]`).join('')}concat=n=${audioItems.length}:v=0:a=1[aout]`);
   filters.push(...audioFilters);
 
-  // Transitions are explicit full-black timeline entries. Per-scene fade filters
-  // layered black fades over them and added extra flashes at intro and CTA edges.
+  // Scene transitions are assembled above; avoid adding another global fade here,
+  // which would dim the full frame on top of the transition.
   filters.push(`[${visualInputIndex}:v]fps=30,scale=1080:1920:flags=lanczos,setsar=1,format=yuv420p,trim=duration=${total.toFixed(3)},setpts=PTS-STARTPTS[vbase]`);
   filters.push('[vbase]format=yuv420p[vout]');
 
   const filterFile = path.join(tempDir, 'render-highlight.filter');
   fs.writeFileSync(filterFile, filters.join(';\n'), 'utf8');
-  const output = path.join(outDir, 'final.mp4');
+  const outputName = String(outputFileName || 'final.mp4');
+  if (path.basename(outputName) !== outputName) throw new Error('Tên tệp đầu ra video không hợp lệ.');
+  const output = path.join(outDir, outputName);
   const filterOption = await majorVersion(FFMPEG_BIN) >= 7 ? '-/filter_complex' : '-filter_complex_script';
   const ffmpegArgs = ['-y', ...inputs, filterOption, filterFile, '-map', '[vout]', '-map', '[aout]', '-t', total.toFixed(3), '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage', '-crf', '22', '-threads', '4', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output];
   await run(FFMPEG_BIN, ffmpegArgs, { onProgress: (progress) => onProgress(0.2 + 0.8 * progress), totalSeconds: total });

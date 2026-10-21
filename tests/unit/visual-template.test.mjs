@@ -44,6 +44,91 @@ test('scene renderer selects the right dialogue states and escapes script text',
   assert.match(escaped, /&lt;script&gt;/);
 });
 
+test('English inline sample renders two ordered bilingual phrase cards and distinct sentence colors', async () => {
+  const template = readVisualTemplate();
+  const inlineScript = {
+    contentLanguage: 'en', presentationStyle: 'inline-keyphrase', title: 'Tôi là người ăn chay',
+    dialogues: [{
+      vietnamese: 'Tôi là người ăn chay nên tôi không thể ăn thịt được.',
+      english: 'I am a vegetarian, so I cannot eat any meat.',
+      vocabularyCards: [
+        { sourceVi: 'người ăn chay', term: 'a vegetarian', meaningVi: 'Danh từ này chỉ người theo chế độ ăn không có thịt cá.' },
+        { sourceVi: 'không thể ăn thịt', term: 'cannot eat any meat', meaningVi: 'Cụm này nhấn mạnh người nói hoàn toàn không ăn các loại thịt.' }
+      ]
+    }]
+  };
+  const firstCard = await buildSceneSvg({
+    template, script: inlineScript, state: 'vocabulary', index: 0,
+    speechSegment: { segmentId: 'vocabulary-one', text: 'a vegetarian', target: { layerId: 'vocabulary', dialogueIndex: 0, vocabularyIndex: 0 } }
+  });
+  assert.match(firstCard, /data-vocabulary-card="0"/);
+  assert.doesNotMatch(firstCard, /data-vocabulary-card="1"/);
+
+  const secondCard = await buildSceneSvg({
+    template, script: inlineScript, state: 'vocabulary', index: 0,
+    speechSegment: { segmentId: 'vocabulary-two', text: 'cannot eat any meat', target: { layerId: 'vocabulary', dialogueIndex: 0, vocabularyIndex: 1 } }
+  });
+  assert.match(secondCard, /data-vocabulary-card="0"[\s\S]*data-vocabulary-card="1"/);
+  assert.ok(secondCard.indexOf('người ăn chay') < secondCard.indexOf('không thể ăn thịt'));
+  assert.match(secondCard, /fill="#E78300"/);
+  assert.match(secondCard, /fill="#55A9EC"/);
+});
+
+test('English centered dialogue word highlight stays aligned inside its card', async () => {
+  const template = readVisualTemplate();
+  const text = 'Do you have five minutes free?';
+  const segmentId = 'centered-english-line';
+  const token = tokenizeText(text, segmentId, 'en').find((item) => item.text.toLocaleLowerCase() === 'minutes');
+  const svg = await buildSceneSvg({
+    template,
+    script: {
+      contentLanguage: 'en', presentationStyle: 'dialogue-cards', title: 'A quick favor',
+      dialogues: [{ vietnamese: 'Bạn có rảnh khoảng năm phút không?', english: text }]
+    },
+    state: 'bilingual', index: 0,
+    speechSegment: { segmentId, text, target: { layerId: 'english-card', dialogueIndex: 0 } },
+    highlight: { segmentId, tokenIds: [token.id] },
+    highlightSettings: { highlightEnabled: true, highlightColor: '#55A9EC', highlightPadding: 6, highlightRadius: 8 }
+  });
+  const highlight = svg.match(/<rect x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)" height="([\d.]+)" rx="[\d.]+" fill="#55A9EC"\/>/u);
+  assert.ok(highlight, 'spoken word highlight should be rendered');
+  const x = Number(highlight[1]);
+  const width = Number(highlight[3]);
+  assert.ok(x >= 80 && x + width <= 1000, `centered word highlight must stay within the English card: ${x}..${x + width}`);
+  assert.match(svg, /text-anchor="middle"/);
+});
+
+test('English numbered scenario uses simple step numbers and colors its spoken target phrase', async () => {
+  const template = readVisualTemplate();
+  const scenario = await buildSceneSvg({
+    template,
+    script: {
+      contentLanguage: 'en', presentationStyle: 'numbered-scenario', title: 'Xe máy bị hỏng',
+      dialogues: [{
+        vietnamese: 'Chiếc xe máy cũ của tôi lại bất ngờ bị hỏng.',
+        english: 'My old motorbike suddenly broke down on the road today.',
+        term: 'broke down', meaningVi: 'Cụm này dùng khi phương tiện hoặc máy móc bất ngờ bị hỏng.'
+      }]
+    },
+    state: 'vietnamese', index: 0, totalCount: 3
+  });
+  assert.match(scenario, />1<\/text>/);
+  assert.doesNotMatch(scenario, />01\s+\/\s+03<\/text>/);
+  const EnglishLine = await buildSceneSvg({
+    template,
+    script: {
+      contentLanguage: 'en', presentationStyle: 'numbered-scenario', title: 'Xe máy bị hỏng',
+      dialogues: [{
+        vietnamese: 'Chiếc xe máy cũ của tôi lại bất ngờ bị hỏng.',
+        english: 'My old motorbike suddenly broke down on the road today.',
+        term: 'broke down', meaningVi: 'Cụm này dùng khi phương tiện hoặc máy móc bất ngờ bị hỏng.'
+      }]
+    },
+    state: 'bilingual', index: 0
+  });
+  assert.match(EnglishLine, /fill="#55A9EC"/);
+});
+
 test('Chinese preview reveals its text with the Chinese voice and omits the follow CTA state', async () => {
   const template = readVisualTemplate({ contentLanguage: 'zh' });
   const chineseScript = {
@@ -159,6 +244,39 @@ test('word highlight bounds contain the selected English and Vietnamese glyphs o
     assert.ok(rect.y <= selected.minY && rect.y + rect.height - 1 >= selected.maxY, `rectangle should surround selected glyph height: ${JSON.stringify({ sample: sample.text, rect, selected })}`);
     if (previousIndex >= 0) assert.ok(rect.x > previous.maxX, 'rectangle must not spill into the preceding word');
     if (Number.isInteger(sample.nextIndex)) assert.ok(rect.x + rect.width < next.minX, 'rectangle must not spill into the following word');
+  }
+});
+
+test('background vocabulary follows the content language in Chinese and Japanese scenes', async () => {
+  const vocabularies = {
+    zh: new Set(['你好', '学习', '表达', '梦想', '成长', '中文', '词语', '坚持']),
+    ja: new Set(['こんにちは', '学ぶ', '会話', '夢', '成長', '日本語', '言葉', '挑戦'])
+  };
+  const englishWords = ['hello', 'learn', 'speak', 'dream', 'grow', 'A2'];
+
+  for (const [contentLanguage, allowedWords] of Object.entries(vocabularies)) {
+    const template = readVisualTemplate({ contentLanguage });
+    const svg = await buildSceneSvg({
+      template,
+      script: {
+        contentLanguage, title: 'Localized background sample',
+        dialogues: [{ vietnamese: 'Câu mẫu.', english: contentLanguage === 'zh' ? '今天很开心。' : '今日は楽しいです。' }]
+      },
+      state: 'intro', backgroundEffect: 'vocabulary', backgroundEffectDensity: 60, effectSeed: `${contentLanguage}-vocabulary-test`
+    });
+    const languageMarker = svg.indexOf('background-effect-vocabulary');
+    const effectStart = svg.lastIndexOf('<g', languageMarker);
+    const effectEnd = svg.indexOf('</g>', effectStart);
+    const effect = svg.slice(effectStart, effectEnd);
+    const renderedWords = effect.split('<text ').slice(1).map((entry) => {
+      const body = entry.split('</text>')[0];
+      return body.slice(body.lastIndexOf('>') + 1);
+    });
+
+    assert.ok(languageMarker >= 0 && effectEnd > effectStart, `${contentLanguage} scene should contain its background effect`);
+    assert.equal(renderedWords.length, 60);
+    assert.ok(renderedWords.every((word) => allowedWords.has(word)), `${contentLanguage} scene should use only its own background vocabulary`);
+    assert.ok(englishWords.every((word) => !effect.includes(`>${word}</text>`)), `${contentLanguage} scene should not contain English background vocabulary`);
   }
 });
 

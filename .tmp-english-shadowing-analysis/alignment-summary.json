@@ -1,0 +1,114 @@
+[
+  {
+    "id": "wellness-habits",
+    "status": "aligned",
+    "warning": null,
+    "source": "stable-ts-local",
+    "wordBoundaryCount": 60,
+    "firstWordAtSeconds": 0.23,
+    "lastWordEndsAtSeconds": 27.21,
+    "speechWindowSeconds": 26.98,
+    "wordsPerMinuteDuringSpeechWindow": 133.4,
+    "sentencePauses": [
+      {
+        "after": "health?",
+        "seconds": 0.76
+      },
+      {
+        "after": "restrictions.",
+        "seconds": 0.01
+      },
+      {
+        "after": "joy.",
+        "seconds": 0.68
+      }
+    ]
+  },
+  {
+    "id": "lifelong-curiosity",
+    "status": "aligned",
+    "warning": null,
+    "source": "stable-ts-local",
+    "wordBoundaryCount": 67,
+    "firstWordAtSeconds": 0.21,
+    "lastWordEndsAtSeconds": 25.39,
+    "speechWindowSeconds": 25.18,
+    "wordsPerMinuteDuringSpeechWindow": 159.7,
+    "sentencePauses": [
+      {
+        "after": "dreams.",
+        "seconds": 0.76
+      },
+      {
+        "after": "do.",
+        "seconds": 0.5
+      },
+      {
+        "after": "learning.",
+        "seconds": 0.54
+      },
+      {
+        "after": "hesitation.",
+        "seconds": 0.84
+      },
+      {
+        "after": "are.",
+        "seconds": 0.68
+      }
+    ]
+  },
+  {
+    "id": "candidate-product-impact",
+    "status": "aligned",
+    "warning": null,
+    "source": "stable-ts-local",
+    "wordBoundaryCount": 63,
+    "firstWordAtSeconds": 0.25,
+    "lastWordEndsAtSeconds": 35.97,
+    "speechWindowSeconds": 35.72,
+    "wordsPerMinuteDuringSpeechWindow": 105.8,
+    "sentencePauses": [
+      {
+        "after": "strategy.",
+        "seconds": 0.78
+      },
+      {
+        "after": "team.",
+        "seconds": 0.62
+      },
+      {
+        "after": "retention.",
+        "seconds": 0.86
+      },
+      {
+        "after": "most.",
+        "seconds": 0.54
+      }
+    ]
+  },
+  {
+    "id": "phone-confirmation-etiquette",
+    "status": "aligned",
+    "warning": null,
+    "source": "stable-ts-local",
+    "wordBoundaryCount": 57,
+    "firstWordAtSeconds": 0.25,
+    "lastWordEndsAtSeconds": 20.19,
+    "speechWindowSeconds": 19.94,
+    "wordsPerMinuteDuringSpeechWindow": 171.5,
+    "sentencePauses": [
+      {
+        "after": "everything.",
+        "seconds": 0.64
+      },
+      {
+        "after": "bit?",
+        "seconds": 0.58
+      },
+      {
+        "after": "up.",
+        "seconds": 0.8
+      }
+    ]
+  }
+]

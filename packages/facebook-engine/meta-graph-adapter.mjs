@@ -2,6 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PATHS, GRAPH_VERSION } from '../../src/config.mjs';
 import { formatCaption } from '../../src/ai/hashtag-utils.mjs';
+import { formatEnglishShadowingCaption } from '../../src/english-shadowing/caption.mjs';
+
+function captionForScript(script) {
+  return script?.contentLanguage === 'english-shadowing'
+    ? formatEnglishShadowingCaption(script.caption, script.hashtags)
+    : formatCaption(script.caption, script.hashtags, script.contentLanguage || 'en');
+}
 
 const tokenFile = `${PATHS.private}/facebook-page-token.txt`;
 
@@ -119,7 +126,7 @@ export class MetaGraphAdapter {
 
     const finish = await graph(endpoint, {
       upload_phase: 'finish', upload_session_id: start.upload_session_id,
-      title: script.title, description: formatCaption(script.caption, script.hashtags, script.contentLanguage || 'en'), published: 'true'
+      title: script.title, description: captionForScript(script), published: 'true'
     }, uploadHost, this.tokenFile);
     const videoId = String(finish.video_id || finish.id || start.video_id);
     const status = await this.#waitUntilPublished(videoId);
@@ -217,7 +224,7 @@ export class MetaGraphAdapter {
     try {
       await graph(endpoint, {
         upload_phase: 'finish', upload_session_id: uploadSessionId,
-        title: script.title, description: formatCaption(script.caption, script.hashtags, script.contentLanguage || 'en'),
+        title: script.title, description: captionForScript(script),
         published: 'false', scheduled_publish_time: String(Math.floor(scheduledTime.getTime() / 1000))
       }, uploadHost, this.tokenFile);
     } catch (error) {

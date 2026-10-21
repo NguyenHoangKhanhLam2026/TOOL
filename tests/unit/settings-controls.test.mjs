@@ -25,7 +25,8 @@ test('local TTS speed and preview controls have valid event targets', () => {
 
 test('all static ID-based event listeners point to an element in the page', () => {
   const htmlIds = new Set([...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]));
+  const appIds = new Set([...app.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]));
   const listenerIds = [...app.matchAll(/\$\('#([a-z0-9_-]+)'\)\.addEventListener/g)].map((match) => match[1]);
 
-  for (const id of listenerIds) assert.ok(htmlIds.has(id), `Event listener targets missing #${id}`);
+  for (const id of listenerIds) assert.ok(htmlIds.has(id) || appIds.has(id), `Event listener targets missing #${id}`);
 });

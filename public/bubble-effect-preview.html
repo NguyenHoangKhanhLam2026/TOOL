@@ -98,7 +98,46 @@
     const warm = document.querySelector('#warm');
     const densityOut = document.querySelector('#densityOut');
     const selectedEffect = document.querySelector('#selected-effect');
-    const words = ['hello', 'learn', 'speak', 'dream', 'grow', 'A2', 'you'];
+    const wordsByLanguage = {
+      en: ['hello', 'learn', 'speak', 'dream', 'grow', 'A2', 'you'],
+      zh: ['你好', '学习', '表达', '梦想', '成长', '中文'],
+      ja: ['こんにちは', '学ぶ', '表現', '夢', '成長', '日本語']
+    };
+    let words = wordsByLanguage.en;
+    const previewNodes = {
+      brandmark: document.querySelector('.brandmark'), brandcopy: document.querySelector('.brandcopy'),
+      kicker: document.querySelector('.kicker'), title: document.querySelector('.lesson h2'),
+      pronunciation: document.querySelector('.pronunciation'), definition: document.querySelector('.definition'),
+      example: document.querySelector('.example'), caption: document.querySelector('.caption span'),
+      social: document.querySelector('.social span:first-child'), captionNote: document.querySelector('.preview-caption')
+    };
+    const englishPreview = Object.fromEntries(Object.entries(previewNodes).map(([key, node]) => [key, node.innerHTML]));
+    const localizedPreview = {
+      zh: {
+        brandmark: '中', brandcopy: '每天学中文<small>每天三句 · 自信开口</small>',
+        kicker: '今日短语', title: '雨过<br>天晴', pronunciation: 'yǔ guò tiān qíng',
+        definition: '<strong>雨过天晴</strong><br>比喻困难过去后，情况开始好转。',
+        example: '风雨之后，总会雨过天晴。',
+        caption: '风雨之后，总会雨过天晴。<br>困难过去后，情况会慢慢好起来。',
+        social: '每天学一句中文', captionNote: 'Khung dọc 9:16 · xem hiệu ứng nền tiếng Trung đang chọn'
+      },
+      ja: {
+        brandmark: '日', brandcopy: '毎日、日本語を学ぼう<small>毎日三つ · 自信を持って話そう</small>',
+        kicker: '今日の表現', title: 'お疲れ<br>様です', pronunciation: 'おつかれさまです',
+        definition: '<strong>お疲れ様です</strong><br>相手の努力や仕事へのねぎらいを伝える表現です。',
+        example: '今日もお疲れ様でした。',
+        caption: '今日もお疲れ様でした。<br>今日も一日、お疲れさまでした。',
+        social: '毎日、日本語を一言', captionNote: 'Khung dọc 9:16 · xem hiệu ứng nền tiếng Nhật đang chọn'
+      }
+    };
+    function setPreviewLanguage(language) {
+      const content = localizedPreview[language];
+      words = wordsByLanguage[content ? language : 'en'];
+      for (const [key, node] of Object.entries(previewNodes)) {
+        node.innerHTML = content ? content[key] : englishPreview[key];
+      }
+      makeParticles();
+    }
     const effectLabels = {
       none: 'Tắt hiệu ứng', bubbles: 'Bong bóng trong', sparkles: 'Hạt sáng',
       vocabulary: 'Chữ bay', waves: 'Sóng mềm', fireflies: 'Đom đóm',
@@ -292,6 +331,7 @@
     window.addEventListener('message', (event) => {
       if (event.origin !== location.origin || event.source !== window.parent) return;
       if (event.data?.type === 'background-effect-preview:set-effect') {
+        if (['en', 'zh', 'ja'].includes(event.data.language)) setPreviewLanguage(event.data.language);
         setEffect(event.data.effectId);
         const nextDensity = Number(event.data.density);
         if (Number.isInteger(nextDensity) && nextDensity >= 10 && nextDensity <= 60) density.value = String(nextDensity);

@@ -301,6 +301,7 @@ export function createSpeechSegments(script, settings = {}) {
         speechText: prepareSpeechText(text, language),
         order: segments.length,
         turnId: String(source.turnId || source.groupId || segmentId),
+        ...(Number.isFinite(Number(source.pauseAfterSeconds)) ? { pauseAfterSeconds: Math.max(0, Math.min(2, Number(source.pauseAfterSeconds))) } : {}),
         state: source.state || (language === 'en' ? 'bilingual' : 'vietnamese'),
         target: {
           ...target,

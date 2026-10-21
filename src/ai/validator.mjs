@@ -16,7 +16,8 @@ export function contentHash(script) {
     ...(Array.isArray(script.speechSegments) ? script.speechSegments : []),
     ...(Array.isArray(script.audioSegments) ? script.audioSegments : [])
   ].map((item) => item?.text);
-  const basis = [script.topic, ...(script.contentLanguage && script.contentLanguage !== 'en' ? [script.contentLanguage] : []), ...dialogueText, ...speechText].map(normalizeText).join('|');
+  const englishStyle = script.contentLanguage === 'en' && script.presentationStyle ? [`presentation:${script.presentationStyle}`] : [];
+  const basis = [script.topic, ...(script.contentLanguage && script.contentLanguage !== 'en' ? [script.contentLanguage] : []), ...englishStyle, ...dialogueText, ...speechText].map(normalizeText).join('|');
   return createHash('sha256').update(basis).digest('hex');
 }
 
@@ -78,8 +79,129 @@ export function assertDistinctFromHistory(script, history, threshold = 0.82) {
   return script;
 }
 
-export function validateScript(raw, { contentLanguage = 'en', requireChineseScenes = true } = {}) {
+const ENGLISH_PRESENTATION_STYLES = ['dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'];
+
+function englishPresentationDialogueCount(style) {
+  return ['inline-meaning', 'inline-keyphrase'].includes(style) ? 1 : 3;
+}
+
+function validateEnglishPresentationScript(raw, presentationStyle) {
+  const script = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (!script || typeof script !== 'object' || Array.isArray(script)) throw new Error('Kịch bản tiếng Anh không phải đối tượng JSON.');
+  const errors = [];
+  script.contentLanguage = 'en';
+  script.presentationStyle = presentationStyle;
+  const expectedCount = englishPresentationDialogueCount(presentationStyle);
+  const inlineStyle = ['inline-meaning', 'inline-keyphrase'].includes(presentationStyle);
+  const numberedStyle = presentationStyle === 'numbered-scenario';
+  for (const key of ['topic', 'category', 'level', 'title', 'hook', 'caption', 'thumbnailTitle']) {
+    if (typeof script[key] !== 'string' || !script[key].trim()) errors.push(`Thiếu trường ${key} của nội dung tiếng Anh.`);
+  }
+  if (!Array.isArray(script.dialogues) || script.dialogues.length !== expectedCount) {
+    errors.push(`Kiểu ${presentationStyle} cần đúng ${expectedCount} câu học tiếng Anh.`);
+  }
+  if (!Array.isArray(script.dialogues)) script.dialogues = [];
+  const phraseOccursIn = (phrase, sentence) => Boolean(phrase && sentence
+    && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(phrase)}([^\\p{L}\\p{N}]|$)`, 'iu').test(sentence));
+  const addSpeech = (segments, { text, language, layerId, dialogueIndex, id, state, pauseAfterSeconds = 0, vocabularyIndex }) => {
+    const segment = {
+      segmentId: `en-${presentationStyle}-${dialogueIndex + 1}-${id}`,
+      turnId: `en-${presentationStyle}-dialogue-${dialogueIndex + 1}`,
+      language,
+      text,
+      state,
+      pauseAfterSeconds,
+      target: {
+        layerId,
+        dialogueIndex,
+        ...(Number.isInteger(vocabularyIndex) ? { vocabularyIndex } : {})
+      }
+    };
+    segments.push(segment);
+  };
+  const speechSegments = [];
+  script.dialogues = script.dialogues.slice(0, expectedCount).map((dialogue, index) => {
+    const prefix = `Câu học tiếng Anh ${index + 1}`;
+    const vietnamese = String(dialogue?.vietnamese || '').trim();
+    const english = String(dialogue?.english || '').trim();
+    if (!vietnamese) errors.push(`${prefix}: thiếu câu tiếng Việt.`);
+    if (!english) errors.push(`${prefix}: thiếu câu tiếng Anh.`);
+    const vietnameseWords = wordCount(vietnamese);
+    const englishWords = wordCount(english);
+    if (vietnameseWords < 5 || vietnameseWords > 14) errors.push(`${prefix}: câu tiếng Việt cần từ 5 đến 14 từ (hiện có ${vietnameseWords}).`);
+    if (englishWords < 5 || englishWords > 18) errors.push(`${prefix}: câu tiếng Anh cần từ 5 đến 18 từ (hiện có ${englishWords}).`);
+    let vocabularyCards = [];
+    if (numberedStyle) {
+      const term = String(dialogue?.term || '').trim();
+      const meaningVi = String(dialogue?.meaningVi || '').trim();
+      if (!term || !meaningVi) errors.push(`${prefix}: thiếu cụm từ hoặc nghĩa tiếng Việt.`);
+      if (wordCount(term) < 1 || wordCount(term) > 5) errors.push(`${prefix}: cụm từ trọng tâm cần từ 1 đến 5 từ.`);
+      if (wordCount(meaningVi) < 5 || wordCount(meaningVi) > 16) errors.push(`${prefix}: giải thích cách dùng cần từ 5 đến 16 từ.`);
+      if (term && !phraseOccursIn(term, english)) errors.push(`${prefix}: cụm từ “${term}” không xuất hiện nguyên văn trong câu tiếng Anh.`);
+      vocabularyCards = [{ term, meaningVi }];
+    } else if (inlineStyle) {
+      if (!Array.isArray(dialogue?.vocabularyCards) || dialogue.vocabularyCards.length !== 2) {
+        errors.push(`${prefix}: cần đúng 2 thẻ vocabularyCards.`);
+      }
+      vocabularyCards = (Array.isArray(dialogue?.vocabularyCards) ? dialogue.vocabularyCards : []).slice(0, 2).map((card, cardIndex) => {
+        const sourceVi = String(card?.sourceVi || '').trim();
+        const term = String(card?.term || '').trim();
+        const meaningVi = String(card?.meaningVi || '').trim();
+        if (!sourceVi || !term || !meaningVi) errors.push(`${prefix}, thẻ cụm từ ${cardIndex + 1}: thiếu cụm tiếng Việt, cụm tiếng Anh hoặc giải thích.`);
+        if (wordCount(sourceVi) < 1 || wordCount(sourceVi) > 8) errors.push(`${prefix}, thẻ cụm từ ${cardIndex + 1}: cụm tiếng Việt cần từ 1 đến 8 từ.`);
+        if (wordCount(term) < 1 || wordCount(term) > 5) errors.push(`${prefix}, thẻ cụm từ ${cardIndex + 1}: cụm từ cần từ 1 đến 5 từ.`);
+        if (wordCount(meaningVi) < 8 || wordCount(meaningVi) > 24) errors.push(`${prefix}, thẻ cụm từ ${cardIndex + 1}: giải thích cần từ 8 đến 24 từ.`);
+        if (sourceVi && !phraseOccursIn(sourceVi, vietnamese)) errors.push(`${prefix}, thẻ cụm từ ${cardIndex + 1}: cụm tiếng Việt “${sourceVi}” không xuất hiện nguyên văn trong câu tiếng Việt.`);
+        if (term && !phraseOccursIn(term, english)) errors.push(`${prefix}, thẻ cụm từ ${cardIndex + 1}: “${term}” không xuất hiện nguyên văn trong câu tiếng Anh.`);
+        return { sourceVi, term, meaningVi };
+      });
+      if (vocabularyCards.length === 2 && normalizeText(vocabularyCards[0].term) === normalizeText(vocabularyCards[1].term)) {
+        errors.push(`${prefix}: hai thẻ cụm từ không được trùng nhau.`);
+      }
+      if (vocabularyCards.length === 2 && normalizeText(vocabularyCards[0].sourceVi) === normalizeText(vocabularyCards[1].sourceVi)) {
+        errors.push(`${prefix}: hai cụm tiếng Việt trong thẻ không được trùng nhau.`);
+      }
+    }
+    const result = {
+      ...dialogue,
+      index: index + 1,
+      vietnamese,
+      english,
+      presentationStyle,
+      term: vocabularyCards[0]?.term || '',
+      meaningVi: vocabularyCards[0]?.meaningVi || '',
+      ...(inlineStyle ? { vocabularyCards } : { vocabularyCards: undefined })
+    };
+    addSpeech(speechSegments, { text: vietnamese, language: 'vi', layerId: 'vietnamese-card', dialogueIndex: index, id: 'vi', state: 'vietnamese', pauseAfterSeconds: 0.55 });
+    addSpeech(speechSegments, { text: english, language: 'en', layerId: 'english-card', dialogueIndex: index, id: 'en', state: 'bilingual' });
+    vocabularyCards.forEach((card, cardIndex) => {
+      if (!card.term || !card.meaningVi) return;
+      addSpeech(speechSegments, { text: card.term, language: 'en', layerId: 'vocabulary', dialogueIndex: index, id: `term-${cardIndex + 1}`, state: 'vocabulary', vocabularyIndex: cardIndex });
+      addSpeech(speechSegments, { text: card.meaningVi, language: 'vi', layerId: 'vocabulary', dialogueIndex: index, id: `meaning-${cardIndex + 1}`, state: 'vocabulary', vocabularyIndex: cardIndex });
+    });
+    return result;
+  });
+  if (new Set(script.dialogues.map((dialogue) => normalizeText(dialogue.english)).filter(Boolean)).size !== script.dialogues.length) {
+    errors.push('Các câu tiếng Anh trong cùng một video bị lặp.');
+  }
+  const learningTerms = script.dialogues.flatMap((dialogue) => Array.isArray(dialogue.vocabularyCards)
+    ? dialogue.vocabularyCards.map((card) => card.term)
+    : [dialogue.term]).map(normalizeText).filter(Boolean);
+  if (new Set(learningTerms).size !== learningTerms.length) errors.push('Các cụm từ trong cùng một video bị lặp.');
+  if (errors.length) throw new Error(errors.join(' '));
+  script.speechSegments = speechSegments;
+  if (!Array.isArray(script.hashtags)) script.hashtags = [];
+  script.createdAt = new Date().toISOString();
+  script.id = crypto.randomUUID();
+  script.contentHash = contentHash(script);
+  return script;
+}
+
+export function validateScript(raw, { contentLanguage = 'en', requireChineseScenes = true, presentationStyle = null } = {}) {
   if (contentLanguage === 'zh') return validateChineseScript(raw, { requireScenes: requireChineseScenes });
+  if (contentLanguage === 'en' && ENGLISH_PRESENTATION_STYLES.includes(presentationStyle)) {
+    return validateEnglishPresentationScript(raw, presentationStyle);
+  }
   const script = typeof raw === 'string' ? JSON.parse(raw) : raw;
   const errors = [];
   if (!['en', 'ja', 'zh'].includes(contentLanguage)) throw new Error('Unsupported content language.');

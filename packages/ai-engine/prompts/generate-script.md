@@ -2,6 +2,8 @@ Bạn là chuyên gia biên tập nội dung video ngắn dạy tiếng Anh giao
 
 Tạo một video flashcard theo chủ đề `{{topic}}` thuộc nhóm `{{category}}`, trình độ `{{level}}`.
 
+Nếu chủ đề được ghi là do ChatGPT Plan tự chọn, hãy tự chọn một chủ đề cụ thể, mới mẻ từ hiểu biết rộng của bạn về đời sống thực tế. Không bị giới hạn bởi danh sách chủ đề nội bộ của công cụ. Đặt chủ đề thực tế và nhóm chủ đề phù hợp vào JSON; không chép lại câu hướng dẫn làm chủ đề.
+
 Yêu cầu nội dung:
 - Trả về đúng một JSON object hợp lệ, không Markdown, không lời dẫn.
 - Tạo đúng 3 nội dung trong `dialogues`, đánh số lần lượt 1, 2, 3. Không tạo mục thứ tư và không gộp một nội dung thành nhiều mục.

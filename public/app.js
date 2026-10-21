@@ -2,8 +2,10 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
-const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], logs: [], jobs: [], filter: 'all', languageFilter: 'all', overview: null, settings: null, system: null, facebookPages: { profiles: [], routes: {} }, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0, contentLanguageSavePromise: Promise.resolve(), contentLanguageRevision: 0, cosyVoiceUploadedProfileId: '', cosyVoiceActiveProfileId: '' };
+const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], logs: [], jobs: [], filter: 'all', languageFilter: 'all', overview: null, settings: null, system: null, facebookPages: { profiles: [], routes: {} }, backgroundEffects: [], backgroundEffectEditor: null, backgroundEffectLanguage: 'en', backgroundEffectProfiles: { en: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, zh: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, ja: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 } }, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0, contentLanguageSavePromise: Promise.resolve(), contentLanguageRevision: 0, createLanguageSelectionTouched: false, englishShadowingSettings: null, englishShadowingSettingsDirty: false, englishShadowingSettingsRevision: 0, ttsProviderView: 'standard', voiceHighlightContentProfile: 'standard', cosyVoiceUploadedProfileId: '', cosyVoiceActiveProfileId: '', facebookPageLanguageDirty: false, facebookPageCredentialDirty: false, facebookSelectedLanguage: 'en', facebookPageLoadRevision: 0, facebookActiveProfile: null };
 let previewAudio = null;
+let scheduleCalendarMonth = '';
+let scheduleSelectedDay = '';
 const HIGHLIGHT_PREVIEW_TEXT = {
   vi: 'Xin chào, hôm nay mình cùng luyện nói tiếng Anh nhé.',
   en: 'Hello, let us practice English together today.'
@@ -44,7 +46,11 @@ function setView(view) {
   $('#page-breadcrumb').textContent = labels[view];
   if (view === 'library') loadVideos();
   if (view === 'schedule') loadSchedules();
-  if (view === 'settings') loadSettings();
+  if (view === 'settings') {
+    const previewFrame = $('#background-effect-preview-frame');
+    if (previewFrame) previewFrame.loading = 'eager';
+    loadSettings();
+  }
   if (view === 'logs') loadLogs();
 }
 
@@ -80,10 +86,13 @@ function videoProgressMarkup(video) {
 }
 function contentGroupLabel(language) {
   const groups = { en: 'Nội dung tiếng Anh', zh: 'Nội dung tiếng Trung', ja: 'Nội dung tiếng Nhật' };
+  if (String(language || '').toLowerCase() === 'english-shadowing') return 'EnglishShadowing';
   return groups[String(language || 'en').toLowerCase()] || groups.en;
 }
 function videoCard(video, compact = false) {
-  const thumb = video.thumbnail_path ? `<img src="/api/videos/${encodeURIComponent(video.id)}/thumbnail" alt="Thumbnail ${escapeHtml(video.topic)}" loading="lazy" />` : `<span class="video-placeholder">${escapeHtml(video.topic || 'Video mới')}<small>${video.status === 'processing' ? 'Đang tạo các đoạn đọc và render…' : video.last_error ? escapeHtml(video.last_error) : 'Chưa có bản render'}</small></span>`;
+  const language = String(video.content_language || video.contentLanguage || '').toLowerCase();
+  const missingPreviewLabel = language === 'english-shadowing' ? 'Không dùng thumbnail cho Shadowing' : 'Chưa có bản render';
+  const thumb = video.thumbnail_path ? `<img src="/api/videos/${encodeURIComponent(video.id)}/thumbnail" alt="Thumbnail ${escapeHtml(video.topic)}" loading="lazy" />` : `<span class="video-placeholder">${escapeHtml(video.topic || 'Video mới')}<small>${video.status === 'processing' ? 'Đang tạo các đoạn đọc và render…' : video.last_error ? escapeHtml(video.last_error) : missingPreviewLabel}</small></span>`;
   const cardClass = compact ? 'video-card' : 'library-row';
   const facebookScheduling = ['queued', 'uploading', 'finishing', 'scheduled', 'uncertain'].includes(video.facebook_schedule_state);
   const retryPublish = video.status === 'publish_failed' && !facebookScheduling;
@@ -91,6 +100,7 @@ function videoCard(video, compact = false) {
   const actions = [
     video.status === 'ready' && video.review_status !== 'approved' ? `<button class="mini-action" data-approve-id="${escapeHtml(video.id)}">DUYỆT</button>` : '',
     `<button class="mini-action" data-script-id="${escapeHtml(video.script_id)}">Kịch bản</button>`,
+    !compact && video.status === 'ready' && video.review_status !== 'approved' && !video.published_id && !facebookScheduling ? `<button class="mini-action" data-background-effect-video-id="${escapeHtml(video.id)}">Nền riêng</button>` : '',
     video.status === 'failed' ? `<button class="mini-action" data-retry-video-id="${escapeHtml(video.id)}">Thử lại</button>` : '',
     video.status === 'ready' ? `<button class="mini-action" data-schedule-id="${escapeHtml(video.id)}">Lên lịch</button>` : '',
     (['ready', 'scheduled'].includes(video.status) && !facebookScheduling) || retryPublish ? `<button class="mini-action" data-publish-id="${escapeHtml(video.id)}" ${retryPublish ? `data-retry-publish="true" data-retry-may-duplicate="${retryMayDuplicate}"` : ''}>Đăng ngay</button>` : '',
@@ -101,6 +111,154 @@ function videoCard(video, compact = false) {
   const category = contentGroupLabel(video.content_language || video.contentLanguage);
   if (compact) return `<article class="${cardClass}"><a class="video-thumb" href="${video.video_path ? `/api/videos/${encodeURIComponent(video.id)}/file` : '#'}" ${video.video_path ? 'target="_blank"' : ''}>${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></a><div class="video-info"><h3>${escapeHtml(video.topic || video.title)}</h3><p>${caption}</p><div class="video-meta"><span class="video-category">${escapeHtml(category)}</span><div class="video-actions">${actions}</div></div></div></article>`;
   return `<article class="${cardClass}"><div class="video-thumb">${thumb}<span class="video-badge">${escapeHtml(statusName(video.status, video))}</span></div><div class="library-main"><h3>${escapeHtml(video.title || video.topic)}</h3><p class="library-caption">${caption}</p><div class="row-meta"><span>${escapeHtml(category)}</span><span>•</span><span>${dateText(video.created_at, { dateStyle: 'medium' })}</span><span>•</span><span>${escapeHtml(video.provider || 'AI')}</span>${video.duration_seconds ? `<span>•</span><span>${Number(video.duration_seconds).toFixed(1)} giây</span>` : ''}</div>${video.facebook_error ? `<p class="inline-status">${escapeHtml(video.facebook_error)}</p>` : video.last_error && !video.pipeline?.error ? `<p class="inline-status">${escapeHtml(video.last_error)}</p>` : ''}${videoProgressMarkup(video)}</div><span class="state-pill ${statusClass(video.status, video)}">${escapeHtml(statusName(video.status, video))}</span><div class="row-actions">${actions}</div></article>`;
+}
+
+function currentVideoBackgroundEffectConfig(video) {
+  const language = String(video.content_language || video.contentLanguage || 'en').toLowerCase();
+  const isEnglishShadowing = language === 'english-shadowing';
+  const saved = isEnglishShadowing
+    ? (video.englishShadowingProfile?.backgroundEffectConfig || video.backgroundEffectConfig || {})
+    : (video.backgroundEffectConfig || {});
+  const defaults = isEnglishShadowing
+    ? (state.englishShadowingSettings?.backgroundEffectConfig || { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 })
+    : (state.settings?.backgroundEffectProfiles?.[language] || state.settings || {});
+  const effects = new Set(state.backgroundEffects.map((effect) => effect.id));
+  const requestedEffect = saved.backgroundEffect || defaults.backgroundEffect || 'bubbles';
+  const boundedInteger = (value, fallback, min, max) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
+  };
+  return {
+    backgroundEffect: effects.has(requestedEffect) ? requestedEffect : effects.has(defaults.backgroundEffect) ? defaults.backgroundEffect : 'bubbles',
+    backgroundEffectDensity: boundedInteger(saved.backgroundEffectDensity ?? defaults.backgroundEffectDensity, 28, 10, 60),
+    backgroundEffectSpeed: boundedInteger(saved.backgroundEffectSpeed ?? defaults.backgroundEffectSpeed, 58, 25, 140),
+    backgroundEffectOpacity: boundedInteger(saved.backgroundEffectOpacity ?? defaults.backgroundEffectOpacity, 32, 10, 70)
+  };
+}
+
+function normalizeBackgroundEffectProfileForUi(value, fallback = {}) {
+  const profile = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const defaults = fallback && typeof fallback === 'object' && !Array.isArray(fallback) ? fallback : {};
+  const effects = new Set(state.backgroundEffects.map((effect) => effect.id));
+  const boundedInteger = (input, fallbackValue, min, max) => {
+    const number = Number(input);
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallbackValue;
+  };
+  const fallbackEffect = effects.has(defaults.backgroundEffect) ? defaults.backgroundEffect : 'bubbles';
+  return {
+    backgroundEffect: effects.has(profile.backgroundEffect) ? profile.backgroundEffect : fallbackEffect,
+    backgroundEffectDensity: boundedInteger(profile.backgroundEffectDensity ?? defaults.backgroundEffectDensity, 28, 10, 60),
+    backgroundEffectSpeed: boundedInteger(profile.backgroundEffectSpeed ?? defaults.backgroundEffectSpeed, 58, 25, 140),
+    backgroundEffectOpacity: boundedInteger(profile.backgroundEffectOpacity ?? defaults.backgroundEffectOpacity, 32, 10, 70)
+  };
+}
+
+function normalizeBackgroundEffectProfilesForUi(settings = {}) {
+  const legacy = {
+    backgroundEffect: settings.backgroundEffect || 'bubbles',
+    backgroundEffectDensity: settings.backgroundEffectDensity ?? 28,
+    backgroundEffectSpeed: settings.backgroundEffectSpeed ?? 58,
+    backgroundEffectOpacity: settings.backgroundEffectOpacity ?? 32
+  };
+  const profiles = settings.backgroundEffectProfiles && typeof settings.backgroundEffectProfiles === 'object'
+    ? settings.backgroundEffectProfiles
+    : {};
+  return Object.fromEntries(['en', 'zh', 'ja'].map((language) => [
+    language,
+    normalizeBackgroundEffectProfileForUi(profiles[language], legacy)
+  ]));
+}
+
+function storeCurrentBackgroundEffectProfile(language = state.backgroundEffectLanguage || 'en') {
+  const profile = language === 'english-shadowing'
+    ? (state.englishShadowingSettings ||= {}).backgroundEffectConfig ||= {}
+    : state.backgroundEffectProfiles?.[language];
+  if (!profile) return;
+  profile.backgroundEffect = $('#background-effect')?.value || profile.backgroundEffect;
+  profile.backgroundEffectDensity = Number(state.backgroundEffectDensity);
+  profile.backgroundEffectSpeed = Number(state.backgroundEffectSpeed);
+  profile.backgroundEffectOpacity = Number(state.backgroundEffectOpacity);
+}
+
+function applyBackgroundEffectProfile(language) {
+  const selectedLanguage = ['en', 'zh', 'ja', 'english-shadowing'].includes(language) ? language : 'en';
+  state.backgroundEffectLanguage = selectedLanguage;
+  const selector = $('#background-effect-language');
+  if (selector) selector.value = selectedLanguage;
+  const profile = selectedLanguage === 'english-shadowing'
+    ? normalizeBackgroundEffectProfileForUi(state.englishShadowingSettings?.backgroundEffectConfig || {}, { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 })
+    : state.backgroundEffectProfiles[selectedLanguage];
+  if (!profile) return;
+  if (selectedLanguage === 'english-shadowing' && state.englishShadowingSettings) {
+    state.englishShadowingSettings.backgroundEffectConfig = { ...profile };
+  }
+  state.backgroundEffectDensity = profile.backgroundEffectDensity;
+  state.backgroundEffectSpeed = profile.backgroundEffectSpeed;
+  state.backgroundEffectOpacity = profile.backgroundEffectOpacity;
+  const effectSelect = $('#background-effect');
+  if (effectSelect) effectSelect.value = profile.backgroundEffect;
+  syncBackgroundEffectPreview();
+}
+
+function applyVoiceHighlightContentProfile(profile) {
+  const selected = profile === 'english-shadowing' ? 'english-shadowing' : 'standard';
+  state.voiceHighlightContentProfile = selected;
+  const selector = $('#voice-highlight-content-profile');
+  if (selector) selector.value = selected;
+  const standardControls = $('#standard-highlight-controls');
+  const shadowingControls = $('#english-shadowing-highlight-controls');
+  if (standardControls) standardControls.style.display = selected === 'standard' ? 'grid' : 'none';
+  if (shadowingControls) shadowingControls.style.display = selected === 'english-shadowing' ? 'block' : 'none';
+}
+
+function syncVideoBackgroundEffectPreview() {
+  const frame = $('#video-background-effect-preview-frame');
+  const config = state.backgroundEffectEditor?.config;
+  if (!frame?.contentWindow || !config) return;
+  frame.contentWindow.postMessage({
+    type: 'background-effect-preview:set-effect',
+    effectId: config.backgroundEffect,
+    density: config.backgroundEffectDensity,
+    speed: config.backgroundEffectSpeed,
+    opacity: config.backgroundEffectOpacity
+  }, location.origin);
+}
+
+async function openVideoBackgroundEffectEditor(videoId) {
+  const video = state.videos.find((item) => item.id === videoId);
+  if (!video) return;
+  try {
+    if (!state.backgroundEffects.length) state.backgroundEffects = await api('/api/background-effects');
+    if (!state.settings) state.settings = await api('/api/settings');
+    const config = currentVideoBackgroundEffectConfig(video);
+    state.backgroundEffectEditor = { videoId: video.id, config };
+    const options = state.backgroundEffects.map((effect) => `<option value="${escapeHtml(effect.id)}" ${effect.id === config.backgroundEffect ? 'selected' : ''}>${escapeHtml(effect.label)} · ${escapeHtml(effect.description)}</option>`).join('');
+    const title = video.title || video.topic || 'Video này';
+    $('#background-effect-dialog-content').innerHTML = `<section class="video-background-editor"><div class="video-background-editor-heading"><div><div class="eyebrow">HIỆU ỨNG RIÊNG CHO VIDEO</div><h2>${escapeHtml(title)}</h2></div><span class="state-pill ${statusClass(video.status, video)}">${escapeHtml(statusName(video.status, video))}</span></div><label class="video-background-effect-select">Hiệu ứng nền<select data-video-background-effect>${options}</select></label><iframe id="video-background-effect-preview-frame" src="/bubble-effect-preview.html" title="Xem trước hiệu ứng nền riêng cho video"></iframe><p class="video-background-editor-note">Lưu sẽ render lại video này, giữ nguyên giọng đọc và căn chỉnh. Video cần được duyệt lại trước khi lên lịch. Bài Facebook đã đăng không tự thay đổi.</p><div class="video-background-editor-actions"><button class="button button-outline" type="button" data-close-background-effect>Đóng</button><button class="button button-dark" type="button" data-save-video-background-effect>Lưu & render lại</button></div></section>`;
+    $('#background-effect-dialog').showModal();
+    $('#video-background-effect-preview-frame').addEventListener('load', syncVideoBackgroundEffectPreview, { once: true });
+    syncVideoBackgroundEffectPreview();
+  } catch (error) { toast('Không mở được hiệu ứng nền riêng', true, error.message); }
+}
+
+async function saveVideoBackgroundEffect() {
+  const editor = state.backgroundEffectEditor;
+  const button = $('[data-save-video-background-effect]', $('#background-effect-dialog-content'));
+  if (!editor || !button) return;
+  button.disabled = true;
+  try {
+    const result = await api(`/api/videos/${encodeURIComponent(editor.videoId)}/background-effect`, {
+      method: 'POST',
+      body: JSON.stringify(editor.config)
+    });
+    $('#background-effect-dialog').close();
+    toast('Đã lưu hiệu ứng riêng cho video', false, 'Worker đang render lại. Video sẽ cần được duyệt lại trước khi lên lịch.');
+    watchJob(result.jobId);
+    await refreshData();
+  } catch (error) {
+    toast('Không lưu được hiệu ứng nền', true, error.message);
+    button.disabled = false;
+  }
 }
 
 function renderOverview() {
@@ -118,7 +276,7 @@ function renderOverview() {
   const historyBytes = Number(history.bytes) || 0;
   const historySize = historyBytes >= 1024 * 1024 ? `${(historyBytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.ceil(historyBytes / 1024)} KB`;
   const historyWarning = historyBytes >= 100 * 1024 * 1024 ? ' C\u1ea3nh b\u00e1o: l\u1ecbch s\u1eed \u0111\u00e3 v\u01b0\u1ee3t 100 MB.' : '';
-  $('#content-history-note').textContent = `\u0110\u1ec3 tr\u1ed1ng ch\u1ee7 \u0111\u1ec1, AI t\u1ef1 ch\u1ecdn. \u0110ang gi\u1eef ${history.count} k\u1ecbch b\u1ea3n ch\u1ed1ng tr\u00f9ng (${historySize} v\u0103n b\u1ea3n); x\u00f3a MP4 kh\u00f4ng x\u00f3a l\u1ecbch s\u1eed.${historyWarning}`;
+  $('#content-history-note').textContent = `\u0110\u1ec3 tr\u1ed1ng ch\u1ee7 \u0111\u1ec1, ChatGPT Plan t\u1ef1 ch\u1ecdn t\u1eeb hi\u1ec3u bi\u1ebft r\u1ed9ng; ch\u1ee7 \u0111\u1ec1 trong danh s\u00e1ch ch\u1ec9 l\u00e0 g\u1ee3i \u00fd. \u0110ang gi\u1eef ${history.count} k\u1ecbch b\u1ea3n ch\u1ed1ng tr\u00f9ng (${historySize} v\u0103n b\u1ea3n); x\u00f3a MP4 kh\u00f4ng x\u00f3a l\u1ecbch s\u1eed.${historyWarning}`;
   const ready = (ok) => `<span class="status-indicator ${ok ? 'ok' : ''}"></span>`;
   const overviewTtsProvider = providerForContentLanguage(data.settings.contentLanguage || 'en', data.settings);
   const ttsKey = ({ vieneu: 'vieneuTts', 'vieneu-sbv2': 'styleBertVits2Tts', 'vieneu-cosyvoice3': 'cosyVoice3Tts' })[overviewTtsProvider] || 'vieneuTts';
@@ -132,7 +290,7 @@ function renderOverview() {
     ['Worker nền', data.system.worker, data.system.worker ? 'Đang lấy job từ hàng đợi' : 'Chạy npm run worker'],
     ['AI viết nội dung', data.system.aiReady, data.providers.chatgptPlan.connected ? 'ChatGPT plan đã kết nối' : 'Kết nối ChatGPT Plan để tạo nội dung'],
     ['Media engine', data.system.tools.ffmpeg && data.system.tools.ffprobe && data.system.tools[ttsKey], `${ttsStatus} · ${ffmpegStatus}`],
-    ['Facebook', data.system.liveFacebookReady, data.settings.facebookAdapter === 'mock' ? 'Đang ở chế độ thử nghiệm Mock' : (data.system.liveFacebookReady ? `Page ${data.settings.pageId} đã kiểm tra` : 'Chưa kiểm tra Page và token')]
+    ['Facebook', data.system.liveFacebookReady, data.settings.facebookAdapter === 'mock' ? 'Đang ở chế độ thử nghiệm Mock' : (data.system.liveFacebookReady ? 'Đã kiểm tra ít nhất một Page theo ngôn ngữ' : 'Chưa kiểm tra Page và token theo ngôn ngữ')]
   ];
   $('#status-grid').innerHTML = rows.map(([name, ok, detail]) => `<div class="status-card">${ready(ok)}<div class="status-copy"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(detail)}</small></div></div>`).join('');
   const videos = data.videos || [];
@@ -142,9 +300,10 @@ function renderOverview() {
   state.system = data.system;
   state.settings = data.settings;
   const savedLanguage = ['en', 'ja', 'zh'].includes(data.settings.contentLanguage) ? data.settings.contentLanguage : 'en';
-  if (document.activeElement !== $('#content-language')) $('#content-language').value = savedLanguage;
+  if (!state.createLanguageSelectionTouched && document.activeElement !== $('#content-language')) $('#content-language').value = savedLanguage;
+  const visibleLanguage = state.createLanguageSelectionTouched ? $('#content-language').value : savedLanguage;
   const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
-  if (heroCopy) heroCopy.textContent = contentLanguageDescription(savedLanguage);
+  if (heroCopy) heroCopy.textContent = contentLanguageDescription(visibleLanguage);
   renderToolChecks(data.system.tools);
   $$('.mini-action,[data-publish-id],[data-schedule-id],[data-approve-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
 }
@@ -183,7 +342,132 @@ function renderLibrary() {
     ? 'Các video đã được chuyển sang mục Lịch đăng. Chọn tab “Đã lên lịch” để xem lại.'
     : state.filter === 'all' ? 'Tạo video đầu tiên từ bảng Tổng quan.' : 'Video sẽ xuất hiện tại đây sau khi trạng thái thay đổi.';
   $('#library-list').innerHTML = matches.length ? matches.map((video) => videoCard(video)).join('') : `<div class="empty-state"><strong>Chưa có video trong mục này</strong>${emptyCopy}</div>`;
-  $$('.library-row [data-script-id],.library-row [data-retry-video-id],.library-row [data-approve-id],.library-row [data-schedule-id],.library-row [data-publish-id],.library-row [data-delete-video-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
+  $$('.library-row [data-script-id],.library-row [data-background-effect-video-id],.library-row [data-retry-video-id],.library-row [data-approve-id],.library-row [data-schedule-id],.library-row [data-publish-id],.library-row [data-delete-video-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
+}
+
+function facebookScheduleLanguage(language) {
+  return ({
+    en: { name: 'Tiếng Anh', code: 'EN' },
+    zh: { name: 'Tiếng Trung', code: 'ZH' },
+    ja: { name: 'Tiếng Nhật', code: 'JA' }
+  })[language] || { name: 'Chưa rõ ngôn ngữ', code: '—' };
+}
+
+function scheduleLocalDayKey(value, timeZone) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function shiftScheduleDay(dayKey, offset) {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + offset));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function shiftScheduleMonth(monthKey, offset) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + offset, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function scheduleDayLabel(dayKey) {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  return new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', day: 'numeric', month: 'short' })
+    .format(new Date(Date.UTC(year, month - 1, day, 12)));
+}
+
+function scheduleCoverage(items) {
+  if (!items.length) return { text: 'Chưa có lịch', className: 'empty' };
+  const posted = items.filter((item) => item.isPublished || item.facebook_schedule_state === 'published').length;
+  const scheduled = items.filter((item) => item.facebook_schedule_state === 'scheduled').length;
+  const sending = items.filter((item) => ['queued', 'uploading', 'finishing'].includes(item.facebook_schedule_state)).length;
+  const failed = items.filter((item) => item.status === 'failed' || item.video_status === 'publish_failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state)).length;
+  const local = items.filter((item) => item.facebook_schedule_state === 'local').length;
+  const parts = [];
+  if (posted) parts.push(`${posted} đã đăng`);
+  if (scheduled) parts.push(`${scheduled} đã lên lịch Facebook`);
+  if (sending) parts.push(`${sending} đang gửi`);
+  if (local) parts.push(`${local} mới lên lịch trong tool`);
+  if (failed) parts.push(`${failed} cần kiểm tra`);
+  return {
+    text: `${items.length} bài · ${parts.join(' · ') || 'đang xử lý'}`,
+    className: failed ? 'error' : posted || scheduled ? 'ok' : sending ? 'pending' : 'local'
+  };
+}
+
+function renderScheduleLanguageOverview() {
+  const container = $('#schedule-language-overview');
+  if (!container) return;
+  const timeZone = state.settings?.timezone || 'Asia/Ho_Chi_Minh';
+  const todayKey = scheduleLocalDayKey(new Date(), timeZone);
+  const tomorrowKey = shiftScheduleDay(todayKey, 1);
+  const allSchedules = [
+    ...state.schedules,
+    ...state.publishedSchedules.map((item) => ({ ...item, isPublished: true }))
+  ];
+  if (!scheduleCalendarMonth) {
+    scheduleSelectedDay = tomorrowKey;
+    scheduleCalendarMonth = tomorrowKey.slice(0, 7);
+  }
+  if (!scheduleSelectedDay || scheduleSelectedDay.slice(0, 7) !== scheduleCalendarMonth) {
+    scheduleSelectedDay = `${scheduleCalendarMonth}-01`;
+  }
+
+  const [year, month] = scheduleCalendarMonth.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const leadingCells = (firstWeekday + 6) % 7;
+  const monthLabel = new Intl.DateTimeFormat('vi-VN', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(year, month - 1, 15)));
+  const languages = ['en', 'zh', 'ja'];
+  const itemsForDay = (day) => allSchedules.filter((item) =>
+    scheduleLocalDayKey(item.scheduled_at, timeZone) === day
+  );
+  const blanks = Array.from({ length: leadingCells }, () => '<span class="schedule-calendar-blank" aria-hidden="true"></span>').join('');
+  const calendarDays = Array.from({ length: daysInMonth }, (_, index) => {
+    const dayNumber = index + 1;
+    const dayKey = `${scheduleCalendarMonth}-${String(dayNumber).padStart(2, '0')}`;
+    const dayItems = itemsForDay(dayKey);
+    const hasIssue = dayItems.some((item) => item.status === 'failed' || item.video_status === 'publish_failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state));
+    const languageDots = languages.map((language) => {
+      const languageItems = dayItems.filter((item) => (item.content_language || 'en') === language);
+      const failed = languageItems.some((item) => item.status === 'failed' || item.video_status === 'publish_failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state));
+      return `<span class="schedule-calendar-dot ${language}${languageItems.length ? ' filled' : ''}${failed ? ' error' : ''}" title="${facebookScheduleLanguage(language).name}: ${languageItems.length} bài"></span>`;
+    }).join('');
+    const daySummary = dayItems.length ? `${dayItems.length} bài` : 'Chưa có lịch';
+    const classes = [
+      'schedule-calendar-day',
+      dayKey === scheduleSelectedDay ? 'selected' : '',
+      dayKey === todayKey ? 'today' : '',
+      dayItems.length ? 'has-schedule' : '',
+      hasIssue ? 'has-issue' : ''
+    ].filter(Boolean).join(' ');
+    return `<button type="button" class="${classes}" data-schedule-day="${dayKey}" aria-pressed="${dayKey === scheduleSelectedDay}"><span class="schedule-calendar-date">${dayNumber}</span><span class="schedule-calendar-summary">${daySummary}</span><span class="schedule-calendar-dots" aria-hidden="true">${languageDots}</span></button>`;
+  }).join('');
+  const selectedItems = itemsForDay(scheduleSelectedDay);
+  const selectedDateLabel = scheduleDayLabel(scheduleSelectedDay);
+  const selectedIsTomorrow = scheduleSelectedDay === tomorrowKey;
+  const detailCards = languages.map((language) => {
+    const info = facebookScheduleLanguage(language);
+    const items = selectedItems.filter((item) => (item.content_language || 'en') === language);
+    const coverage = scheduleCoverage(items);
+    return `<div class="schedule-language-cell ${coverage.className}"><strong>Page ${info.name} (${info.code})</strong><small>${coverage.text}</small></div>`;
+  }).join('');
+
+  container.innerHTML = `<section class="schedule-language-overview"><div class="schedule-language-overview-heading"><div><strong>Tình trạng lịch theo Page</strong><small>Chọn một ngày trong tháng để xem lịch riêng theo từng Page/ngôn ngữ.</small></div></div><div class="schedule-calendar"><div class="schedule-calendar-toolbar"><button type="button" class="schedule-calendar-nav" data-schedule-month="-1" aria-label="Tháng trước">‹</button><strong>${monthLabel}</strong><button type="button" class="schedule-calendar-nav" data-schedule-month="1" aria-label="Tháng sau">›</button></div><div class="schedule-calendar-legend"><span><i class="schedule-calendar-dot en filled"></i>EN</span><span><i class="schedule-calendar-dot zh filled"></i>ZH</span><span><i class="schedule-calendar-dot ja filled"></i>JA</span></div><div class="schedule-calendar-weekdays">${['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) => `<span>${day}</span>`).join('')}</div><div class="schedule-calendar-grid">${blanks}${calendarDays}</div></div><div class="schedule-selected-day"><div class="schedule-selected-day-heading"><strong>${selectedIsTomorrow ? 'Ngày mai · ' : ''}${selectedDateLabel}</strong><small>${selectedItems.length ? `${selectedItems.length} lịch tổng cộng` : 'Chưa có lịch trong ngày này'}</small></div><div class="schedule-language-cells">${detailCards}</div></div></section>`;
+  $$('[data-schedule-day]', container).forEach((button) => button.addEventListener('click', () => {
+    scheduleSelectedDay = button.dataset.scheduleDay;
+    renderScheduleLanguageOverview();
+  }));
+  $$('[data-schedule-month]', container).forEach((button) => button.addEventListener('click', () => {
+    scheduleCalendarMonth = shiftScheduleMonth(scheduleCalendarMonth, Number(button.dataset.scheduleMonth));
+    scheduleSelectedDay = `${scheduleCalendarMonth}-01`;
+    renderScheduleLanguageOverview();
+  }));
 }
 
 function renderSchedules() {
@@ -194,20 +478,35 @@ function renderSchedules() {
   const available = state.videos.filter((v) => v.status === 'ready');
   $('#schedule-video').innerHTML = `<option value="">Chọn video</option>${available.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.topic)}</option>`).join('')}`;
   const visible = schedules.filter((item) => item.status !== 'published');
+  renderScheduleLanguageOverview();
   $('#schedule-list').innerHTML = visible.length ? visible.map((item) => {
-    const failed = item.status === 'failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state);
+    const failed = item.status === 'failed' || item.video_status === 'publish_failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state);
+    const retryableFacebookState = ['local', 'failed', 'uncertain'].includes(item.facebook_schedule_state)
+      || (item.facebook_schedule_state === 'scheduled' && !item.facebook_video_id);
+    const canRetry = item.status !== 'published' && item.status !== 'publishing'
+      && (item.status === 'failed' || item.video_status === 'publish_failed' || retryableFacebookState);
     const stateLabel = item.facebook_schedule_state === 'scheduled' ? 'Đã lên lịch trên Facebook'
       : item.facebook_schedule_state === 'published' ? 'Đã đăng trên Facebook'
         : item.facebook_schedule_state === 'uncertain' ? 'Chưa xác minh được lịch Facebook'
           : item.facebook_schedule_state === 'failed' ? 'Gửi lịch Facebook thất bại'
             : ['queued', 'uploading', 'finishing'].includes(item.facebook_schedule_state) ? 'Đang gửi lịch lên Facebook'
-              : item.status === 'publishing' ? 'Đang đăng' : 'Đã lên lịch trong ứng dụng';
-    const error = failed && item.error ? `<small class="schedule-error">${escapeHtml(item.error)}</small>` : '';
-    return `<article class="schedule-row${failed ? ' failed' : ''}"><span class="schedule-date">${dateText(item.scheduled_at, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.topic)}</strong><small>${escapeHtml(item.title)} · ${stateLabel}</small>${error}</div><span class="schedule-time">${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span></article>`;
+              : item.facebook_schedule_state === 'local' && state.settings?.facebookAdapter === 'meta' ? 'Chưa gửi lịch lên Facebook'
+                : item.status === 'publishing' ? 'Đang đăng' : 'Đã lên lịch trong ứng dụng';
+    const retryHint = canRetry && !item.error && item.facebook_schedule_state === 'local' && state.settings?.facebookAdapter === 'meta'
+      ? `<small class="schedule-error">Page ${escapeHtml(String(item.content_language || 'en').toUpperCase())} chưa được xác minh hoặc token chưa sẵn sàng.</small>` : '';
+    const error = failed && item.error ? `<small class="schedule-error">${escapeHtml(item.error)}</small>` : retryHint;
+    const retryButton = canRetry ? `<button class="button button-outline button-small schedule-retry" data-retry-schedule-id="${escapeHtml(item.id)}">Đăng lại</button>` : '';
+    const language = facebookScheduleLanguage(item.content_language || 'en');
+    const languageStateLabel = item.facebook_schedule_state === 'scheduled'
+      ? `Đã lên lịch nội dung Facebook ${language.name} (${language.code})`
+      : `Nội dung Facebook ${language.name} (${language.code}) · ${stateLabel}`;
+    return `<article class="schedule-row${failed ? ' failed' : ''}"><span class="schedule-date">${dateText(item.scheduled_at, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.topic)}</strong><small>${escapeHtml(item.title)} · ${languageStateLabel}</small>${error}</div><div class="schedule-time-actions"><span class="schedule-time">${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span>${retryButton}</div></article>`;
   }).join('') : `<div class="empty-state"><strong>Chưa có lịch đăng</strong>Bật “Tự đăng theo lịch” trong cài đặt để xếp video sẵn sàng tự động.</div>`;
+  $$('[data-retry-schedule-id]').forEach((button) => button.addEventListener('click', retryScheduledPost));
   $('#published-list').innerHTML = state.publishedSchedules.length ? state.publishedSchedules.map((item) => {
     const mode = item.adapter === 'mock' ? ' · Bản chạy thử' : '';
-    return `<article class="schedule-row published-row"><span class="schedule-date">Đã đăng</span><div class="schedule-copy"><strong>${escapeHtml(item.title || item.topic)}</strong><small>${escapeHtml(item.topic)} · Facebook xác nhận ${dateText(item.published_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}${mode}</small><small>Giờ đã xếp: ${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</small><details><summary>Xem nội dung bài đăng</summary><p style="white-space:pre-wrap">${escapeHtml(item.caption || '')}</p></details></div><button class="mini-action danger-action" data-delete-published-id="${escapeHtml(item.id)}">Xóa</button></article>`;
+    const language = facebookScheduleLanguage(item.content_language || 'en');
+    return `<article class="schedule-row published-row"><span class="schedule-date">Đã đăng</span><div class="schedule-copy"><strong>${escapeHtml(item.title || item.topic)}</strong><small>${escapeHtml(item.topic)} · Đã đăng nội dung Facebook ${language.name} (${language.code}) · Facebook xác nhận ${dateText(item.published_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}${mode}</small><small>Giờ đã xếp: ${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</small><details><summary>Xem nội dung bài đăng</summary><p style="white-space:pre-wrap">${escapeHtml(item.caption || '')}</p></details></div><button class="mini-action danger-action" data-delete-published-id="${escapeHtml(item.id)}">Xóa</button></article>`;
   }).join('') : `<div class="empty-state"><strong>Chưa có bài đăng thành công</strong>Khi Facebook xác nhận đăng xong, thông tin bài viết và thời gian sẽ được lưu tại đây.</div>`;
 }
 
@@ -248,20 +547,39 @@ function selectSavedVoice(select, voice) {
 
 function updateTtsProviderPanels() {
   const provider = $('#tts-provider').value;
-  $('#vieneu-tts-settings').hidden = provider !== 'vieneu';
-  $('#sbv2-tts-settings').hidden = provider !== 'vieneu-sbv2';
-  $('#cosyvoice-tts-settings').hidden = provider !== 'vieneu-cosyvoice3';
+  const shadowingSelected = state.ttsProviderView === 'english-shadowing';
+  $('#vieneu-tts-settings').hidden = shadowingSelected || provider !== 'vieneu';
+  $('#sbv2-tts-settings').hidden = shadowingSelected || provider !== 'vieneu-sbv2';
+  $('#cosyvoice-tts-settings').hidden = shadowingSelected || provider !== 'vieneu-cosyvoice3';
+  $('.english-shadowing-voice-settings').hidden = !shadowingSelected;
   renderTtsProviderMenu();
 }
 
 function renderTtsProviderMenu() {
   const select = $('#tts-provider');
+  const shadowingSelected = state.ttsProviderView === 'english-shadowing';
   const selected = select.selectedOptions[0] || select.options[0];
-  $('#tts-provider-value').textContent = selected?.textContent || 'Chọn model giọng đọc';
-  $('#tts-provider-options').innerHTML = Array.from(select.options, (option) => {
-    const isSelected = option.value === select.value;
-    return `<button class="tts-provider-option" type="button" role="option" data-tts-provider="${escapeHtml(option.value)}" aria-selected="${isSelected}"><span>${escapeHtml(option.textContent)}</span>${isSelected ? '<span class="tts-provider-option-check" aria-hidden="true">✓</span>' : ''}</button>`;
+  const shadowingLabel = 'Local AI TTS · Shadowing + Kokoro tiếng Anh';
+  $('#tts-provider-value').textContent = shadowingSelected ? shadowingLabel : selected?.textContent || 'Chọn model giọng đọc';
+  const options = [
+    ...Array.from(select.options, (option) => ({ value: option.value, label: option.textContent })),
+    { value: 'english-shadowing', label: shadowingLabel }
+  ];
+  $('#tts-provider-options').innerHTML = options.map((option) => {
+    const isSelected = option.value === (shadowingSelected ? 'english-shadowing' : select.value);
+    return `<button class="tts-provider-option" type="button" role="option" data-tts-provider="${escapeHtml(option.value)}" aria-selected="${isSelected}"><span>${escapeHtml(option.label)}</span>${isSelected ? '<span class="tts-provider-option-check" aria-hidden="true">✓</span>' : ''}</button>`;
   }).join('');
+}
+
+function selectTtsProviderView(provider) {
+  if (provider === 'english-shadowing') {
+    state.ttsProviderView = 'english-shadowing';
+    updateTtsProviderPanels();
+    return;
+  }
+  state.ttsProviderView = 'standard';
+  $('#tts-provider').value = provider;
+  $('#tts-provider').dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function closeTtsProviderMenu({ restoreFocus = false } = {}) {
@@ -322,13 +640,20 @@ function syncTtsProviderForContentLanguage(language, settings = state.settings |
 }
 
 function contentLanguageDescription(language) {
+  if (language === 'english-shadowing') return 'EnglishShadowing dùng giọng Kokoro và preset dựng riêng theo bốn video mẫu. Caption, highlight và Page cũng được tách riêng.';
   if (language === 'ja') return 'Ba câu giao tiếp thực tế. Giọng đọc tiếng Việt và tiếng Nhật Style-Bert-VITS2.';
   if (language === 'zh') return 'Ba câu giao tiếp thực tế. Giọng đọc tiếng Việt và tiếng Trung CosyVoice 3.0.';
-  return 'Ba câu giao tiếp thật. Giọng đọc Việt – Anh. Một video dọc sẵn sàng đăng lên Facebook.';
+  return 'Tạo video Việt–Anh theo các bố cục học tập luân phiên tự động. Giọng đọc và nội dung vẫn được kiểm tra trước khi render.';
 }
 
 async function changeContentLanguage() {
   const language = $('#content-language').value;
+  state.createLanguageSelectionTouched = true;
+  if (language === 'english-shadowing') {
+    const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
+    if (heroCopy) heroCopy.textContent = contentLanguageDescription(language);
+    return true;
+  }
   const oldSettings = state.settings || {};
   const revision = ++state.contentLanguageRevision;
   syncTtsProviderForContentLanguage(language, oldSettings);
@@ -366,11 +691,6 @@ function updateKokoroSpeedLabel() {
 function updateModelSpeedLabel(inputId, labelId) {
   const value = Number($(`#${inputId}`).value) || 1;
   $(`#${labelId}`).textContent = `${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
-}
-
-function syncLocalVietnameseVoice(source) {
-  const value = $(source).value;
-  for (const id of ['vieneu-vi-voice', 'sbv2-vi-voice', 'cosyvoice-vi-voice']) $(`#${id}`).value = value;
 }
 
 function syncLocalVietnameseSpeed(source) {
@@ -586,10 +906,58 @@ async function deleteCosyVoiceProfile() {
   } catch (error) { toast('Không xóa được hồ sơ giọng', true, error.message); }
 }
 
+function updateFacebookPageForm(settings, pages, language) {
+  const routeProfileId = pages.routes?.[language];
+  const routedProfile = routeProfileId ? (pages.profiles || []).find((item) => item.id === routeProfileId) : null;
+  const profile = routeProfileId
+    ? (routedProfile?.contentLanguage === language ? routedProfile : null)
+    : (pages.legacyLanguage === language ? (pages.profiles || []).find((item) => item.legacy) : null);
+  state.facebookActiveProfile = profile || null;
+  state.facebookSelectedLanguage = language;
+  $('#page-id').value = profile?.pageId || '';
+  $('#page-token').value = '';
+  $('#clear-facebook').hidden = !profile?.tokenSaved;
+  const verified = Boolean(profile?.connectionVerified);
+  const isMock = settings.facebookAdapter === 'mock';
+  $('#facebook-status-pill').textContent = isMock ? 'Mock' : verified ? 'Đọc được Page' : 'Chưa xác minh';
+  $('#facebook-status-pill').className = `state-pill ${verified ? 'ok' : isMock ? 'neutral' : 'warn'}`;
+}
+
+async function refreshFacebookPageForm(language = $('#facebook-quick-route-language').value) {
+  const revision = ++state.facebookPageLoadRevision;
+  try {
+    const pages = await api('/api/facebook/pages');
+    if (revision !== state.facebookPageLoadRevision || state.facebookPageCredentialDirty || $('#facebook-quick-route-language').value !== language) return;
+    updateFacebookPageForm(state.settings || {}, pages, language);
+  } catch (error) {
+    if (revision === state.facebookPageLoadRevision) $('#facebook-status-pill').textContent = 'Không tải được Page';
+  }
+}
+
 function markSettingsDirty(event) {
   const target = event.target;
-  if (target?.closest('.facebook-pages-extension')) return;
   if (!target?.matches('input, select, textarea') || target.disabled) return;
+  if (target.closest('.english-shadowing-voice-settings')) {
+    state.englishShadowingSettingsDirty = true;
+    state.englishShadowingSettingsRevision += 1;
+    return;
+  }
+  if (target.closest('#english-shadowing-highlight-controls')) {
+    state.englishShadowingSettingsDirty = true;
+    state.englishShadowingSettingsRevision += 1;
+    return;
+  }
+  if (target.id === 'voice-highlight-content-profile') return;
+  if (target.id === 'background-effect' && state.backgroundEffectLanguage === 'english-shadowing') {
+    state.englishShadowingSettingsDirty = true;
+    state.englishShadowingSettingsRevision += 1;
+    return;
+  }
+  if (target.id === 'facebook-quick-route-language' || target.id === 'background-effect-language') return;
+  if (target.id === 'page-id' || target.id === 'page-token') {
+    state.facebookPageCredentialDirty = true;
+    return;
+  }
   state.settingsDirty = true;
   state.settingsRevision += 1;
 }
@@ -598,33 +966,77 @@ function syncBackgroundEffectPreview() {
   const frame = $('#background-effect-preview-frame');
   const effectId = $('#background-effect').value;
   if (!frame?.contentWindow || !effectId) return;
-  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId, density: state.backgroundEffectDensity, speed: state.backgroundEffectSpeed, opacity: state.backgroundEffectOpacity }, location.origin);
+  const contentLanguage = state.backgroundEffectLanguage === 'english-shadowing' ? 'en' : state.backgroundEffectLanguage || 'en';
+  frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect', effectId, density: state.backgroundEffectDensity, speed: state.backgroundEffectSpeed, opacity: state.backgroundEffectOpacity, language: contentLanguage }, location.origin);
 }
 
 async function loadSettings() {
-  const [settings, system, backgroundEffects, libraryStatus, facebookPages] = await Promise.all([
-    api('/api/settings'), api('/api/system'), api('/api/background-effects'), api('/api/tts/cosyvoice-library').catch(() => null), api('/api/facebook/pages')
+  const backgroundSettingsPromise = Promise.all([
+    api('/api/settings'),
+    api('/api/background-effects'),
+    api('/api/english-shadowing/settings')
   ]);
-  state.settings = { ...settings, cosyVoiceProfiles: mergeCosyVoiceProfiles(settings.cosyVoiceProfiles, system.cosyVoice3?.profiles || []) };
-  state.system = system;
-  if (libraryStatus) applyCosyVoiceLibraryStatus(libraryStatus, { mergeProfiles: false });
+  const ancillarySettingsPromise = Promise.all([
+    api('/api/system'),
+    api('/api/tts/cosyvoice-library').catch(() => null),
+    api('/api/facebook/pages').catch(() => ({ profiles: [], routes: {} }))
+  ]);
+  const [settings, backgroundEffects, englishShadowing] = await backgroundSettingsPromise;
+  if (!state.englishShadowingSettingsDirty) state.englishShadowingSettings = englishShadowing.settings;
+  const shadowVoiceSelect = $('#english-shadowing-voice');
+  const shadowVoices = Array.isArray(englishShadowing.voices) ? englishShadowing.voices : [];
+  const currentShadowVoice = shadowVoiceSelect.value;
+  if (shadowVoices.length) {
+    shadowVoiceSelect.innerHTML = shadowVoices.map((voice) => `<option value="${escapeHtml(voice.id)}">${escapeHtml(voice.label)}</option>`).join('');
+  }
+  const selectedShadowVoice = state.englishShadowingSettingsDirty
+    ? currentShadowVoice
+    : englishShadowing.settings.voice || 'af_heart';
+  if ([...shadowVoiceSelect.options].some((option) => option.value === selectedShadowVoice)) {
+    shadowVoiceSelect.value = selectedShadowVoice;
+  }
+  state.backgroundEffects = Array.isArray(backgroundEffects) ? backgroundEffects : [];
   const backgroundEffectSelect = $('#background-effect');
   if (Array.isArray(backgroundEffects) && backgroundEffectSelect.dataset.catalogLoaded !== 'true') {
     backgroundEffectSelect.innerHTML = backgroundEffects.map((effect) => `<option value="${escapeHtml(effect.id)}">${escapeHtml(effect.label)} · ${escapeHtml(effect.description)}</option>`).join('');
     backgroundEffectSelect.dataset.catalogLoaded = 'true';
   }
+  if (!state.settingsDirty) {
+    state.backgroundEffectProfiles = normalizeBackgroundEffectProfilesForUi(settings);
+    const selectedEffectLanguage = state.backgroundEffectLanguage || $('#background-effect-language').value || 'en';
+    applyBackgroundEffectProfile(selectedEffectLanguage);
+    applyVoiceHighlightContentProfile(state.voiceHighlightContentProfile);
+  }
+  syncBackgroundEffectPreview();
+
+  const [system, libraryStatus, facebookPages] = await ancillarySettingsPromise;
+  state.settings = { ...settings, cosyVoiceProfiles: mergeCosyVoiceProfiles(settings.cosyVoiceProfiles, system.cosyVoice3?.profiles || []) };
+  state.system = system;
+  state.facebookPages = facebookPages;
+  if (libraryStatus) applyCosyVoiceLibraryStatus(libraryStatus, { mergeProfiles: false });
+  if (!state.englishShadowingSettingsDirty) {
+    $('#english-shadowing-highlight-enabled').checked = englishShadowing.settings.highlightEnabled !== false;
+    $('#english-shadowing-highlight-style').value = englishShadowing.settings.highlightStyle || 'text';
+    $('#english-shadowing-highlight-mode').value = englishShadowing.settings.highlightMode || 'word';
+    $('#english-shadowing-highlight-color').value = englishShadowing.settings.highlightColor || '#E5794F';
+    $('#english-shadowing-highlight-padding').value = englishShadowing.settings.highlightPadding ?? 6;
+    $('#english-shadowing-highlight-radius').value = englishShadowing.settings.highlightRadius ?? 8;
+  }
+  const facebookLanguageSelect = $('#facebook-quick-route-language');
+  if (!state.facebookPageLanguageDirty) facebookLanguageSelect.value = ['en', 'zh', 'ja', 'english-shadowing'].includes(settings.facebookPageSelectedLanguage) ? settings.facebookPageSelectedLanguage : 'en';
+  if (!state.facebookPageCredentialDirty) updateFacebookPageForm(settings, facebookPages, facebookLanguageSelect.value);
   // The eight-second live refresh also calls this function. Keep in-progress
   // edits in the DOM until the user saves them; the server response is only a
   // baseline and must not overwrite a selection or text field mid-edit.
   if (state.settingsDirty) return;
-  state.backgroundEffectDensity = Number(settings.backgroundEffectDensity ?? 28);
-  state.backgroundEffectSpeed = Number(settings.backgroundEffectSpeed ?? 58);
-  state.backgroundEffectOpacity = Number(settings.backgroundEffectOpacity ?? 32);
-  $('#content-language').value = settings.contentLanguage || 'en';
-  syncTtsProviderForContentLanguage(settings.contentLanguage || 'en', settings);
+  if (!state.createLanguageSelectionTouched) $('#content-language').value = settings.contentLanguage || 'en';
+  const visibleLanguage = $('#content-language').value;
+  if (visibleLanguage !== 'english-shadowing') syncTtsProviderForContentLanguage(settings.contentLanguage || 'en', settings);
+  const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
+  if (heroCopy) heroCopy.textContent = contentLanguageDescription(visibleLanguage);
   selectSavedVoice($('#vieneu-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
-  selectSavedVoice($('#sbv2-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
-  selectSavedVoice($('#cosyvoice-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
+  selectSavedVoice($('#sbv2-vi-voice'), settings.vieneuJaViVoice || settings.vieneuViVoice || 'Hải Đăng');
+  selectSavedVoice($('#cosyvoice-vi-voice'), settings.vieneuZhViVoice || settings.vieneuViVoice || 'Hải Đăng');
   const kokoroVoices = system.kokoro?.voices;
   if (Array.isArray(kokoroVoices) && kokoroVoices.length) {
     const select = $('#kokoro-en-voice');
@@ -690,7 +1102,6 @@ async function loadSettings() {
   $('#highlight-enabled').checked = settings.highlightEnabled !== false;
   $('#highlight-mode').value = settings.highlightMode || 'word';
   $('#highlight-color').value = settings.highlightColor || '#FF8066';
-  $('#background-effect').value = settings.backgroundEffect || 'bubbles';
   syncBackgroundEffectPreview();
   $('#highlight-padding').value = settings.highlightPadding ?? 6;
   $('#highlight-radius').value = settings.highlightRadius ?? 8;
@@ -702,11 +1113,6 @@ async function loadSettings() {
   $('#auto-generation').checked = settings.autoGenerationEnabled;
   $('#auto-publish').checked = settings.autoPublishEnabled;
   $('#facebook-adapter').value = settings.facebookAdapter;
-  $('#page-id').value = settings.pageId || '';
-  $('#page-token').value = '';
-  $('#clear-facebook').hidden = !settings.facebookTokenSaved;
-  $('#facebook-status-pill').textContent = settings.facebookAdapter === 'mock' ? 'Mock' : (settings.facebookConnectionVerified ? 'Đọc được Page' : 'Chưa xác minh');
-  $('#facebook-status-pill').className = `state-pill ${settings.facebookConnectionVerified ? 'ok' : settings.facebookAdapter === 'mock' ? 'neutral' : 'warn'}`;
   $('#ai-status-pill').textContent = system.aiReady ? 'Đã sẵn sàng' : 'Chưa kết nối';
   $('#ai-status-pill').className = `state-pill ${system.aiReady ? 'ok' : 'warn'}`;
   $('#chatgpt-detail').textContent = settings.chatgpt.connected ? `Đã kết nối${settings.chatgpt.email ? ` · ${settings.chatgpt.email}` : ''}` : 'Đăng nhập theo OAuth chính thức. Không nhập API key.';
@@ -715,7 +1121,6 @@ async function loadSettings() {
   $('#auto-state').textContent = settings.autoGenerationEnabled || settings.autoPublishEnabled ? 'Đang bật' : 'Đang tắt';
   $('#auto-state').className = `state-pill ${(settings.autoGenerationEnabled || settings.autoPublishEnabled) ? 'ok' : 'neutral'}`;
   $('#test-facebook').textContent = settings.facebookAdapter === 'mock' ? 'Thử Mock' : 'Kiểm tra Page';
-  renderFacebookPages(facebookPages);
   renderToolChecks(system.tools);
 }
 
@@ -733,15 +1138,23 @@ async function generateVideo() {
   setGenerateButtonBusy(true);
   let jobQueued = false;
   try {
-    await state.contentLanguageSavePromise;
-    const result = await api('/api/generate', { method: 'POST', body: JSON.stringify({
-      topicId: $('#topic-select').value || null,
-      allowLocalTemplate: $('#local-template').checked,
-      contentLanguage: $('#content-language').value,
-      ttsProvider: $('#tts-provider').value
-    }) });
+    const contentLanguage = $('#content-language').value;
+    let payload;
+    if (contentLanguage === 'english-shadowing') {
+      payload = { contentLanguage };
+    } else {
+      await state.contentLanguageSavePromise;
+      payload = {
+        topicId: $('#topic-select').value || null,
+        contentLanguage,
+        ttsProvider: $('#tts-provider').value
+      };
+    }
+    const result = await api('/api/generate', { method: 'POST', body: JSON.stringify(payload) });
     jobQueued = true;
-    toast('Đã thêm video vào hàng đợi', false, 'Worker sẽ xử lý kịch bản, giọng đọc và render.');
+    toast('Đã thêm video vào hàng đợi', false, contentLanguage === 'english-shadowing'
+      ? 'Nhánh EnglishShadowing sẽ tạo caption, giọng Kokoro và video theo preset riêng.'
+      : 'Worker sẽ xử lý kịch bản, giọng đọc và render.');
     watchJob(result.jobId);
     setView('overview');
   } catch (error) { toast('Không tạo được job', true, error.message); }
@@ -825,6 +1238,10 @@ function watchJob(jobId) {
 
 async function handleVideoAction(event) {
   const button = event.currentTarget;
+  if (button.dataset.backgroundEffectVideoId) {
+    await openVideoBackgroundEffectEditor(button.dataset.backgroundEffectVideoId);
+    return;
+  }
   if (button.dataset.approveId) {
     button.disabled = true;
     try {
@@ -888,26 +1305,87 @@ async function handleVideoAction(event) {
     const retryPublish = button.dataset.retryPublish === 'true';
     const retryMayDuplicate = button.dataset.retryMayDuplicate === 'true';
     const live = state.settings?.facebookAdapter === 'meta';
-    const confirmation = ['Bạn sắp đăng video thật lên Facebook Page đã kết nối. Tiếp tục?'];
+    const video = state.videos.find((item) => item.id === button.dataset.publishId);
+    const contentLanguage = String(video?.content_language || 'en').toUpperCase();
+    const confirmation = [`Xác nhận đăng LIVE “${video?.topic || 'video này'}” lên Facebook Page ${contentLanguage}. Hệ thống sẽ kiểm tra Page và token ngay trước khi gửi.`];
     if (retryMayDuplicate) confirmation.push('Meta chưa xác nhận kết quả lần đăng trước. Nếu Meta đã nhận video, đăng lại có thể tạo bài trùng.');
     const confirmLive = live && window.confirm(confirmation.join('\n\n'));
     if (live && !confirmLive) return;
     button.disabled = true;
     try {
       const result = await api(`/api/videos/${encodeURIComponent(button.dataset.publishId)}/publish`, { method: 'POST', body: JSON.stringify({ confirmLive, confirmRetryUncertain: retryPublish && retryMayDuplicate && confirmLive }) });
-      toast('Đã thêm yêu cầu đăng vào hàng đợi', false, live ? 'Đăng thật lên Facebook đang được xử lý.' : 'Đang dùng adapter Mock, không có bài viết thật được tạo.');
+      const profileDetail = result.profileLabel ? ` Cấu hình: ${result.profileLabel}.` : '';
+      toast('Đã thêm yêu cầu đăng vào hàng đợi', false, live ? `Đăng thật lên Facebook đang được xử lý.${profileDetail}` : 'Đang dùng adapter Mock, không có bài viết thật được tạo.');
       watchJob(result.jobId);
     } catch (error) { toast('Không đăng được video', true, error.message); }
     finally { button.disabled = false; }
   }
 }
 
+async function retryScheduledPost(event) {
+  const button = event.currentTarget;
+  const schedule = state.schedules.find((item) => item.id === button.dataset.retryScheduleId);
+  if (!schedule) return;
+  const contentLanguage = String(schedule.content_language || 'en').toUpperCase();
+  const isPastDue = new Date(schedule.scheduled_at).getTime() <= Date.now();
+  const mayDuplicate = Boolean(schedule.facebook_video_id)
+    || ['uncertain', 'finishing'].includes(schedule.facebook_schedule_state)
+    || schedule.last_publish_status === 'uncertain';
+  const confirmation = isPastDue
+    ? [`Thời điểm của “${schedule.topic}” đã đến hoặc đã qua. Xác nhận đăng LIVE ngay lên Facebook Page ${contentLanguage}?`]
+    : [`Xác nhận kiểm tra Page ${contentLanguage} và gửi lại lịch “${schedule.topic}” lên Facebook?`];
+  const timeUntilSchedule = new Date(schedule.scheduled_at).getTime() - Date.now();
+  if (!isPastDue && timeUntilSchedule < 15 * 60_000) confirmation.push('Facebook cần thời gian nhận lịch; ứng dụng sẽ chuyển sang khung giờ phù hợp tiếp theo.');
+  if (mayDuplicate) confirmation.push('Kết quả lần gửi trước chưa chắc chắn. Hệ thống sẽ kiểm tra ID cũ trước; nếu Facebook không cho xác minh, tiếp tục có thể tạo bài trùng.');
+  if (!window.confirm(confirmation.join('\n\n'))) return;
+  button.disabled = true;
+  try {
+    const result = await api(`/api/schedules/${encodeURIComponent(schedule.id)}/retry`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmRetry: true, confirmDuplicate: mayDuplicate, confirmLive: isPastDue })
+    });
+    if (result.alreadyPublished) {
+      toast('Facebook đã đăng bài này', false, 'Đã đối soát ID cũ và không tạo bài mới.');
+    } else if (result.alreadyScheduled) {
+      toast('Lịch Facebook đã được xác nhận', false, `Page ${result.pageName || contentLanguage} vẫn đang giữ lịch này.`);
+    } else {
+      const scheduledTime = result.scheduledAt ? ` · ${dateText(result.scheduledAt)}` : '';
+      const profileDetail = result.profileLabel ? ` · cấu hình ${result.profileLabel}` : '';
+      toast(isPastDue ? 'Đã xếp đăng live' : 'Đã xếp gửi lại lịch lên Facebook', false, `Page ${result.pageName || contentLanguage}${profileDetail}${isPastDue ? '' : scheduledTime}`);
+      watchJob(result.jobId);
+    }
+    await loadSchedules();
+  } catch (error) {
+    toast('Không đăng lại được lịch', true, error.message);
+  } finally { button.disabled = false; }
+}
+
 async function saveSettings() {
   const button = $('#save-settings'); button.disabled = true;
   const revisionAtSave = state.settingsRevision;
-  const contentLanguage = $('#content-language').value;
+  storeCurrentBackgroundEffectProfile();
+  const englishShadowingRevisionAtSave = state.englishShadowingSettingsRevision;
+  const englishShadowingPayloadAtSave = state.englishShadowingSettingsDirty ? {
+    voice: $('#english-shadowing-voice').value,
+    highlightEnabled: $('#english-shadowing-highlight-enabled').checked,
+    highlightStyle: $('#english-shadowing-highlight-style').value,
+    highlightMode: $('#english-shadowing-highlight-mode').value,
+    highlightColor: $('#english-shadowing-highlight-color').value,
+    highlightPadding: Number($('#english-shadowing-highlight-padding').value),
+    highlightRadius: Number($('#english-shadowing-highlight-radius').value),
+    backgroundEffectConfig: state.englishShadowingSettings?.backgroundEffectConfig
+      ? { ...state.englishShadowingSettings.backgroundEffectConfig }
+      : undefined
+  } : null;
+  const englishBackgroundEffectProfile = state.backgroundEffectProfiles.en;
+  const selectedContentLanguage = $('#content-language').value;
+  const contentLanguage = ['en', 'ja', 'zh'].includes(selectedContentLanguage)
+    ? selectedContentLanguage
+    : (['en', 'ja', 'zh'].includes(state.settings?.contentLanguage) ? state.settings.contentLanguage : 'en');
   const ttsProvider = $('#tts-provider').value;
   const ttsProviderKey = contentLanguage === 'ja' ? 'japaneseTtsProvider' : contentLanguage === 'zh' ? 'chineseTtsProvider' : 'ttsProvider';
+  const vietnameseVoiceInput = contentLanguage === 'zh' ? '#cosyvoice-vi-voice' : contentLanguage === 'ja' ? '#sbv2-vi-voice' : '#vieneu-vi-voice';
+  const vietnameseVoiceKey = contentLanguage === 'zh' ? 'vieneuZhViVoice' : contentLanguage === 'ja' ? 'vieneuJaViVoice' : 'vieneuViVoice';
   const cosyVoiceProfileId = $('#cosyvoice-profile').value;
   const cosyVoiceProfiles = (state.settings?.cosyVoiceProfiles || []).filter((profile) => profile.ready && String(profile.name || '').trim() && String(profile.referenceText || '').trim()).map((profile) => ({ ...profile }));
   if (cosyVoiceProfileId) {
@@ -935,7 +1413,8 @@ async function saveSettings() {
   const payload = {
     [ttsProviderKey]: ttsProvider,
     contentLanguage,
-    vieneuViVoice: $('#vieneu-vi-voice').value, kokoroEnVoice: $('#kokoro-en-voice').value,
+    [vietnameseVoiceKey]: $(vietnameseVoiceInput).value,
+    kokoroEnVoice: $('#kokoro-en-voice').value,
     vieneuViSpeed: Number($('#vieneu-vi-speed').value),
     kokoroEnSpeed: Number($('#kokoro-en-speed').value),
     styleBertVits2Voice: $('#sbv2-voice').value,
@@ -951,10 +1430,11 @@ async function saveSettings() {
     highlightEnabled: $('#highlight-enabled').checked,
     highlightMode: $('#highlight-mode').value,
     highlightColor: $('#highlight-color').value,
-    backgroundEffect: $('#background-effect').value,
-    backgroundEffectDensity: state.backgroundEffectDensity,
-    backgroundEffectSpeed: state.backgroundEffectSpeed,
-    backgroundEffectOpacity: state.backgroundEffectOpacity,
+    backgroundEffectProfiles: state.backgroundEffectProfiles,
+    backgroundEffect: englishBackgroundEffectProfile.backgroundEffect,
+    backgroundEffectDensity: englishBackgroundEffectProfile.backgroundEffectDensity,
+    backgroundEffectSpeed: englishBackgroundEffectProfile.backgroundEffectSpeed,
+    backgroundEffectOpacity: englishBackgroundEffectProfile.backgroundEffectOpacity,
     highlightPadding: Number($('#highlight-padding').value),
     highlightRadius: Number($('#highlight-radius').value),
     highlightTransition: $('#highlight-transition').value,
@@ -968,14 +1448,48 @@ async function saveSettings() {
     if (result[ttsProviderKey] !== ttsProvider) {
       throw new Error('Server không xác nhận nhà cung cấp giọng đọc đã chọn. App có thể đang chạy phiên bản cũ; hãy khởi động lại app rồi lưu lại.');
     }
+    if (result[vietnameseVoiceKey] !== payload[vietnameseVoiceKey]) {
+      throw new Error('Server chưa xác nhận giọng tiếng Việt riêng của ngôn ngữ đang chọn. Khởi động lại app rồi lưu lại cài đặt.');
+    }
     if (Number(result.backgroundEffectDensity) !== payload.backgroundEffectDensity
       || Number(result.backgroundEffectSpeed) !== payload.backgroundEffectSpeed
       || Number(result.backgroundEffectOpacity) !== payload.backgroundEffectOpacity) {
       throw new Error('Server chưa xác nhận mật độ, tốc độ trôi hoặc độ rõ hiệu ứng đã lưu. Hãy khởi động lại app rồi lưu lại.');
     }
+    const effectKeys = ['backgroundEffect', 'backgroundEffectDensity', 'backgroundEffectSpeed', 'backgroundEffectOpacity'];
+    const savedEveryLanguageEffect = ['en', 'zh', 'ja'].every((language) => effectKeys.every((key) =>
+      result.backgroundEffectProfiles?.[language]?.[key] === payload.backgroundEffectProfiles[language]?.[key]
+    ));
+    if (!savedEveryLanguageEffect) {
+      throw new Error('Server chưa xác nhận đủ hiệu ứng đã lưu theo ba ngôn ngữ. Hãy khởi động lại app rồi lưu lại.');
+    }
     state.settings = result;
-    const editedWhileSaving = state.settingsRevision !== revisionAtSave;
-    state.settingsDirty = editedWhileSaving;
+    if (englishShadowingPayloadAtSave) {
+      try {
+        const shadowingResult = await api('/api/english-shadowing/settings', {
+          method: 'POST',
+          body: JSON.stringify(englishShadowingPayloadAtSave)
+        });
+        const shadowingEditedWhileSaving = state.englishShadowingSettingsRevision !== englishShadowingRevisionAtSave;
+        const latestShadowingBackgroundEffectConfig = state.englishShadowingSettings?.backgroundEffectConfig;
+        state.englishShadowingSettings = {
+          ...shadowingResult.settings,
+          ...(shadowingEditedWhileSaving ? { backgroundEffectConfig: latestShadowingBackgroundEffectConfig } : {})
+        };
+        if (!shadowingEditedWhileSaving) {
+          state.englishShadowingSettingsDirty = false;
+          if (state.backgroundEffectLanguage === 'english-shadowing') applyBackgroundEffectProfile('english-shadowing');
+        }
+      } catch (error) {
+        state.settingsDirty = state.settingsRevision !== revisionAtSave;
+        toast('Đã lưu cài đặt chung nhưng chưa lưu được cài đặt EasyEnglishShadowing', true, error.message);
+        return;
+      }
+    }
+    const standardSettingsEditedWhileSaving = state.settingsRevision !== revisionAtSave;
+    const shadowingEditedWhileSaving = state.englishShadowingSettingsRevision !== englishShadowingRevisionAtSave;
+    const editedWhileSaving = standardSettingsEditedWhileSaving || shadowingEditedWhileSaving;
+    state.settingsDirty = standardSettingsEditedWhileSaving;
     toast(editedWhileSaving ? 'Đã lưu bản cài đặt trước đó' : 'Đã lưu cài đặt', false, editedWhileSaving ? 'Bạn vừa thay đổi thêm cài đặt; hãy lưu lần nữa để lưu các thay đổi mới.' : '');
     await loadOverview();
     if (!editedWhileSaving) await loadSettings();
@@ -984,117 +1498,49 @@ async function saveSettings() {
 }
 
 async function saveFacebook() {
-  const button = $('#save-facebook'); button.disabled = true;
+  const button = $('#save-facebook');
+  const contentLanguage = $('#facebook-quick-route-language').value;
+  const languageName = ({ en: 'Tiếng Anh', zh: 'Tiếng Trung', ja: 'Tiếng Nhật', 'english-shadowing': 'EnglishShadowing' })[contentLanguage] || contentLanguage.toUpperCase();
+  const resultEl = $('#facebook-result');
+  const confirmed = window.confirm(`Bạn đang lưu Page ID và token cho ${languageName} (${contentLanguage.toUpperCase()}). Hãy kiểm tra menu Ngôn ngữ Page. Chỉ chọn OK nếu đây đúng là Page dùng để đăng nội dung ${languageName}.`);
+  if (!confirmed) {
+    resultEl.textContent = `Chưa lưu. Hãy chọn đúng Ngôn ngữ Page (${languageName}) rồi bấm Lưu thông tin.`;
+    return;
+  }
+  button.disabled = true;
   try {
     const pageId = $('#page-id').value.trim();
     const pageToken = $('#page-token').value.trim();
-    const data = await api('/api/facebook/credentials', { method: 'POST', body: JSON.stringify({ pageId, pageToken }) });
+    await api('/api/facebook/credentials', { method: 'POST', body: JSON.stringify({ pageId, pageToken, contentLanguage }) });
+    state.facebookPageCredentialDirty = false;
+    state.facebookPageLanguageDirty = false;
     $('#page-token').value = '';
-    await api('/api/settings', { method: 'POST', body: JSON.stringify({ facebookAdapter: $('#facebook-adapter').value }) });
-    toast('Đã lưu thông tin Facebook', false, data.tokenSaved ? 'Token được lưu cục bộ và ẩn khỏi giao diện.' : 'Đã lưu Page ID; bạn có thể thêm token sau.');
+    if (contentLanguage !== 'english-shadowing') {
+      await api('/api/settings', { method: 'POST', body: JSON.stringify({ facebookAdapter: $('#facebook-adapter').value }) });
+    }
+    resultEl.textContent = `Đã lưu Page ${contentLanguage.toUpperCase()} riêng cho nội dung ${languageName}.`;
+    toast('Đã lưu thông tin Facebook', false, `Page ${contentLanguage.toUpperCase()} đã được gắn với nội dung ${contentLanguage.toUpperCase()}. Token được lưu cục bộ và ẩn khỏi giao diện.`);
     await loadSettings(); await loadOverview();
-  } catch (error) { toast('Không lưu được Facebook', true, error.message); }
+  } catch (error) { resultEl.textContent = error.message; toast('Không lưu được Facebook', true, error.message); }
   finally { button.disabled = false; }
 }
 
-function renderFacebookPages(data = state.facebookPages) {
-  if (!data) return;
-  state.facebookPages = data;
-  const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-  const routableProfiles = profiles.filter((profile) => !profile.draft);
-  for (const language of ['en', 'zh', 'ja']) {
-    const select = $(`#facebook-route-${language}`);
-    if (!select) continue;
-    const emptyLabel = language === 'en' ? 'Dùng Page hiện tại (nếu có)' : 'Chưa gán Page';
-    const options = `<option value="">${emptyLabel}</option>${routableProfiles.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.label)} · ${escapeHtml(profile.pageId)}</option>`).join('')}`;
-    select.innerHTML = options;
-    const fallback = language === 'en' && profiles.some((profile) => profile.id === 'legacy') ? 'legacy' : '';
-    select.value = data.routes?.[language] || fallback;
-  }
-  const host = $('#facebook-pages-list');
-  if (!host) return;
-  const extraProfiles = profiles.filter((profile) => !profile.legacy && !profile.draft);
-  const drafts = [...host.querySelectorAll('[data-page-profile-draft="true"]')].map((card) => ({
-    id: '', label: card.querySelector('[data-page-label]')?.value || '',
-    pageId: card.querySelector('[data-page-id]')?.value || '',
-    pageToken: card.querySelector('[data-page-token]')?.value || '', draft: true
-  }));
-  const requestedDraftCount = profiles.filter((profile) => profile.draft).length;
-  while (drafts.length < requestedDraftCount) drafts.push({ id: '', label: '', pageId: '', draft: true });
-  host.innerHTML = [...extraProfiles, ...drafts].map((profile) => {
-    const isDraft = profile.draft === true;
-    const id = isDraft ? '' : profile.id;
-    const statusText = isDraft ? 'Nhập Page ID và token để thêm Page.' : `${profile.pageName ? `Facebook Page: ${profile.pageName} · ` : ''}${profile.tokenSaved ? 'Token đã lưu' : 'Chưa có token'} · ${profile.connectionVerified ? 'Đã xác minh' : 'Chưa xác minh'}`;
-    return `<article class="facebook-profile-form" data-profile-id="${escapeHtml(id)}" ${isDraft ? 'data-page-profile-draft="true"' : ''}>
-      <label>Tên cấu hình Page<input data-page-label maxlength="80" value="${escapeHtml(profile.label || '')}" placeholder="Ví dụ: Page tiếng Trung"></label>
-      <label>Facebook Page ID<input data-page-id inputmode="numeric" value="${escapeHtml(profile.pageId || '')}" placeholder="ID Page"></label>
-      <label>Page Access Token<input data-page-token type="password" autocomplete="new-password" value="${escapeHtml(profile.pageToken || '')}" placeholder="${profile.tokenSaved ? 'Để trống nếu giữ token hiện tại' : 'Nhập token của Page này'}"></label>
-      <div class="facebook-profile-actions"><button class="button button-outline button-small" data-save-page>${isDraft ? 'Lưu Page' : 'Lưu'}</button><button class="button button-quiet button-small" data-test-page ${isDraft ? 'disabled' : ''}>Kiểm tra</button>${isDraft ? '<button class="button button-quiet button-small" data-cancel-page>Hủy</button>' : '<button class="button button-quiet button-small" data-delete-page>Xóa</button>'}</div>
-      <p class="facebook-profile-status">${escapeHtml(statusText)}</p>
-    </article>`;
-  }).join('');
-}
-
-async function refreshFacebookPages() {
-  renderFacebookPages(await api('/api/facebook/pages'));
-}
-
-async function saveAdditionalFacebookPage(card) {
-  const button = card.querySelector('[data-save-page]');
-  button.disabled = true;
-  const payload = {
-    id: card.dataset.profileId || undefined,
-    label: card.querySelector('[data-page-label]').value.trim(),
-    pageId: card.querySelector('[data-page-id]').value.trim(),
-    pageToken: card.querySelector('[data-page-token]').value.trim()
-  };
-  try {
-    const result = await api('/api/facebook/pages', { method: 'POST', body: JSON.stringify(payload) });
-    card.removeAttribute('data-page-profile-draft');
-    card.dataset.profileId = result.profile.id;
-    card.querySelector('[data-page-token]').value = '';
-    await refreshFacebookPages();
-    toast('Đã lưu Facebook Page', false, `${result.profile.label} · token được lưu cục bộ.`);
-  } catch (error) {
-    const status = card.querySelector('.facebook-profile-status');
-    status.textContent = error.message;
-    status.classList.add('error');
-    toast('Không lưu được Facebook Page', true, error.message);
-  } finally { button.disabled = false; }
-}
-
-async function testAdditionalFacebookPage(card) {
-  const profileId = card.dataset.profileId;
-  if (!profileId) return;
-  const status = card.querySelector('.facebook-profile-status');
-  status.textContent = 'Đang kiểm tra Page…';
-  status.classList.remove('error');
-  try {
-    const result = await api('/api/facebook/pages/test', { method: 'POST', body: JSON.stringify({ profileId }) });
-    toast('Kết nối Facebook thành công', false, result.pageName || result.pageId);
-    await refreshFacebookPages();
-  } catch (error) { status.textContent = error.message; status.classList.add('error'); }
-}
-
-async function changeFacebookPageRoute(select) {
-  try {
-    await api('/api/facebook/pages/route', { method: 'POST', body: JSON.stringify({ contentLanguage: select.dataset.routeLanguage, profileId: select.value || null }) });
-    await refreshFacebookPages();
-    toast('Đã lưu Page theo ngôn ngữ');
-  } catch (error) { toast('Không lưu được Page theo ngôn ngữ', true, error.message); await refreshFacebookPages(); }
-}
-
 async function testFacebook() {
+  if (state.facebookPageCredentialDirty) {
+    toast('Hãy lưu cấu hình Page trước', true, 'Nút kiểm tra xác minh Page đã lưu cho ngôn ngữ đang chọn.');
+    return;
+  }
   const resultEl = $('#facebook-result'); resultEl.textContent = 'Đang kiểm tra…';
   try {
-    const result = await api('/api/facebook/test', { method: 'POST', body: '{}' });
+    const contentLanguage = $('#facebook-quick-route-language').value;
+    const result = await api('/api/facebook/test', { method: 'POST', body: JSON.stringify({ contentLanguage }) });
     resultEl.textContent = `Kết nối thành công · ${result.pageName}`;
     toast('Kết nối Facebook thành công', false, result.pageName);
     await loadSettings(); await loadOverview();
   } catch (error) { resultEl.textContent = error.message; toast('Kiểm tra Facebook thất bại', true, error.message); }
 }
 
-async function previewVoice(language, chosenVoice = '', button = null) {
+async function previewVoice(language, chosenVoice = '', button = null, speedOverride = null) {
   const previewTexts = { vi: 'Xin chào, bạn có thể giúp mình được không?', en: 'Could you help me with this?', ja: 'すみません、手伝っていただけますか。', zh: '你好，欢迎来到我们的中文学习频道。今天我们一起学习中文。' };
   const provider = language === 'ja' ? 'vieneu-sbv2' : language === 'zh' ? 'vieneu-cosyvoice3' : 'vieneu';
   const text = previewTexts[language] || previewTexts.en;
@@ -1103,7 +1549,7 @@ async function previewVoice(language, chosenVoice = '', button = null) {
     : provider === 'vieneu-sbv2' ? $('#sbv2-voice').value
       : 'cosyvoice3-reference');
   const payload = { language, text, voice, ttsProvider: provider };
-  if (provider === 'vieneu') payload.speed = Number(language === 'vi' ? $('#vieneu-vi-speed').value : $('#kokoro-en-speed').value);
+  if (provider === 'vieneu') payload.speed = Number.isFinite(speedOverride) ? speedOverride : Number(language === 'vi' ? $('#vieneu-vi-speed').value : $('#kokoro-en-speed').value);
   else if (provider === 'vieneu-sbv2') { payload.speed = Number($('#sbv2-speed').value); }
   else if (provider === 'vieneu-cosyvoice3') {
     payload.cosyVoiceProfileId = $('#cosyvoice-profile').value;
@@ -1259,8 +1705,7 @@ function setupEvents() {
   $('#tts-provider-options').addEventListener('click', (event) => {
     const option = event.target.closest('[data-tts-provider]');
     if (!option) return;
-    $('#tts-provider').value = option.dataset.ttsProvider;
-    $('#tts-provider').dispatchEvent(new Event('change', { bubbles: true }));
+    selectTtsProviderView(option.dataset.ttsProvider);
     closeTtsProviderMenu({ restoreFocus: true });
   });
   $('#tts-provider-options').addEventListener('keydown', (event) => {
@@ -1285,16 +1730,14 @@ function setupEvents() {
     if (!$('#tts-provider-combobox').contains(event.target)) closeTtsProviderMenu();
   });
   $('#vieneu-vi-speed').addEventListener('input', () => updateVieNeuSpeedLabel('vi'));
-  for (const id of ['vieneu-vi-voice', 'sbv2-vi-voice', 'cosyvoice-vi-voice']) {
-    $(`#${id}`).addEventListener('change', () => syncLocalVietnameseVoice(`#${id}`));
-  }
   for (const id of ['vieneu-vi-speed', 'sbv2-vi-speed', 'cosyvoice-vi-speed']) {
     $(`#${id}`).addEventListener('input', () => syncLocalVietnameseSpeed(`#${id}`));
   }
   $('#preview-vieneu-vi').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
   $('#preview-vieneu-en').addEventListener('click', (event) => previewVoice('en', '', event.currentTarget));
-  $('#preview-vieneu-vi-sbv2').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
-  $('#preview-vieneu-vi-cosyvoice').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
+  $('#preview-english-shadowing-voice').addEventListener('click', (event) => previewVoice('en', $('#english-shadowing-voice').value, event.currentTarget, 0.8));
+  $('#preview-vieneu-vi-sbv2').addEventListener('click', (event) => previewVoice('vi', $('#sbv2-vi-voice').value, event.currentTarget));
+  $('#preview-vieneu-vi-cosyvoice').addEventListener('click', (event) => previewVoice('vi', $('#cosyvoice-vi-voice').value, event.currentTarget));
   $('#preview-ja').addEventListener('click', (event) => previewVoice('ja', '', event.currentTarget));
   $('#preview-zh').addEventListener('click', (event) => previewVoice('zh', '', event.currentTarget));
   $('#cosyvoice-new-profile').addEventListener('click', createCosyVoiceProfile);
@@ -1359,34 +1802,74 @@ function setupEvents() {
   $('#highlight-padding').addEventListener('input', updateHighlightPreviewStyle);
   $('#highlight-radius').addEventListener('input', updateHighlightPreviewStyle);
   $('#highlight-transition').addEventListener('change', updateHighlightPreviewStyle);
-  $('#background-effect').addEventListener('change', syncBackgroundEffectPreview);
+  $('#background-effect-language').addEventListener('change', (event) => {
+    storeCurrentBackgroundEffectProfile(state.backgroundEffectLanguage || 'en');
+    applyBackgroundEffectProfile(event.currentTarget.value);
+    if (event.currentTarget.value === 'english-shadowing') applyVoiceHighlightContentProfile('english-shadowing');
+    else if (state.voiceHighlightContentProfile === 'english-shadowing') applyVoiceHighlightContentProfile('standard');
+  });
+  $('#voice-highlight-content-profile').addEventListener('change', (event) => {
+    applyVoiceHighlightContentProfile(event.currentTarget.value);
+    if (event.currentTarget.value === 'english-shadowing') {
+      storeCurrentBackgroundEffectProfile();
+      applyBackgroundEffectProfile('english-shadowing');
+    } else if (state.backgroundEffectLanguage === 'english-shadowing') {
+      const selectedLanguage = ['en', 'zh', 'ja'].includes($('#content-language').value) ? $('#content-language').value : 'en';
+      storeCurrentBackgroundEffectProfile();
+      applyBackgroundEffectProfile(selectedLanguage);
+    }
+  });
+  $('#background-effect').addEventListener('change', () => {
+    storeCurrentBackgroundEffectProfile();
+    syncBackgroundEffectPreview();
+  });
+  $('#background-effect-dialog-content').addEventListener('change', (event) => {
+    if (!event.target.matches('[data-video-background-effect]') || !state.backgroundEffectEditor) return;
+    state.backgroundEffectEditor.config.backgroundEffect = event.target.value;
+    syncVideoBackgroundEffectPreview();
+  });
+  $('#background-effect-dialog-content').addEventListener('click', (event) => {
+    if (event.target.closest('[data-close-background-effect]')) $('#background-effect-dialog').close();
+    if (event.target.closest('[data-save-video-background-effect]')) saveVideoBackgroundEffect();
+  });
+  $('#background-effect-dialog').addEventListener('close', () => { state.backgroundEffectEditor = null; });
   const backgroundEffectPreview = $('#background-effect-preview-frame');
   backgroundEffectPreview.addEventListener('load', syncBackgroundEffectPreview);
   window.addEventListener('message', (event) => {
-    if (event.origin !== location.origin || event.source !== backgroundEffectPreview.contentWindow) return;
-    if (event.data?.type === 'background-effect-preview:change-density') {
-      const density = Number(event.data.density);
-      if (!Number.isInteger(density) || density < 10 || density > 60 || state.backgroundEffectDensity === density) return;
-      state.backgroundEffectDensity = density;
-      state.settingsDirty = true;
-      state.settingsRevision += 1;
+    if (event.origin !== location.origin) return;
+    const editorFrame = $('#video-background-effect-preview-frame');
+    const isGlobalPreview = event.source === backgroundEffectPreview.contentWindow;
+    const isVideoPreview = Boolean(editorFrame && event.source === editorFrame.contentWindow);
+    if (!isGlobalPreview && !isVideoPreview) return;
+    const changes = {
+      'background-effect-preview:change-density': ['backgroundEffectDensity', 10, 60],
+      'background-effect-preview:change-speed': ['backgroundEffectSpeed', 25, 140],
+      'background-effect-preview:change-opacity': ['backgroundEffectOpacity', 10, 70]
+    };
+    const change = changes[event.data?.type];
+    if (!change) return;
+    const [key, min, max] = change;
+    const value = Number(event.data[key === 'backgroundEffectDensity' ? 'density' : key === 'backgroundEffectSpeed' ? 'speed' : 'opacity']);
+    if (!Number.isInteger(value) || value < min || value > max) return;
+    if (isVideoPreview && state.backgroundEffectEditor) {
+      state.backgroundEffectEditor.config[key] = value;
       return;
     }
-    if (event.data?.type === 'background-effect-preview:change-speed') {
-      const speed = Number(event.data.speed);
-      if (!Number.isInteger(speed) || speed < 25 || speed > 140 || state.backgroundEffectSpeed === speed) return;
-      state.backgroundEffectSpeed = speed;
-      state.settingsDirty = true;
-      state.settingsRevision += 1;
-      return;
+    if (state.backgroundEffectLanguage === 'english-shadowing') {
+      const profile = normalizeBackgroundEffectProfileForUi(state.englishShadowingSettings?.backgroundEffectConfig || {}, { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 });
+      profile[key] = value;
+      state.englishShadowingSettings = { ...(state.englishShadowingSettings || {}), backgroundEffectConfig: profile };
+      state.englishShadowingSettingsDirty = true;
+      state.englishShadowingSettingsRevision += 1;
+    } else {
+      const profile = state.backgroundEffectProfiles?.[state.backgroundEffectLanguage];
+      if (profile) profile[key] = value;
     }
-    if (event.data?.type === 'background-effect-preview:change-opacity') {
-      const opacity = Number(event.data.opacity);
-      if (!Number.isInteger(opacity) || opacity < 10 || opacity > 70 || state.backgroundEffectOpacity === opacity) return;
-      state.backgroundEffectOpacity = opacity;
+    if (state[key] === value) return;
+    state[key] = value;
+    if (state.backgroundEffectLanguage !== 'english-shadowing') {
       state.settingsDirty = true;
       state.settingsRevision += 1;
-      return;
     }
   });
   syncBackgroundEffectPreview();
@@ -1408,36 +1891,26 @@ function setupEvents() {
   $('#view-settings').addEventListener('change', markSettingsDirty);
   $('#save-facebook').addEventListener('click', saveFacebook);
   $('#test-facebook').addEventListener('click', testFacebook);
-  $('#add-facebook-page').addEventListener('click', () => {
-    const host = $('#facebook-pages-list');
-    const existingDrafts = [...host.querySelectorAll('[data-page-profile-draft="true"]')].map((card) => ({
-      id: '', draft: true,
-      label: card.querySelector('[data-page-label]')?.value || '',
-      pageId: card.querySelector('[data-page-id]')?.value || '',
-      pageToken: card.querySelector('[data-page-token]')?.value || ''
-    }));
-    const savedProfiles = (state.facebookPages?.profiles || []).filter((profile) => !profile.draft);
-    renderFacebookPages({ ...(state.facebookPages || {}), profiles: [...savedProfiles, ...existingDrafts, { id: '', label: '', pageId: '', draft: true }] });
-    $('#facebook-pages-list [data-page-profile-draft="true"] [data-page-label]')?.focus();
-  });
-  $('#facebook-pages-list').addEventListener('click', async (event) => {
-    const card = event.target.closest('.facebook-profile-form');
-    if (!card) return;
-    if (event.target.closest('[data-save-page]')) return saveAdditionalFacebookPage(card);
-    if (event.target.closest('[data-test-page]')) return testAdditionalFacebookPage(card);
-    if (event.target.closest('[data-cancel-page]')) { card.remove(); return; }
-    if (event.target.closest('[data-delete-page]')) {
-      if (!confirm('Xóa cấu hình Page và token đã lưu trên máy này? Lịch chưa hoàn tất đang dùng Page này sẽ chặn thao tác xóa.')) return;
-      try { await api(`/api/facebook/pages/${encodeURIComponent(card.dataset.profileId)}`, { method: 'DELETE' }); toast('Đã xóa cấu hình Page'); await refreshFacebookPages(); }
-      catch (error) { card.querySelector('.facebook-profile-status').textContent = error.message; card.querySelector('.facebook-profile-status').classList.add('error'); }
+  $('#facebook-quick-route-language').addEventListener('change', async (event) => {
+    const select = event.currentTarget;
+    const previousLanguage = state.facebookSelectedLanguage || 'en';
+    if (state.facebookPageCredentialDirty && !confirm('Thông tin Page chưa lưu. Bỏ các thay đổi này để chuyển ngôn ngữ?')) {
+      select.value = previousLanguage;
+      return;
     }
+    state.facebookPageCredentialDirty = false;
+    state.facebookPageLanguageDirty = true;
+    state.facebookSelectedLanguage = select.value;
+    $('#page-id').value = '';
+    $('#page-token').value = '';
+    $('#facebook-result').textContent = `Đang chọn cấu hình Page ${select.value.toUpperCase()}; ID và token chỉ được lưu khi bấm Lưu thông tin.`;
+    await refreshFacebookPageForm(select.value);
   });
-  for (const language of ['en', 'zh', 'ja']) $(`#facebook-route-${language}`).addEventListener('change', (event) => changeFacebookPageRoute(event.currentTarget));
   $('#add-topic').addEventListener('click', addTopic);
   $('#schedule-form').addEventListener('submit', createSchedule);
   $('#view-schedule').addEventListener('click', deletePublishedSchedule);
   $('#chatgpt-disconnect').addEventListener('click', async () => { try { const result = await api('/api/chatgpt/disconnect', { method: 'POST', body: '{}' }); toast('Đã xóa thông tin kết nối local', false, result.revocationConfirmed ? 'OpenAI xác nhận thu hồi phiên.' : 'Chưa xác nhận thu hồi phía OpenAI; bạn có thể ngắt ứng dụng trong ChatGPT Settings.'); await loadSettings(); } catch (error) { toast('Không ngắt được kết nối', true, error.message); } });
-  $('#clear-facebook').addEventListener('click', async () => { try { await api('/api/facebook/clear-token', { method: 'POST', body: '{}' }); toast('Đã xóa Page Access Token'); await loadSettings(); } catch (error) { toast('Không xóa được token', true, error.message); } });
+  $('#clear-facebook').addEventListener('click', async () => { try { const contentLanguage = $('#facebook-quick-route-language').value; await api('/api/facebook/clear-token', { method: 'POST', body: JSON.stringify({ contentLanguage }) }); toast('Đã xóa Page Access Token', false, `Chỉ token Page ${contentLanguage.toUpperCase()} được xóa.`); state.facebookPageCredentialDirty = false; await loadSettings(); } catch (error) { toast('Không xóa được token', true, error.message); } });
   $('#facebook-adapter').addEventListener('change', () => {
     if ($('#facebook-adapter').value === 'meta') toast('Đăng live vẫn đang tắt', false, 'Lưu Page ID và token, kiểm tra kết nối, rồi bật đăng thật khi bạn sẵn sàng.');
   });

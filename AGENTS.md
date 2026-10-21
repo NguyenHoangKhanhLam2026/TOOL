@@ -1,41 +1,42 @@
-# Quy tắc khóa luồng tiếng Anh
+# Quy tắc khóa luồng tiếng Anh và tiếng Trung
 
 ## Trạng thái
 
-Luồng tạo và render nội dung tiếng Anh hiện tại được khóa. Đây là quy tắc bắt buộc cho mọi công việc tiếp theo trong repository, trừ khi người dùng nói rõ cho phép mở khóa.
+Luồng tạo, lưu, xử lý, render và đăng nội dung tiếng Anh (`en`) và tiếng Trung (`zh`) hiện tại được khóa. Đây là quy tắc bắt buộc cho mọi công việc tiếp theo trong repository, trừ khi người dùng nói rõ cho phép mở khóa phạm vi cụ thể.
 
 ## Phạm vi được khóa
 
-Giữ nguyên hành vi tiếng Anh đang có, bao gồm:
+Giữ nguyên hành vi và đầu ra hiện có của cả tiếng Anh và tiếng Trung, bao gồm:
 
-- Tạo và kiểm tra kịch bản tiếng Anh, dữ liệu nội dung, lời thoại, chú thích và hashtag.
-- Chọn nhà cung cấp giọng đọc, giọng, tốc độ và cách tạo audio cho tiếng Anh (bao gồm Kokoro và các lựa chọn hiện có).
-- Tách đoạn, căn chỉnh lời nói, thời gian từ, tô sáng từ và đồng bộ âm thanh với hình ảnh.
-- Bố cục, font, hiệu ứng, kích thước, tốc độ khung hình, codec, chất lượng và quy trình render video.
-- Cài đặt, giá trị mặc định, xử lý lỗi, thử lại và chuyển nhà cung cấp có thể làm thay đổi đầu ra tiếng Anh.
+- Tạo và kiểm tra kịch bản, dữ liệu nội dung, lời thoại, chú thích và hashtag.
+- Chọn nhà cung cấp, model, giọng đọc, tốc độ và cách tạo audio; gồm cả audio tiếng Việt đi kèm nội dung tiếng Trung.
+- Chia đoạn, căn chỉnh lời nói, thời gian từ, tô sáng từ và đồng bộ âm thanh với hình ảnh.
+- Bố cục, font, hiệu ứng nền, chuyển cảnh, kích thước, tốc độ khung hình, codec, chất lượng và quy trình render video.
+- Cài đặt, giá trị mặc định, cấu hình riêng theo ngôn ngữ, lưu/đọc dữ liệu, giao diện, API, cơ sở dữ liệu, lịch đăng, định tuyến Page/token, xử lý lỗi, thử lại và fallback có thể làm đổi hành vi hoặc đầu ra.
+- Các khác biệt đã lưu giữa cấu hình tiếng Anh và tiếng Trung; không gộp, ghi đè hoặc dùng nhầm cấu hình của ngôn ngữ này cho ngôn ngữ kia.
 
-Các khu vực mã thường dùng chung hoặc liên quan trực tiếp gồm `src/ai/`, `src/pipeline/`, `src/tts/`, `packages/audio-highlight/` và `packages/video-engine/`. Danh sách này chỉ để nhận diện rủi ro, không giới hạn phạm vi khóa: mọi mã hoặc dữ liệu khác có thể làm đổi hành vi hay đầu ra tiếng Anh cũng thuộc phạm vi khóa.
+Các khu vực mã thường liên quan gồm `src/ai/`, `src/pipeline/`, `src/tts/`, `src/workers/`, `src/database/`, `src/scheduler/`, `src/facebook/`, `public/`, `packages/audio-highlight/` và `packages/video-engine/`. Danh sách này chỉ để nhận diện rủi ro, không giới hạn phạm vi khóa: mọi mã, giao diện, cấu hình hoặc dữ liệu có thể làm đổi hành vi hay đầu ra tiếng Anh hoặc tiếng Trung cũng thuộc phạm vi khóa.
 
-## Quy tắc khi làm tiếng Nhật hoặc tiếng Trung
+## Quy tắc khi thêm nội dung hoặc ngôn ngữ mới
 
-- Chỉ triển khai trong nhánh, cấu hình, dữ liệu và thành phần riêng cho `ja`/`zh` khi có thể.
-- Không đổi mặc định, fallback, lựa chọn provider/voice, dữ liệu, giao diện cài đặt, căn chỉnh, bố cục hoặc pipeline đang dùng cho tiếng Anh.
-- Không sửa, định dạng lại, di chuyển, thay thế hay hoàn nguyên mã dùng chung nếu việc đó có thể tác động đến tiếng Anh.
-- Không lấy việc sửa tiếng Nhật/Trung làm lý do để thay đổi hoặc tối ưu luồng tiếng Anh.
+- Cô lập trong nhánh xử lý, cấu hình, dữ liệu, khóa lưu trữ và thành phần riêng cho nội dung mới khi có thể.
+- Không dùng `en` hoặc `zh` làm fallback cho nội dung mới; không để lựa chọn mới tự lưu đè thiết lập hiện có.
+- Không đổi mặc định, provider/voice, dữ liệu, giao diện cài đặt, căn chỉnh, bố cục, lịch đăng hoặc pipeline đang dùng cho tiếng Anh hay tiếng Trung.
+- Không sửa, định dạng lại, di chuyển, thay thế hoặc hoàn nguyên mã dùng chung nếu việc đó có thể tác động đến EN hoặc ZH.
 
-## Khi phát hiện cần chạm tiếng Anh
+## Khi phát hiện cần chạm phạm vi bị khóa
 
-Trước khi sửa bất kỳ nội dung nào thuộc phạm vi khóa hoặc mã dùng chung có khả năng ảnh hưởng tiếng Anh:
+Trước khi sửa bất kỳ nội dung nào thuộc phạm vi khóa hoặc mã dùng chung có khả năng ảnh hưởng EN/ZH:
 
 1. Dừng trước khi chỉnh sửa.
-2. Báo người dùng chính xác file/thành phần cần chạm, lý do cần chạm và hành vi tiếng Anh có thể bị ảnh hưởng.
-3. Chờ người dùng nói rõ đồng ý mở khóa phần liên quan.
+2. Báo người dùng chính xác file/thành phần cần chạm, lý do cần chạm và hành vi EN/ZH có thể bị ảnh hưởng.
+3. Chờ người dùng nói rõ đồng ý mở khóa đúng phạm vi đó.
 
-Không suy diễn sự đồng ý từ yêu cầu sửa tiếng Nhật/Trung, từ yêu cầu chung chung như “fix triệt để”, hoặc từ việc mã thay đổi trông có vẻ an toàn. Chỉ tiếp tục sau khi người dùng duyệt rõ ràng. Nếu chưa được duyệt, tiếp tục tìm cách cô lập thay đổi hoặc để phần việc phụ thuộc ở trạng thái chưa sửa.
+Không suy diễn sự đồng ý từ yêu cầu chung như “fix triệt để”, “thêm ngôn ngữ mới” hoặc từ việc thay đổi trông có vẻ an toàn. Chỉ tiếp tục sau khi người dùng duyệt rõ phần cần mở khóa. Nếu chưa được duyệt, tiếp tục tìm cách cô lập thay đổi hoặc để phần việc phụ thuộc ở trạng thái chưa sửa.
 
 ## Bảo vệ trạng thái hiện tại
 
-- Không hoàn nguyên, xóa, viết lại hoặc tối ưu mã tiếng Anh hiện có.
-- Không thay đổi đầu ra tiếng Anh để làm cho nó đồng nhất với tiếng Nhật/Trung.
+- Không hoàn nguyên, xóa, viết lại hoặc tối ưu mã hay dữ liệu tiếng Anh/tiếng Trung hiện có.
+- Không thay đổi đầu ra EN/ZH để làm chúng giống nhau hoặc giống ngôn ngữ khác.
 - Giữ nguyên các chỉnh sửa sẵn có trong workspace; kiểm tra trạng thái Git trước khi thao tác và không ghi đè thay đổi của người dùng.
 - Chỉ mở khóa khi có chỉ dẫn rõ ràng từ người dùng, và chỉ trong phạm vi họ đã duyệt.

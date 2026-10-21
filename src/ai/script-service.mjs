@@ -1,14 +1,17 @@
-import { TOPICS, makeLocalScript } from '../topics.mjs';
+import { TOPICS } from '../topics.mjs';
 import { db, getSettings, pickTopic, insertScript, log } from '../database/db.mjs';
 import { chatgptStatus, generateWithChatGPT } from './chatgpt-plan.mjs';
 import { assertDistinctFromHistory, validateScript } from './validator.mjs';
 import { generateCaption } from './caption-service.mjs';
 import { assertChineseReviewResponse, buildChineseReviewPrompt } from './chinese-quality.mjs';
+import { assertEnglishReviewResponse, buildEnglishReviewPrompt } from './english-quality.mjs';
 import fs from 'node:fs';
 
 const SCRIPT_PROMPT = fs.readFileSync(new URL('../../packages/ai-engine/prompts/generate-script.md', import.meta.url), 'utf8');
 
-const CHINESE_PRESENTATION_STYLES = ['inline-meaning', 'dialogue-cards', 'numbered-scenario', 'inline-keyphrase'];
+const CHINESE_PRESENTATION_STYLES = ['dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'];
+const ENGLISH_PRESENTATION_STYLES = ['dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'];
+const ENGLISH_ROTATION_STYLES = ['legacy', ...ENGLISH_PRESENTATION_STYLES];
 
 function chineseLessonCount(presentationStyle) {
   if (presentationStyle === 'numbered-scenario') return 3;
@@ -16,11 +19,49 @@ function chineseLessonCount(presentationStyle) {
   return 1;
 }
 
-function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopics = [], contentLanguage = 'en', presentationStyle = 'inline-meaning' } = {}) {
+function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopics = [], contentLanguage = 'en', presentationStyle = null } = {}) {
+  const modelChoosesTopic = autoTopic && ['en', 'zh'].includes(contentLanguage);
+  const promptTopic = modelChoosesTopic ? 'Chủ đề mới, cụ thể do ChatGPT Plan tự chọn' : topic.title;
+  const promptCategory = modelChoosesTopic ? 'Nhóm chủ đề do ChatGPT Plan tự chọn' : topic.category;
+  const openTopicInstruction = modelChoosesTopic
+    ? '\nChoose a fresh, specific topic from your broad real-world knowledge. Do not select from or limit yourself to any fixed local topic list. Put the actual topic in the JSON topic field and a matching category in category. Avoid these previously used topic angles: ' + (previousTopics.slice(0, 50).join(' | ') || 'none') + '.'
+    : '';
+  if (contentLanguage === 'en' && ENGLISH_PRESENTATION_STYLES.includes(presentationStyle)) {
+    const dialogueCount = presentationStyle === 'inline-meaning' || presentationStyle === 'inline-keyphrase' ? 1 : 3;
+    const schema = {
+      topic: promptTopic, category: promptCategory, level: settings.level,
+      title: 'Tiêu đề tiếng Việt ngắn, đúng nội dung bài học', hook: 'Một câu mở đầu tiếng Việt tự nhiên',
+      presentationStyle,
+      dialogues: Array.from({ length: dialogueCount }, (_, index) => ({
+        index: index + 1,
+        vietnamese: 'Một câu tiếng Việt tự nhiên, đúng tình huống',
+        english: 'Bản dịch tiếng Anh tự nhiên như người bản xứ',
+        ...(presentationStyle === 'numbered-scenario' ? { term: 'Cụm từ nguyên văn trong câu tiếng Anh', meaningVi: 'Nghĩa tiếng Việt ngắn, chính xác' } : {}),
+        ...(presentationStyle === 'inline-meaning' || presentationStyle === 'inline-keyphrase' ? {
+          vocabularyCards: [
+            { sourceVi: 'Cụm từ nguyên văn thứ nhất trong câu tiếng Việt', term: 'Cụm từ nguyên văn tương ứng trong câu tiếng Anh', meaningVi: 'Giải thích ngắn bằng tiếng Việt' },
+            { sourceVi: 'Cụm từ nguyên văn thứ hai trong câu tiếng Việt', term: 'Cụm từ nguyên văn tương ứng trong câu tiếng Anh', meaningVi: 'Giải thích ngắn bằng tiếng Việt' }
+          ]
+        } : {})
+      })),
+      caption: 'Caption tiếng Việt phù hợp với bài học', hashtags: ['#HocTiengAnh'], thumbnailTitle: 'Tiêu đề thumbnail tiếng Việt'
+    };
+    const instructions = {
+      'dialogue-cards': 'Tạo đúng 3 lượt hội thoại liên tiếp trong cùng một tình huống đời thường. Mỗi lượt là một câu tiếng Việt và bản dịch tiếng Anh tương ứng; lời Việt được đọc trước, sau đó mới hiện và đọc lời Anh. Câu hỏi và câu đáp phải nối nghĩa tự nhiên. Không thêm cụm từ, phần giải thích hay nội dung thừa vào từng lượt.',
+      'numbered-scenario': 'Tạo đúng 3 nhịp liên tiếp trong một tình huống đời thường, có nguyên nhân và diễn tiến rõ. Mỗi nhịp gồm một câu tiếng Việt, một câu Anh ngắn tương đương, một term dài 1–5 từ được chép nguyên văn từ câu Anh và meaningVi là lời giải thích cách dùng tự nhiên bằng tiếng Việt (5–16 từ). Khi dựng, từng nhịp lần lượt hiện số thứ tự, câu Việt, câu Anh rồi một thẻ giải thích; không thêm câu thứ hai hoặc chỉ dẫn sân khấu.',
+      'inline-meaning': 'Tạo đúng một câu tiếng Việt và một câu Anh tương đương, đủ ngữ cảnh, để dạy một điểm ngữ pháp hữu ích. Thêm đúng 2 vocabularyCards. Mỗi sourceVi là cụm tiếng Việt ngắn (1–8 từ) được chép nguyên văn từ câu Việt; term là cụm liên tục tương ứng (1–5 từ) được chép nguyên văn từ câu Anh; meaningVi là giải thích ngữ pháp/cách dùng bằng tiếng Việt (8–24 từ), không chỉ dịch lại cụm từ. Chọn hai phần bổ trợ nhau, không lặp nghĩa.',
+      'inline-keyphrase': 'Tạo đúng một câu tiếng Việt và một câu Anh tương đương, tự nhiên trong một tình huống cụ thể. Thêm đúng 2 vocabularyCards. Mỗi sourceVi là cụm tiếng Việt ngắn (1–8 từ) được chép nguyên văn từ câu Việt; term là cụm tự nhiên tương ứng (1–5 từ) được chép nguyên văn từ câu Anh; meaningVi là lời giải thích nghĩa/cách dùng rõ bằng tiếng Việt (8–24 từ). Ưu tiên collocation hoặc cách nói người bản xứ thường dùng; hai thẻ không được giải thích trùng nhau.'
+    }[presentationStyle];
+    return `Create a polished beginner-friendly Vietnamese–English lesson video. Return valid JSON only, matching this schema: ${JSON.stringify(schema)}\n` +
+      `Presentation style: ${presentationStyle}. ${instructions}\n` +
+      `Requirements: exactly ${dialogueCount} dialogue item(s), with sequential index values. Every Vietnamese line must be one clear, natural sentence of 5–14 words. Every English line must be one faithful, conversational sentence of 5–18 words; use correct articles, tense, prepositions, and idiom, without literal translation. For each numbered-scenario term and every vocabularyCards[].term, verify that the exact phrase appears as a whole phrase in its English sentence. For every inline vocabulary card, sourceVi must occur exactly in its Vietnamese sentence and term must occur exactly in its English sentence. Explanations must match the phrase and context, never invent a grammar rule; inline explanations should teach one useful point in a complete, concise sentence. Keep the voice script limited to lesson lines and phrase explanations; do not put stage directions, pronunciation notes, headings, or calls to follow/subscribe in speech. Use short punctuation that supports natural TTS pauses. Do not repeat previous English/Vietnamese lesson lines or phrase choices: ${recent.join(' | ') || 'none'}.\n` +
+      `Write title, hook, caption, explanations, and thumbnail text in Vietnamese. Do not add a follow or subscribe call to action inside generated lesson content. Avoid these previously used topic angles: ${previousTopics.slice(0, 50).join(' | ') || 'none'}.` +
+      openTopicInstruction;
+  }
   if (contentLanguage === 'zh') {
     const lessonCount = chineseLessonCount(presentationStyle);
     const schema = {
-      topic: topic.title, category: topic.category, level: settings.level,
+      topic: promptTopic, category: promptCategory, level: settings.level,
       title: 'Tiêu đề ngắn bằng tiếng Việt', hook: 'Mở đầu tiếng Việt tự nhiên',
       presentationStyle,
       lessons: Array.from({ length: lessonCount }, (_, index) => ({
@@ -44,7 +85,7 @@ function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopic
       `Presentation style: ${presentationStyle}. ${styleInstructions}\n` +
       `Requirements: return exactly ${lessonCount} items in lessons. Each lessons[].chinese value must be a single short spoken sentence, with no newline or second sentence; obey the Hanzi limit for its presentation style. Use natural Simplified Chinese only and never insert Pinyin there. Provide standard Hanyu Pinyin for every full Chinese sentence and key phrase, mark lexical tones, allow unmarked neutral tones, and count syllables with the normal 儿化 exception where 儿 joins the preceding syllable. Make every Vietnamese translation faithful, and explain only verified meanings and usage within the style word limits. Write Chinese as natural spoken dialogue, not a textbook definition. Use punctuation that matches sentence intent, including a question mark for genuine questions. Never put Pinyin, pronunciation notes, bracketed stage directions, or voice instructions inside text to be spoken. Do not include any follow, subscribe, or follow-the-channel call to action in the title, hook, spoken content, or caption. The video must end when the final lesson speech ends. Do not generate English learning content, Japanese, Traditional Chinese, or invented facts. Provide 2–4 relevant scene descriptions in Vietnamese. Keep title, hook, explanation, and thumbnail text in Vietnamese.\n` +
       `Avoid Chinese phrases and lesson angles similar to these saved Chinese lessons: ${recent.join(' | ') || 'none'}.` +
-      (autoTopic ? `\nTreat the selected topic as a broad seed and invent a fresh specific situation. Avoid previous angles: ${previousTopics.slice(0, 50).join(' | ') || 'none'}.` : '');
+      openTopicInstruction;
   }
   if (contentLanguage === 'ja') {
     const languageName = contentLanguage === 'ja' ? 'Japanese' : 'Simplified Chinese';
@@ -57,18 +98,18 @@ function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopic
       (autoTopic ? `\nTreat the selected topic as a broad seed and invent a fresh specific situation. Avoid: ${previousTopics.slice(0, 50).join(' | ') || 'none'}.` : '');
   }
   const schema = {
-    topic: autoTopic ? 'New, specific situation within the selected theme (Vietnamese)' : topic.title, category: topic.category, level: settings.level, title: 'Tiêu đề tiếng Việt ngắn',
+    topic: promptTopic, category: promptCategory, level: settings.level, title: 'Tiêu đề tiếng Việt ngắn',
     hook: 'Một câu mở đầu tiếng Việt', dialogues: [1, 2, 3].map((index) => ({ index, vietnamese: '', english: '', term: '', meaningVi: '', noteVi: '', grammarNote: '' })),
     caption: '', hashtags: ['#HocTiengAnh'], thumbnailTitle: ''
   };
   const prompt = SCRIPT_PROMPT
-    .replaceAll('{{topic}}', topic.title)
-    .replaceAll('{{category}}', topic.category)
+    .replaceAll('{{topic}}', promptTopic)
+    .replaceAll('{{category}}', promptCategory)
     .replaceAll('{{level}}', settings.level)
     .replaceAll('{{recent}}', recent.join(' | ') || 'chưa có')
     .replaceAll('{{schema}}', JSON.stringify(schema, null, 2));
   if (!autoTopic) return prompt;
-  return `${prompt}\n\nAUTOMATIC TOPIC: Treat the selected topic as a broad seed. Invent a fresh, specific everyday situation under that theme and put that new situation in the JSON topic field. Avoid these previously used topic angles: ${previousTopics.slice(0, 50).join(' | ') || 'none'}. Do not simply reuse the broad seed title.`;
+  return `${prompt}\n\nAUTOMATIC TOPIC: Choose a fresh, specific topic from your broad real-world knowledge, not from a fixed local topic list. Put the actual new topic and its matching category in the JSON fields. Avoid these previously used topic angles: ${previousTopics.slice(0, 50).join(' | ') || 'none'}.`;
 }
 
 function parseJSON(text) {
@@ -85,11 +126,29 @@ export async function reviewChineseScript(script) {
   return script;
 }
 
-export async function createScript(topicId, { allowLocalTemplate = false, contentLanguage = 'en', presentationStyle = null } = {}) {
-  const topic = topicId ? db.prepare('SELECT * FROM topics WHERE id=?').get(topicId) : pickTopic();
-  if (!topic) throw new Error('Kh\u00f4ng c\u00f3 ch\u1ee7 \u0111\u1ec1 n\u00e0o \u0111\u1ec3 t\u1ea1o video.');
+export async function createScript(topicId, { contentLanguage = 'en', presentationStyle = null } = {}) {
+  const modelChoosesTopic = !topicId && ['en', 'zh'].includes(contentLanguage);
+  const topic = topicId
+    ? db.prepare('SELECT * FROM topics WHERE id=?').get(topicId)
+    : modelChoosesTopic
+      ? { id: null, title: 'Chủ đề mới do ChatGPT Plan tự chọn', category: 'ChatGPT Plan tự chọn' }
+      : pickTopic();
+  if (!topic) throw new Error('Không tìm thấy chủ đề đã chọn.');
   const settings = getSettings();
+  if (['en', 'zh'].includes(contentLanguage) && !chatgptStatus().connected) {
+    throw new Error('ChatGPT Plan chưa kết nối. Hãy kết nối lại trong Kết nối & cài đặt để tạo nội dung; không có nội dung cục bộ thay thế.');
+  }
   const historyRows = db.prepare('SELECT topic,dialogues_json,speech_segments_json,content_language FROM scripts ORDER BY created_at DESC').all();
+  const latestEnglishRow = historyRows.find((row) => (row.content_language || 'en') === 'en');
+  const latestEnglishSavedStyle = latestEnglishRow
+    ? JSON.parse(latestEnglishRow.dialogues_json || '[]')[0]?.presentationStyle
+    : null;
+  const latestEnglishStyleIndex = ENGLISH_ROTATION_STYLES.indexOf(
+    ENGLISH_ROTATION_STYLES.includes(latestEnglishSavedStyle) ? latestEnglishSavedStyle : 'legacy'
+  );
+  const nextEnglishStyle = latestEnglishRow
+    ? ENGLISH_ROTATION_STYLES[(latestEnglishStyleIndex + 1) % ENGLISH_ROTATION_STYLES.length]
+    : 'legacy';
   const savedChineseStyles = historyRows
     .filter((row) => row.content_language === 'zh')
     .map((row) => JSON.parse(row.dialogues_json || '[]')[0]?.presentationStyle)
@@ -102,6 +161,12 @@ export async function createScript(topicId, { allowLocalTemplate = false, conten
   const selectedChineseStyle = contentLanguage === 'zh'
     ? (CHINESE_PRESENTATION_STYLES.includes(presentationStyle) ? presentationStyle : nextChineseStyle)
     : null;
+  const requestedEnglishStyle = ENGLISH_PRESENTATION_STYLES.includes(presentationStyle)
+    ? presentationStyle
+    : nextEnglishStyle;
+  const selectedEnglishStyle = contentLanguage === 'en' && requestedEnglishStyle !== 'legacy'
+    ? requestedEnglishStyle
+    : null;
   const history = historyRows.map((row) => ({
     dialogues: JSON.parse(row.dialogues_json),
     speechSegments: JSON.parse(row.speech_segments_json || '[]'),
@@ -112,24 +177,43 @@ export async function createScript(topicId, { allowLocalTemplate = false, conten
     ...item.dialogues.flatMap((dialogue) => [dialogue.english, ...(dialogue.turns || []).filter((turn) => /^(en|english)(?:-|$)/i.test(turn.language || '')).map((turn) => turn.text)]),
     ...item.speechSegments.filter((segment) => /^(en|english)(?:-|$)/i.test(segment.language || '')).map((segment) => segment.text)
   ]).filter(Boolean).slice(0, 30) : history.flatMap((item) => item.dialogues.map((dialogue) => dialogue[targetField]).filter(Boolean)).slice(0, 30);
-  const prompt = buildPrompt(topic, recent, settings, { autoTopic: !topicId, previousTopics: historyRows.map((row) => row.topic), contentLanguage, presentationStyle: selectedChineseStyle || undefined });
+  const prompt = buildPrompt(topic, recent, settings, { autoTopic: !topicId, previousTopics: historyRows.map((row) => row.topic), contentLanguage, presentationStyle: selectedEnglishStyle || selectedChineseStyle || undefined });
   const providers = [];
   if (chatgptStatus().connected) providers.push(['chatgpt-plan', (value) => generateWithChatGPT(value)]);
   let script;
   let provider;
+  let englishPresentationReviewPassed = false;
   const errors = [];
   for (const [name, call] of providers) {
     let repairPrompt = prompt;
     for (let attempt = 0; attempt < 3; attempt++) {
       let candidate;
       try {
-        candidate = validateScript(parseJSON(await call(repairPrompt)), { contentLanguage });
+        candidate = validateScript(parseJSON(await call(repairPrompt)), { contentLanguage, presentationStyle: selectedEnglishStyle });
+        if (modelChoosesTopic && [
+          'Chủ đề mới, cụ thể do ChatGPT Plan tự chọn',
+          'Nhóm chủ đề do ChatGPT Plan tự chọn'
+        ].some((placeholder) => [candidate.topic, candidate.category].some((value) => String(value || '').trim().toLocaleLowerCase() === placeholder.toLocaleLowerCase()))) {
+          throw new Error('ChatGPT Plan phải điền chủ đề thực tế và nhóm chủ đề, không để nguyên nội dung giữ chỗ trong mẫu JSON.');
+        }
         assertDistinctFromHistory(candidate, history);
         if (contentLanguage === 'zh') {
           const caption = await generateCaption(candidate);
           candidate.caption = caption.caption;
           candidate.hashtags = caption.hashtags;
           await reviewChineseScript(candidate);
+        }
+        if (selectedEnglishStyle) {
+          try {
+            const caption = await generateCaption(candidate);
+            candidate.caption = caption.caption;
+            candidate.hashtags = caption.hashtags;
+          } catch (error) {
+            log('WARN', 'CAPTION_GENERATION_FALLBACK', `Caption generation failed: ${error.message}`);
+          }
+          assertEnglishReviewResponse(await generateWithChatGPT(buildEnglishReviewPrompt(candidate)));
+          englishPresentationReviewPassed = true;
+          log('INFO', 'EN_PRESENTATION_SCRIPT_QA_PASSED', 'Kịch bản tiếng Anh và trình tự lời đọc đã qua lượt rà soát độc lập.');
         }
         script = candidate;
         provider = name;
@@ -141,7 +225,9 @@ export async function createScript(topicId, { allowLocalTemplate = false, conten
           ...(candidate?.lessons || candidate?.dialogues || []).flatMap((dialogue) => [dialogue[targetField], dialogue.chinese, ...(dialogue.turns || []).map((turn) => turn.text)]),
           ...(candidate?.speechSegments || candidate?.audioSegments || []).map((segment) => segment.text)
         ].filter(Boolean).join(' | ');
-        const outputShape = contentLanguage === 'zh'
+        const outputShape = selectedEnglishStyle
+          ? `Return exactly ${selectedEnglishStyle === 'inline-meaning' || selectedEnglishStyle === 'inline-keyphrase' ? 1 : 3} dialogue item(s), with presentationStyle set to ${selectedEnglishStyle}, and follow its schema exactly.`
+          : contentLanguage === 'zh'
           ? `Return exactly ${chineseLessonCount(selectedChineseStyle)} items in lessons, with presentationStyle set to ${selectedChineseStyle}.`
           : 'Return valid JSON with exactly three items in dialogues, indexed 1, 2, 3. Never add a fourth item.';
         repairPrompt = `${prompt}\n\nDo not repeat rejected ${contentLanguage === 'en' ? 'English' : contentLanguage === 'ja' ? 'Japanese' : 'Chinese'} lines: ${rejected}\nFix this validation error: ${error.message}\n${outputShape}`;
@@ -149,13 +235,8 @@ export async function createScript(topicId, { allowLocalTemplate = false, conten
     }
     if (script) break;
   }
-  if (!script && allowLocalTemplate && contentLanguage === 'en') {
-    const candidate = validateScript(makeLocalScript(topic), { contentLanguage });
-    script = assertDistinctFromHistory(candidate, history);
-    provider = 'local-template';
-  }
-  if (!script) throw new Error(`Kh\u00f4ng t\u1ea1o \u0111\u01b0\u1ee3c k\u1ecbch b\u1ea3n m\u1edbi kh\u00f4ng tr\u00f9ng. H\u00e3y ki\u1ec3m tra k\u1ebft n\u1ed1i ChatGPT Plan r\u1ed3i th\u1eed l\u1ea1i. ${errors.join(' | ')}`);
-  if (contentLanguage !== 'zh') {
+  if (!script) throw new Error(`ChatGPT Plan không tạo được kịch bản hợp lệ. Hãy kiểm tra kết nối rồi thử lại. ${errors.join(' | ')}`);
+  if (contentLanguage !== 'zh' && !englishPresentationReviewPassed) {
     try {
       const caption = await generateCaption(script);
       script.caption = caption.caption;

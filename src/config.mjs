@@ -85,6 +85,12 @@ export const COSYVOICE_VOICE_LIBRARY_DIR = path.join(DATA, 'tts', 'zh-CN', 'cosy
 export const LOCAL_TTS_LOCK_DB = path.join(DATA, 'models', 'local-tts-manager.sqlite');
 export const LOCAL_TTS_STATUS_PATH = path.join(DATA, 'temporary', 'local-tts-model-status.json');
 export const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v26.0';
+const DEFAULT_BACKGROUND_EFFECT_PROFILE = Object.freeze({
+  backgroundEffect: 'bubbles',
+  backgroundEffectDensity: 28,
+  backgroundEffectSpeed: 58,
+  backgroundEffectOpacity: 32
+});
 export const DEFAULTS = Object.freeze({
   appName: 'Auto English Reels Studio',
   port: PORT,
@@ -99,6 +105,8 @@ export const DEFAULTS = Object.freeze({
   chineseTtsProvider: 'vieneu-cosyvoice3',
   contentLanguage: 'en',
   vieneuViVoice: 'Hải Đăng',
+  vieneuJaViVoice: null,
+  vieneuZhViVoice: null,
   vieneuEnVoice: 'Hải Đăng',
   vieneuViSpeed: 1,
   vieneuEnSpeed: 0.9,
@@ -125,6 +133,11 @@ export const DEFAULTS = Object.freeze({
   backgroundEffectDensity: 28,
   backgroundEffectSpeed: 58,
   backgroundEffectOpacity: 32,
+  backgroundEffectProfiles: {
+    en: { ...DEFAULT_BACKGROUND_EFFECT_PROFILE },
+    zh: { ...DEFAULT_BACKGROUND_EFFECT_PROFILE },
+    ja: { ...DEFAULT_BACKGROUND_EFFECT_PROFILE }
+  },
   level: 'A2-B1',
   postTime: '19:30',
   postsPerDay: 3,
@@ -134,6 +147,8 @@ export const DEFAULTS = Object.freeze({
   autoPublishEnabled: false,
   facebookAdapter: 'mock',
   pageId: '',
+  facebookPageLanguage: 'en',
+  facebookPageSelectedLanguage: 'en',
   facebookConnectionVerified: false,
   allowPaidAiApi: false
 });

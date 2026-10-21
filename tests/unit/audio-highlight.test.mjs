@@ -30,16 +30,17 @@ test('alternating speakers retain order, speaker IDs, and separate voices', () =
     { speakerId: 'b', language: 'en', voiceName: 'am_michael', text: 'Of course.' },
     { speakerId: 'a', language: 'vi', voiceName: 'vi-VN-HoaiMyNeural', text: 'Cảm ơn bạn.' }
   ] }] });
-  assert.deepEqual(segments.map((segment) => segment.speakerId), ['a', 'b', 'a']);
-  assert.deepEqual(segments.map((segment) => segment.voiceName), ['af_bella', 'am_michael', 'vi-VN-HoaiMyNeural']);
-  assert.deepEqual(segments.map((segment) => segment.order), [0, 1, 2]);
+  assert.deepEqual(segments.slice(0, 3).map((segment) => segment.speakerId), ['a', 'b', 'a']);
+  assert.deepEqual(segments.slice(0, 3).map((segment) => segment.voiceName), ['af_bella', 'am_michael', 'vi-VN-HoaiMyNeural']);
+  assert.deepEqual(segments.map((segment) => segment.order), [0, 1, 2, 3]);
+  assert.equal(segments.at(-1).target.layerId, 'cta');
 });
 
 test('any number of dialogue pairs creates audio segments without a three-pair limit', () => {
   const dialogues = Array.from({ length: 7 }, (_, index) => ({
     id: `d${index + 1}`, vietnamese: `Câu Việt ${index + 1}.`, english: `English line ${index + 1}.`, term: `line ${index + 1}`, meaningVi: `câu ${index + 1}`, noteVi: ''
   }));
-  assert.equal(createSpeechSegments({ dialogues }).length, 21);
+  assert.equal(createSpeechSegments({ dialogues }).length, 29);
 });
 
 test('Vietnamese phrase audio follows each bilingual dialogue and targets the vocabulary card', () => {
@@ -47,13 +48,14 @@ test('Vietnamese phrase audio follows each bilingual dialogue and targets the vo
     id: 'coffee', vietnamese: 'Bạn uống cà phê không?', english: 'Would you like coffee?',
     term: 'would you like', meaningVi: 'bạn có muốn', noteVi: ''
   }] }, { vieneuViVoice: 'Hải Đăng', kokoroEnVoice: 'af_bella' });
-  assert.deepEqual(segments.map((segment) => segment.language), ['vi', 'en', 'vi']);
+  assert.deepEqual(segments.map((segment) => segment.language), ['vi', 'en', 'en', 'vi', 'vi']);
   assert.equal(segments[2].state, 'vocabulary');
-  assert.equal(segments[2].text, 'would you like. bạn có muốn');
-  assert.equal(segments[2].voiceName, 'Hải Đăng');
-  assert.equal(segments[2].target.layerId, 'vocabulary');
-  assert.equal(segments[2].target.dialogueIndex, 0);
-  assert.equal(segments[2].turnId, segments[0].turnId);
+  assert.equal(segments[2].text, 'would you like');
+  assert.equal(segments[3].voiceName, 'Hải Đăng');
+  assert.equal(segments[3].target.layerId, 'vocabulary');
+  assert.equal(segments[3].target.dialogueIndex, 0);
+  assert.equal(segments[3].turnId, segments[0].turnId);
+  assert.equal(segments[4].target.layerId, 'cta');
 });
 
 test('repeated words map to their matching occurrence instead of the first text match', () => {
@@ -141,8 +143,9 @@ test('explicit speech segments are not tied to the bilingual template or a fixed
     { id: 'reply', speakerId: 'guest', language: 'vi-VN', voiceName: 'vi-VN-NamMinhNeural', text: 'Xin chào.', target: { layerId: 'custom-copy' } }
   ] });
   assert.equal(segments[0].target.layerId, 'custom-copy');
-  assert.deepEqual(segments.map((segment) => segment.language), ['en', 'vi']);
-  assert.deepEqual(segments.map((segment) => segment.voiceName), ['en-GB-SoniaNeural', 'vi-VN-NamMinhNeural']);
+  assert.deepEqual(segments.map((segment) => segment.language), ['en', 'vi', 'vi']);
+  assert.deepEqual(segments.slice(0, 2).map((segment) => segment.voiceName), ['en-GB-SoniaNeural', 'vi-VN-NamMinhNeural']);
+  assert.equal(segments.at(-1).target.layerId, 'cta');
 });
 
 test('Chinese re-renders discard legacy CTA segments and do not append a new one', () => {
