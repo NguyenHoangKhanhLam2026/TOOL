@@ -71,8 +71,9 @@ export async function createVideoJob(job) {
     provider ||= script.provider;
     loadedChineseScript = script.contentLanguage === 'zh';
   } else {
-    const generated = await createScript(job.payload.topicId || null, {
-      contentLanguage: job.payload.contentLanguage || settings.contentLanguage || 'en',
+    const requestedLanguage = job.payload.contentLanguage || settings.contentLanguage || 'en';
+    const generated = await createScript(requestedLanguage === 'ja' ? null : job.payload.topicId || null, {
+      contentLanguage: requestedLanguage,
       ...(['en', 'zh'].includes(job.payload.contentLanguage) && job.payload.presentationStyle ? { presentationStyle: job.payload.presentationStyle } : {})
     });
     ({ scriptId, provider, script } = generated);
@@ -127,7 +128,10 @@ export async function createVideoJob(job) {
       : { ...settings, ...backgroundEffectConfig, ttsProvider, contentLanguage: script.contentLanguage || 'en' };
     // Legacy top-level effect values mirror EN. Keep that path unchanged while
     // other languages receive the effect profile resolved for their own script.
-    const renderHighlightSettings = selectRenderHighlightSettings(contentLanguage, settings, renderSettings, Boolean(backgroundOnlyContext));
+    const selectedHighlightSettings = selectRenderHighlightSettings(contentLanguage, settings, renderSettings, Boolean(backgroundOnlyContext));
+    const renderHighlightSettings = contentLanguage === 'ja'
+      ? { ...selectedHighlightSettings, highlightEnabled: settings.japaneseHighlightEnabled === true }
+      : selectedHighlightSettings;
     const audio = backgroundOnlyContext?.audio || await synthesizeLocalAiScript(script, videoId, { settings: renderSettings, provider: ttsProvider, onProgress: onTtsProgress });
     log('INFO', 'TTS_READY', backgroundOnlyContext
       ? `Đã khôi phục ${audio.length} đoạn giọng đọc và căn chỉnh hiện có để chỉ render lại nền.`
@@ -156,7 +160,8 @@ export async function createVideoJob(job) {
     const outputDir = path.dirname(result.videoPath);
     try {
       fs.writeFileSync(path.join(outputDir, 'script.json'), JSON.stringify(script, null, 2), 'utf8');
-      fs.writeFileSync(path.join(outputDir, 'caption.txt'), formatCaption(script.caption, script.hashtags, script.contentLanguage || 'en'), 'utf8');
+      const preserveJapaneseTags = script.contentLanguage === 'ja';
+      fs.writeFileSync(path.join(outputDir, 'caption.txt'), formatCaption(script.caption, script.hashtags, script.contentLanguage || 'en', { preserveJapaneseTags }), 'utf8');
       fs.writeFileSync(path.join(outputDir, 'audio-manifest.json'), JSON.stringify(result.audioManifest, null, 2), 'utf8');
       fs.writeFileSync(path.join(outputDir, 'render-manifest.json'), JSON.stringify(result.renderManifest, null, 2), 'utf8');
     } catch (error) {

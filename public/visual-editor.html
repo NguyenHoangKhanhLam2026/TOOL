@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/visual-editor.css" />
   <link rel="stylesheet" href="/visual-editor-overrides.css" />
   <style>
-    .visual-language-switch button { border: 0; border-radius: 9px; padding: 10px 13px; background: transparent; color: #53616a; font: inherit; cursor: pointer; }
+    .visual-language-switch select { border: 1px solid #d9e0db; border-radius: 9px; padding: 10px 13px; background: #fff; color: #315f54; font: inherit; cursor: pointer; }
     .visual-language-switch button.active { background: #315f54; color: #fff; font-weight: 700; }
     body.shadowing-mode .workspace, body.shadowing-mode .top-actions { display: none; }
     .shadowing-workspace { min-height: calc(100vh - 76px); padding: 28px; background: #f3eee5; }
@@ -22,10 +22,10 @@
   <script type="module" src="/visual-editor.js"></script>
 </head>
 <body>
-  <header class="topbar"><a class="wordmark" href="/">← Studio</a><div><strong>Visual Editor</strong><span id="template-language-label">Branded Dialogue V2 · 1080 × 1920</span></div><div class="visual-language-switch" role="group" aria-label="Ngôn ngữ template"><button type="button" data-editor-language="en" class="active">Tiếng Anh</button><button type="button" data-editor-language="zh">Tiếng Trung</button><button type="button" id="shadowing-editor-button">Shadowing</button></div><div class="top-actions"><span id="connection" class="connection">Đang kết nối…</span><button id="undo" class="button light">↶ Hoàn tác</button><button id="reset" class="button light">Đặt lại</button><button id="save" class="button primary">Lưu template</button></div></header>
+  <header class="topbar"><a id="editor-back-link" class="wordmark" href="/">← Studio</a><div><strong id="editor-title">Visual Editor</strong><span id="template-language-label">Branded Dialogue V2 · 1080 × 1920</span></div><div class="visual-language-switch" role="group" aria-label="Ngôn ngữ template"><select id="editor-language-select" aria-label="Chọn ngôn ngữ"><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option></select><button type="button" id="shadowing-editor-button">Shadowing</button></div><div class="top-actions"><span id="connection" class="connection">Đang kết nối…</span><button id="undo" class="button light">↶ Hoàn tác</button><button id="reset" class="button light">Đặt lại</button><button id="save" class="button primary">Lưu template</button></div></header>
   <main id="workspace" class="workspace">
-    <aside class="panel left-panel"><section><h2>Trạng thái scene</h2><div id="states" class="states"></div></section><section><div class="section-head"><h2>Layers</h2><span id="layer-count"></span></div><div id="layers" class="layers"></div></section><a class="asset-link" href="/assets">Quản lý tài nguyên <span>↗</span></a></aside>
-    <section class="preview-area"><div class="preview-toolbar"><div><strong id="preview-title">Bản xem trước</strong><small id="preview-subtitle">Kéo layer trên canvas để chỉnh vị trí</small></div><label class="scene-index">Câu <select id="scene-index"><option value="0">01</option><option value="1">02</option><option value="2">03</option></select></label></div><div class="canvas-frame" id="canvas-frame">
+    <aside class="panel left-panel"><section><h2 id="states-heading">Trạng thái scene</h2><div id="states" class="states"></div></section><section><div class="section-head"><h2 id="layers-heading">Layers</h2><span id="layer-count"></span></div><div id="layers" class="layers"></div></section><a id="asset-link" class="asset-link" href="/assets"><span id="asset-link-text">Quản lý tài nguyên</span> <span>↗</span></a></aside>
+    <section class="preview-area"><div class="preview-toolbar"><div><strong id="preview-title">Bản xem trước</strong><small id="preview-subtitle">Kéo layer trên canvas để chỉnh vị trí</small></div><label class="scene-index" id="scene-index-label">Câu <select id="scene-index"><option value="0">01</option><option value="1">02</option><option value="2">03</option></select></label></div><div id="japanese-layout-map" class="japanese-layout-map" hidden><label for="japanese-style-select">Kiểu video tiếng Nhật</label><select id="japanese-style-select"><option value="legacy">01 · Thẻ cổ điển</option><option value="dialogue-cards">02 · Thẻ màu dịu</option><option value="numbered-scenario">03 · Viền nhấn vàng</option><option value="inline-meaning">05 · Thẻ nổi</option><option value="inline-keyphrase">10 · Thẻ cao cấp</option></select><small>Chọn kiểu để xem và chỉnh riêng các lớp của mẫu đó. Nền Nhật Bản và nội dung video vẫn giữ nguyên.</small></div><div class="canvas-frame" id="canvas-frame">
       <div class="ruler-corner" aria-hidden="true">px</div>
       <div id="ruler-top" class="editor-ruler editor-ruler-top" aria-label="Thước ngang"></div>
       <div id="ruler-left" class="editor-ruler editor-ruler-left" aria-label="Thước dọc"></div>
@@ -47,8 +47,8 @@
         <div id="selection-overlays" class="selection-overlays" aria-hidden="true"></div>
       </div>
     </div>
-    <div class="alignment-toolbar" aria-label="Rulers, Guides & Smart Alignment">
-      <div class="alignment-heading"><strong>Rulers, Guides & Smart Alignment</strong><small>Bộ thước đo và căn chỉnh thông minh · chỉ hiển thị trong Visual Editor</small></div>
+    <div class="alignment-toolbar" id="alignment-toolbar" aria-label="Rulers, Guides & Smart Alignment">
+      <div class="alignment-heading"><strong id="alignment-heading">Rulers, Guides & Smart Alignment</strong><small id="alignment-subtitle">Bộ thước đo và căn chỉnh thông minh · chỉ hiển thị trong Visual Editor</small></div>
       <div class="alignment-toggles">
         <button id="toggle-rulers" class="alignment-button active" type="button" aria-pressed="true">Rulers</button>
         <button id="toggle-guides" class="alignment-button active" type="button" aria-pressed="true">Guides</button>
@@ -62,16 +62,16 @@
         <button id="align-right" class="alignment-button" type="button" title="Căn mép phải">Align Right</button>
         <button id="distribute-vertically" class="alignment-button" type="button" title="Chia đều khoảng cách dọc cho từ ba layer trở lên">Distribute Vertically</button>
       </div>
-      <p class="alignment-help">Kéo từ thước vào canvas để thêm guide · chọn guide rồi nhấn Delete để xóa · Shift/Ctrl/Cmd + bấm layer để chọn nhiều.</p>
+      <p id="alignment-help" class="alignment-help">Kéo từ thước vào canvas để thêm guide · chọn guide rồi nhấn Delete để xóa · Shift/Ctrl/Cmd + bấm layer để chọn nhiều.</p>
       <p id="alignment-readout" class="alignment-readout" aria-live="polite">Chọn layer để xem khoảng cách mép trái/phải. Shift hoặc Ctrl/Cmd + bấm để chọn nhiều layer.</p>
-    </div><div class="preview-controls"><button id="preview" class="button light">↻ Cập nhật preview</button><button id="render-test" class="button light">▶ Render thử 5 giây</button><button id="render-full" class="button primary">Render video đầy đủ</button></div><div id="test-output" class="test-output" hidden></div><p class="hint">Preview và video được dựng từ cùng template với renderer. Video đầy đủ dùng kịch bản đã lưu gần nhất, không gọi AI.</p></section>
-    <aside class="panel right-panel"><section><h2>Thuộc tính layer</h2><p id="selected-name" class="muted">Chọn một layer</p><div id="properties" class="properties"></div></section><section><h2>Thương hiệu</h2><div id="brand-properties" class="properties"></div></section><section><h2>Nhịp dựng (giây)</h2><div id="timing-properties" class="properties"></div></section><div id="status" role="status" class="status">Đang tải template…</div><div id="render-progress" class="progress-wrap" hidden><div class="progress-track"><span id="progress-bar"></span></div><small id="progress-label">Render: 0%</small></div></aside>
+    </div><div class="preview-controls"><button id="preview" class="button light">↻ Cập nhật preview</button><button id="render-test" class="button light">▶ Render thử 5 giây</button><button id="render-full" class="button primary">Render video đầy đủ</button></div><div id="test-output" class="test-output" hidden></div><p id="editor-hint" class="hint">Preview và video được dựng từ cùng template với renderer. Video đầy đủ dùng kịch bản đã lưu gần nhất, không gọi AI.</p></section>
+    <aside class="panel right-panel"><section><h2 id="properties-heading">Thuộc tính layer</h2><p id="selected-name" class="muted">Chọn một layer</p><div id="properties" class="properties"></div></section><section><h2 id="brand-heading">Thương hiệu</h2><div id="brand-properties" class="properties"></div></section><section><h2 id="timing-heading">Nhịp dựng (giây)</h2><div id="timing-properties" class="properties"></div></section><div id="status" role="status" class="status">Đang tải template…</div><div id="render-progress" class="progress-wrap" hidden><div class="progress-track"><span id="progress-bar"></span></div><small id="progress-label">Render: 0%</small></div></aside>
   </main>
   <main class="shadowing-workspace" id="shadowing-workspace" hidden>
     <section class="shadowing-editor-card">
-      <h1>Preset dựng video EnglishShadowing</h1>
-      <p>Shadowing dùng preset riêng: nền giấy ấm, tiêu đề navy và burgundy, toàn bộ đoạn tiếng Anh luôn hiển thị, từ đang đọc được tô nổi bật. Đây là khu vực riêng; các layer EN/ZH bên cạnh không được dùng cho video Shadowing.</p>
-      <img class="shadowing-editor-preview" src="/api/english-shadowing/visual-preview.svg" alt="Xem trước preset hình ảnh EnglishShadowing" />
+      <h1 id="shadowing-title">Preset dựng video EnglishShadowing</h1>
+      <p id="shadowing-description">Shadowing dùng preset riêng: nền giấy ấm, tiêu đề navy và burgundy, toàn bộ đoạn tiếng Anh luôn hiển thị, từ đang đọc được tô nổi bật. Đây là khu vực riêng; các layer EN/ZH bên cạnh không được dùng cho video Shadowing.</p>
+      <img id="shadowing-preview-image" class="shadowing-editor-preview" src="/api/english-shadowing/visual-preview.svg" alt="Xem trước preset hình ảnh EnglishShadowing" />
       <p class="shadowing-editor-note" id="shadowing-editor-status" role="status">Preset tự động đang sẵn sàng. Phần chỉnh nền, chữ và tiêu đề riêng sẽ được mở rộng sau.</p>
     </section>
   </main>

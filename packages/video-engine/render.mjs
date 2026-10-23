@@ -25,6 +25,16 @@ export function filterChineseCtaAudioFiles(script, audioFiles) {
     && String(item.segmentId || item.id || '') !== 'zh-cta-vi');
 }
 
+export function filterJapaneseCtaAudioFiles(script, audioFiles) {
+  if (script?.contentLanguage !== 'ja') return audioFiles;
+  const ctaSegmentIds = new Set((Array.isArray(script.speechSegments) ? script.speechSegments : [])
+    .filter((segment) => segment.state === 'cta' || segment.target?.layerId === 'cta')
+    .flatMap((segment) => [segment.segmentId, segment.id].filter(Boolean).map(String)));
+  return audioFiles.filter((item) => item.state !== 'cta'
+    && item.target?.layerId !== 'cta'
+    && !ctaSegmentIds.has(String(item.segmentId || item.id || '')));
+}
+
 export function assertChineseRenderQuality(script, result) {
   if (script?.contentLanguage !== 'zh') return result;
   const timeline = result?.renderManifest?.timeline;
@@ -227,7 +237,11 @@ export async function renderVideo(script, videoId, audioFiles, {
 } = {}) {
   const template = templateSnapshot && typeof templateSnapshot === 'object'
     ? templateSnapshot
-    : readVisualTemplate({ contentLanguage: script.contentLanguage || 'en' });
+    : readVisualTemplate({
+      contentLanguage: script.contentLanguage || 'en',
+      japaneseV1: script.contentLanguage === 'ja'
+        && String(script.presentationStyle || script.dialogues?.[0]?.presentationStyle || '').startsWith('ja-en-v1-')
+    });
   const tempDir = path.join(PATHS.temporary, videoId);
   const layerDir = path.join(tempDir, 'visual-layers-v2');
   const outDir = path.join(PATHS.output, videoId);
@@ -242,24 +256,41 @@ export async function renderVideo(script, videoId, audioFiles, {
     && ['dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'].includes(requestedEnglishPresentationStyle)
     ? requestedEnglishPresentationStyle
     : null;
+  const japanesePresentationStyle = script.contentLanguage === 'ja'
+    && String(requestedEnglishPresentationStyle || '').startsWith('ja-en-v1-');
   settings.backgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
   settings.backgroundEffectDensity = normalizeBackgroundEffectDensity(settings.backgroundEffectDensity);
   settings.backgroundEffectSpeed = normalizeBackgroundEffectSpeed(settings.backgroundEffectSpeed);
   settings.backgroundEffectOpacity = normalizeBackgroundEffectOpacity(settings.backgroundEffectOpacity);
-  const renderAudioFiles = filterChineseCtaAudioFiles(script, audioFiles);
+  const renderAudioFiles = script.contentLanguage === 'ja'
+    ? filterJapaneseCtaAudioFiles(script, audioFiles)
+    : filterChineseCtaAudioFiles(script, audioFiles);
   const durations = [];
   for (const [audioIndex, item] of renderAudioFiles.entries()) {
     if (!fs.existsSync(item.path)) throw new Error(`Thiếu audio cho đoạn ${item.segmentId || item.index || '?'} (${item.language || 'không rõ ngôn ngữ'}).`);
     const duration = await probeAudio(item.path);
-    const source = script.contentLanguage === 'zh' || englishPresentationStyle
+    const source = script.contentLanguage === 'zh' || englishPresentationStyle || japanesePresentationStyle
       ? (script.speechSegments || []).find((segment) => String(segment.segmentId || segment.id || '') === String(item.segmentId || item.id || ''))
       : null;
     const requestedPause = Number(item.pauseAfterSeconds ?? source?.pauseAfterSeconds);
+    const isJapaneseLead = script.contentLanguage === 'ja' && item.target?.layerId === 'vietnamese-card';
+    const dialogueIndex = Number(item.target?.dialogueIndex ?? source?.target?.dialogueIndex);
+    const isJapaneseSentenceWithPhrase = script.contentLanguage === 'ja'
+      && japanesePresentationStyle
+      && item.language === 'ja'
+      && item.target?.layerId === 'english-card'
+      && Number.isInteger(dialogueIndex)
+      && (script.speechSegments || []).some((segment) => Number(segment.target?.dialogueIndex) === dialogueIndex
+        && segment.target?.layerId === 'vocabulary');
     const isFinalChineseSpeech = script.contentLanguage === 'zh' && audioIndex === renderAudioFiles.length - 1;
-    const supportsSpeechPauses = script.contentLanguage === 'zh' || Boolean(englishPresentationStyle);
-    const pauseAfterSeconds = supportsSpeechPauses && Number.isFinite(requestedPause)
-      ? isFinalChineseSpeech ? 0 : Math.max(0, Math.min(2, requestedPause))
-      : 0;
+    const supportsSpeechPauses = script.contentLanguage === 'zh' || Boolean(englishPresentationStyle) || japanesePresentationStyle;
+    const pauseAfterSeconds = isJapaneseLead && japanesePresentationStyle
+      ? 1
+      : isJapaneseSentenceWithPhrase
+        ? 3
+      : supportsSpeechPauses && Number.isFinite(requestedPause)
+        ? isFinalChineseSpeech ? 0 : Math.max(0, Math.min(2, requestedPause))
+        : 0;
     durations.push({ ...item, target: resolveSpeechTarget(template, item), duration, pauseAfterSeconds });
   }
 
@@ -283,13 +314,13 @@ export async function renderVideo(script, videoId, audioFiles, {
     : 0;
   timing.transition = transitionFrames / OUTPUT_FRAME_RATE;
   const ctaSpeechDuration = ctaItems.reduce((sum, item) => sum + item.duration, 0);
-  const ctaDuration = script.contentLanguage === 'zh' ? 0 : Math.max(0, Number(timing.cta) || 0, ctaSpeechDuration);
+  const ctaDuration = ['zh', 'ja'].includes(script.contentLanguage) ? 0 : Math.max(0, Number(timing.cta) || 0, ctaSpeechDuration);
   timing.cta = ctaDuration;
   const speechDuration = dialogueDurations.reduce((sum, item) => sum + item.duration + item.pauseAfterSeconds, 0);
   const configuredVocabularyHold = Math.max(0, Number(timing.vocabularyHold) || 0);
   const vocabularyHold = fitVocabularyHold({
     configuredHold: configuredVocabularyHold,
-    groupCount: script.contentLanguage === 'zh' || englishPresentationStyle ? Math.max(0, groups.length - 1) : groups.length,
+    groupCount: script.contentLanguage === 'zh' || englishPresentationStyle || japanesePresentationStyle ? Math.max(0, groups.length - 1) : groups.length,
     speechDuration,
     intro: Number(timing.intro),
     cta: Number(timing.cta),
@@ -318,7 +349,7 @@ export async function renderVideo(script, videoId, audioFiles, {
           sequenceCursor += item.pauseAfterSeconds;
         }
       }
-    } else if (englishPresentationStyle) {
+    } else if (englishPresentationStyle || japanesePresentationStyle) {
       for (const item of group.items) {
         const requestedIndex = Number(item.target?.dialogueIndex);
         const index = Array.isArray(script.dialogues) && script.dialogues.length
@@ -330,7 +361,17 @@ export async function renderVideo(script, videoId, audioFiles, {
         sequence.push({ ...item, type: 'speech', state, index, target: { ...(item.target || {}), dialogueIndex: index }, duration: item.duration });
         sequenceCursor += item.duration;
         if (item.pauseAfterSeconds > 0.0001) {
-          sequence.push({ type: 'silence', state, index, duration: item.pauseAfterSeconds });
+          const isJapaneseLeadPause = japanesePresentationStyle
+            && item.target?.layerId === 'vietnamese-card'
+            && Number(item.target?.dialogueIndex) === index;
+          if (isJapaneseLeadPause) {
+            const phaseDuration = item.pauseAfterSeconds / 3;
+            for (let phase = 1; phase <= 3; phase += 1) {
+              sequence.push({ type: 'silence', state: `japanese-typing-${phase}`, index, duration: phaseDuration });
+            }
+          } else {
+            sequence.push({ type: 'silence', state, index, duration: item.pauseAfterSeconds });
+          }
           sequenceCursor += item.pauseAfterSeconds;
         }
       }
@@ -361,7 +402,7 @@ export async function renderVideo(script, videoId, audioFiles, {
     const index = Array.isArray(script.dialogues) && script.dialogues.length && Number.isInteger(requestedIndex)
       ? Math.max(0, Math.min(script.dialogues.length - 1, requestedIndex))
       : groupIndex;
-    const hasNextPresentationGroup = script.contentLanguage === 'zh' || englishPresentationStyle
+    const hasNextPresentationGroup = script.contentLanguage === 'zh' || englishPresentationStyle || japanesePresentationStyle
       ? groupIndex < groups.length - 1
       : true;
     const groupVocabularyHold = hasNextPresentationGroup ? vocabularyHold : 0;
@@ -501,11 +542,17 @@ export async function renderVideo(script, videoId, audioFiles, {
     item.target?.layerId === 'chinese-card' && typeof item.target.pinyinVisible === 'boolean'
   );
   let pinyinVisibleForTimeline = !hasExplicitPinyinSequence;
+  const japaneseTypingLayers = {
+    'japanese-typing-1': [...persistentLayers, 'scene-number', 'vietnamese-card'],
+    'japanese-typing-2': [...persistentLayers, 'scene-number', 'vietnamese-card'],
+    'japanese-typing-3': [...persistentLayers, 'scene-number', 'vietnamese-card']
+  };
   const stateLayers = {
     intro: [...persistentLayers, 'title'],
     vietnamese: [...persistentLayers, ...(englishPresentationStyle && ['dialogue-cards', 'inline-meaning', 'inline-keyphrase'].includes(englishPresentationStyle) ? [] : ['scene-number']), 'vietnamese-card'],
     bilingual: [...persistentLayers, ...(englishPresentationStyle && ['dialogue-cards', 'inline-meaning', 'inline-keyphrase'].includes(englishPresentationStyle) ? [] : ['scene-number']), 'vietnamese-card', targetCardLayer, ...pinyinLayer],
     vocabulary: [...persistentLayers, ...(englishPresentationStyle && ['dialogue-cards', 'inline-meaning', 'inline-keyphrase'].includes(englishPresentationStyle) ? [] : ['scene-number']), 'vietnamese-card', targetCardLayer, ...pinyinLayer, 'vocabulary'],
+    ...japaneseTypingLayers,
     transition: [],
     cta: [...persistentLayers, 'cta']
   };

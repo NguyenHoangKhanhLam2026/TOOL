@@ -67,6 +67,9 @@ export const KOKORO_MODEL_DIR = path.join(DATA, 'models', 'kokoro-onnx');
 export const KOKORO_MODEL_PATH = path.join(KOKORO_MODEL_DIR, 'kokoro-v1.0.onnx');
 export const KOKORO_VOICES_PATH = path.join(KOKORO_MODEL_DIR, 'voices-v1.0.bin');
 export const KOKORO_MODEL_MARKER = path.join(KOKORO_MODEL_DIR, 'install.json');
+const supertonicVenvPython = process.platform === 'win32' ? path.join(ROOT, '.venv-supertonic', 'Scripts', 'python.exe') : path.join(ROOT, '.venv-supertonic', 'bin', 'python');
+export const SUPERTONIC_PYTHON_BIN = process.env.SUPERTONIC_PYTHON || supertonicVenvPython;
+export const SUPERTONIC_MODEL_DIR = path.join(DATA, 'models', 'supertonic3');
 const styleBertVits2VenvPython = process.platform === 'win32' ? path.join(ROOT, '.venv-sbv2', 'Scripts', 'python.exe') : path.join(ROOT, '.venv-sbv2', 'bin', 'python');
 export const STYLE_BERT_VITS2_PYTHON_BIN = process.env.STYLE_BERT_VITS2_PYTHON || styleBertVits2VenvPython;
 export const STYLE_BERT_VITS2_MODELS_DIR = path.join(DATA, 'models', 'style-bert-vits2-jp');
@@ -103,6 +106,7 @@ export const DEFAULTS = Object.freeze({
   ttsProvider: 'vieneu',
   japaneseTtsProvider: 'vieneu-sbv2',
   chineseTtsProvider: 'vieneu-cosyvoice3',
+  koreanTtsProvider: 'supertonic3-ko',
   contentLanguage: 'en',
   vieneuViVoice: 'Hải Đăng',
   vieneuJaViVoice: null,
@@ -115,6 +119,8 @@ export const DEFAULTS = Object.freeze({
   styleBertVits2Voice: 'jvnv-F1-jp',
   styleBertVits2Style: 'Neutral',
   styleBertVits2Speed: 1,
+  supertonicKoreanVoice: 'F1',
+  supertonicKoreanSpeed: 1,
   cosyVoiceProfile: 'custom',
   cosyVoiceProfileId: '',
   cosyVoiceProfileName: '',
@@ -124,6 +130,7 @@ export const DEFAULTS = Object.freeze({
   localTtsMinFreeRamMb: 2560,
   localTtsMinRemainingRamMb: 1024,
   highlightEnabled: true,
+  japaneseHighlightEnabled: false,
   highlightMode: 'word',
   highlightColor: '#FF8066',
   highlightPadding: 6,

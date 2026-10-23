@@ -40,3 +40,14 @@ Không suy diễn sự đồng ý từ yêu cầu chung như “fix triệt đ�
 - Không thay đổi đầu ra EN/ZH để làm chúng giống nhau hoặc giống ngôn ngữ khác.
 - Giữ nguyên các chỉnh sửa sẵn có trong workspace; kiểm tra trạng thái Git trước khi thao tác và không ghi đè thay đổi của người dùng.
 - Chỉ mở khóa khi có chỉ dẫn rõ ràng từ người dùng, và chỉ trong phạm vi họ đã duyệt.
+
+## Khóa mọi nội dung và chủ đề đã hoàn thiện
+
+Quy tắc này áp dụng cho mọi ngôn ngữ, không chỉ EN/ZH. Mọi nội dung hoặc chủ đề đã hoàn thiện, đã được người dùng chấp nhận, hoặc đang được dùng làm mẫu chuẩn đều là trạng thái đã khóa. Khi một chủ đề mới được hoàn thiện/chấp nhận, chủ đề đó tự động thuộc phạm vi khóa này.
+
+- Giữ nguyên nội dung, dữ liệu, thứ tự và cấu trúc chủ đề, số lượng/phân đoạn, lời thoại, bản dịch, cụm từ, lời giải thích, giọng đọc, tốc độ, thời lượng, bố cục, template và đầu ra đã hoàn thiện.
+- Không sửa, ghi đè, xóa, di chuyển, đổi cấu trúc, đổi mặc định, tái tạo hoặc áp dụng migration lên nội dung/chủ đề đã khóa. Không để một cập nhật chung làm thay đổi gián tiếp các mục đó.
+- Nội dung hoặc chủ đề mới phải được thêm theo ID/phiên bản riêng; không dùng chúng để ghi đè dữ liệu, cấu hình hay cấu trúc của chủ đề đã hoàn thiện.
+- Trước mọi thay đổi có thể tác động đến nội dung đã khóa, dừng lại và báo chính xác file/thành phần, chủ đề bị ảnh hưởng, thay đổi dự kiến và rủi ro. Chờ người dùng duyệt rõ phạm vi đó rồi mới sửa. Yêu cầu chung như “update”, “fix” hoặc “thêm nội dung” không tự mở khóa.
+- Nếu có thể cô lập thay đổi mới để không đụng nội dung đã khóa, chỉ tiến hành trong phạm vi cô lập đó. Nếu không thể bảo đảm cô lập, hỏi người dùng trước và chưa thực hiện phần phụ thuộc.
+- Sau khi được duyệt và sửa, rà diff để xác nhận dữ liệu/chủ đề ngoài phạm vi được duyệt không bị thay đổi. Không chạy cập nhật hàng loạt hoặc render lại chủ đề đã hoàn thiện nếu chưa được duyệt rõ.

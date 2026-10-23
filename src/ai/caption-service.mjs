@@ -6,6 +6,12 @@ const LENGTHS = [
   { id: 'medium', weight: 45, min: 65, max: 100, target: 82, label: 'vừa' },
   { id: 'long', weight: 25, min: 115, max: 160, target: 132, label: 'dài' }
 ];
+const JAPANESE_CAPTION_LENGTHS = [
+  { id: 'short', weight: 30, min: 24, max: 55, label: 'ngắn, 1–2 câu' },
+  { id: 'medium', weight: 35, min: 56, max: 100, label: 'vừa, 2–4 câu' },
+  { id: 'long', weight: 25, min: 101, max: 155, label: 'dài, có giải thích và ví dụ' },
+  { id: 'one-sentence', weight: 10, min: 12, max: 32, label: 'đúng một câu ngắn' }
+];
 const STYLES = [
   { id: 'story', label: 'kể chuyện' }, { id: 'real-life', label: 'tình huống thực tế' },
   { id: 'vocabulary', label: 'giải thích từ vựng' }, { id: 'communication-tip', label: 'mẹo giao tiếp' },
@@ -66,7 +72,9 @@ function tagsFor(script, supplied = []) {
       if (extras.length === 2) break;
     }
   }
-  return ensureBrandHashtag(extras.slice(0, 4));
+  return script.contentLanguage === 'ja'
+    ? japaneseTags(extras.slice(0, 4), true)
+    : ensureBrandHashtag(extras.slice(0, 4));
 }
 
 function parseResponse(value) {
@@ -85,6 +93,85 @@ function wordCount(value) {
 
 function paragraphCount(value) {
   return String(value || '').split(/\n\s*\n+/).map((paragraph) => paragraph.trim()).filter(Boolean).length;
+}
+
+function selectJapaneseCaptionLength() {
+  const value = Math.random() * 100;
+  let boundary = 0;
+  return JAPANESE_CAPTION_LENGTHS.find((item) => {
+    boundary += item.weight;
+    return value < boundary;
+  }) || JAPANESE_CAPTION_LENGTHS.at(-1);
+}
+
+function japaneseTags(supplied = [], include = true) {
+  if (!include) return [];
+  const blocked = new Set(['#sinhradenoitienganh', '#conotiengtrung']);
+  const brand = '#nguoivietyeutiengnhat';
+  const values = [...supplied, '#hoctiengnhat', '#tiengnhatgiaotiep'];
+  const tags = [];
+  const seen = new Set();
+  for (const value of values) {
+    const tag = String(value || '').trim();
+    const key = tag.toLocaleLowerCase('ja');
+    if (!/^#[\p{L}\p{N}_]+$/u.test(tag) || key === brand || blocked.has(key) || /english|tienganh|tiengtrung|hoctienganh/iu.test(tag) || seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length === 4) break;
+  }
+  return [...tags, brand];
+}
+
+function makeJapaneseCaptionPrompt(script, length, style, includeHashtags, repair = '') {
+  const format = length.id === 'one-sentence'
+    ? 'Viết đúng một câu hoàn chỉnh, không xuống dòng.'
+    : length.id === 'long'
+      ? 'Viết caption dài tự nhiên, chia thành 2–3 đoạn ngắn.'
+      : 'Viết caption gọn tự nhiên, tối đa 2 đoạn ngắn.';
+  const hashtagInstruction = includeHashtags
+    ? 'Trả 2–5 hashtag tiếng Việt hoặc Nhật liên quan; bắt buộc có #nguoivietyeutiengnhat. Không dùng hashtag tiếng Anh hay tiếng Trung.'
+    : 'Trả hashtags là mảng rỗng; không chèn bất kỳ hashtag nào trong caption.';
+  return 'Viết caption Facebook bằng tiếng Việt tự nhiên cho nội dung học tiếng Nhật. Độ dài ' + length.label + ', khoảng ' + length.min + '–' + length.max + ' từ. Phong cách ' + style.label + '. ' + format + ' Tập trung vào chủ đề/tình huống và câu Nhật có trong dữ liệu; không bịa giải thích, không gọi đây là tiếng Anh hoặc tiếng Trung, không thêm lời kêu gọi theo dõi sáo rỗng. ' + hashtagInstruction + ' Trả đúng JSON {"caption":"...","hashtags":["#..."]}. ' + (repair ? 'Sửa theo yêu cầu: ' + repair + '. ' : '') + 'Dữ liệu bài học: ' + JSON.stringify(lessonData(script));
+}
+
+function fallbackJapaneseCaption(script, length) {
+  const topic = String(script.topic || 'giao tiếp tiếng Nhật').trim();
+  const phrase = (script.dialogues || []).map((line) => line.term || line.vocabularyCards?.[0]?.term).find(Boolean);
+  if (length.id === 'one-sentence') return 'Luyện tiếng Nhật qua chủ đề ' + topic + (phrase ? ', với cụm “' + phrase + '” trong tình huống đời thường.' : ' bằng một tình huống giao tiếp quen thuộc.');
+  if (length.id === 'long') {
+    return 'Cùng luyện tiếng Nhật qua tình huống “' + topic + '”, với cách nói có thể áp dụng trong đời sống hằng ngày.\n\n' + (phrase ? 'Cụm “' + phrase + '” xuất hiện trong bài và được đặt vào đúng ngữ cảnh để bạn dễ nhớ cách dùng.' : 'Các câu trong bài giúp bạn quan sát cách diễn đạt tự nhiên theo ngữ cảnh.') + '\n\n' + 'Hãy nghe từng câu, chú ý cách diễn đạt rồi thử nói lại bằng trải nghiệm của bạn.';
+  }
+  return 'Cùng học tiếng Nhật qua tình huống “' + topic + '” bằng những câu giao tiếp gần gũi.\n\n' + (phrase ? 'Chú ý cụm “' + phrase + '” và thử dùng lại trong một câu của riêng bạn.' : 'Nghe câu mẫu rồi thử nói lại theo tình huống của bạn.');
+}
+
+async function generateJapaneseCaption(script) {
+  const length = selectJapaneseCaptionLength();
+  const style = randomItem(STYLES);
+  const includeHashtags = Math.random() < 0.5;
+  const providers = [];
+  if (chatgptStatus().connected) providers.push(generateWithChatGPT);
+  let caption = '';
+  let suppliedTags = [];
+  let feedback = '';
+  for (let attempt = 0; providers.length && attempt < 3; attempt++) {
+    try {
+      const result = parseResponse(await providers[attempt % providers.length](makeJapaneseCaptionPrompt(script, length, style, includeHashtags, feedback)));
+      const embeddedTags = result.caption.match(/#[\p{L}\p{N}_]+/gu) || [];
+      const candidate = result.caption.replace(/#[\p{L}\p{N}_]+/gu, '').replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+      const count = wordCount(candidate);
+      const sentenceCount = candidate.split(/(?<=[.!?。！？])\s+/u).filter(Boolean).length;
+      const issues = [];
+      if (count < length.min || count > length.max) issues.push('số từ phải trong khoảng ' + length.min + '–' + length.max);
+      if (length.id === 'one-sentence' && sentenceCount !== 1) issues.push('caption phải đúng một câu');
+      if (!includeHashtags && (embeddedTags.length || (result.hashtags || []).length)) issues.push('đã chọn dạng không hashtag, trả mảng hashtags rỗng');
+      if (issues.length) { feedback = issues.join('; '); continue; }
+      caption = candidate;
+      suppliedTags = includeHashtags ? [...(Array.isArray(result.hashtags) ? result.hashtags : []), ...embeddedTags] : [];
+      break;
+    } catch (error) { feedback = error.message; }
+  }
+  if (!caption) caption = fallbackJapaneseCaption(script, length);
+  return { caption, hashtags: japaneseTags(suppliedTags, includeHashtags), length: length.id, style: style.id };
 }
 
 function lessonData(script) {
@@ -280,6 +367,7 @@ async function generateChineseCaption(script) {
 
 export async function generateCaption(script) {
   if (script.contentLanguage === 'zh') return generateChineseCaption(script);
+  if (script.contentLanguage === 'ja' && String(script.presentationStyle || '').startsWith('ja-en-v1-')) return generateJapaneseCaption(script);
   const length = selectLength();
   const style = randomItem(STYLES);
   const providers = [];

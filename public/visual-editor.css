@@ -48,3 +48,29 @@
 .alignment-button:disabled{opacity:.45;cursor:not-allowed}
 .alignment-help{margin:0;color:#78878c;font-size:8px;line-height:1.45;text-align:center}.alignment-readout{margin:0;padding:7px 9px;border-radius:8px;background:#f7f8f5;color:#58696e;font-size:9px;line-height:1.5;text-align:center;overflow-wrap:anywhere}
 @media(max-width:720px){.canvas-frame,.canvas-frame.rulers-hidden{width:100%}.alignment-toolbar{width:100%}.alignment-button{padding:7px 8px}}
+
+/* Japanese-only layout previews; these controls never enter rendered scenes. */
+.japanese-layout-map{width:min(100%,468px);display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:2px 0 12px;padding:11px 13px;border:1px solid #d7cbb5;border-radius:12px;background:#fffdf8;color:#473a32}
+.japanese-layout-map[hidden]{display:none!important}
+.japanese-layout-map>strong,.japanese-layout-map>small{grid-column:1/-1}
+.japanese-layout-map>strong{font-size:10px;color:#843d34}
+.japanese-layout-map>div{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid #eee6da;font-size:9px}
+.japanese-layout-map>div span:last-child{color:#7a6a5e;text-align:right}
+.japanese-layout-map>small{font-size:9px;line-height:1.45;color:#7a6a5e}
+.japanese-layout-map>label{align-self:center;color:#70483d;font-size:10px;font-weight:700}
+.japanese-layout-map>select{width:100%;min-width:0;border:1px solid #d9b9a3;border-radius:9px;padding:8px 10px;background:#fffaf2;color:#713e34;font:600 11px "Be Vietnam Pro",Segoe UI,sans-serif}
+body[data-editor-language="ja"]{background:#f5ede2;color:#392f2b}
+body[data-editor-language="ja"] .topbar{background:#fffaf2;border-color:#eadbca}
+body[data-editor-language="ja"] .wordmark{color:#9c493e}
+body[data-editor-language="ja"] .button.primary{background:#843d34}
+body[data-editor-language="ja"] .button.light{background:#f8eee4;color:#5f4038}
+body[data-editor-language="ja"] .workspace .panel{background:#fffaf3;border-color:#e9dac7}
+body[data-editor-language="ja"] .preview-area{background:#f1e6d9;border-color:#e5d2be}
+body[data-editor-language="ja"] .state-button.active{background:#f7e8e0;border-color:#c98b75;color:#743c33}
+body[data-editor-language="ja"] .layer-item.selected{background:#fbf0e8;border-color:#be7c67}
+body[data-editor-language="ja"] .layer-item input{accent-color:#9c493e}
+body[data-editor-language="ja"] .asset-link{background:#f7e9dc;color:#843d34}
+body[data-editor-language="ja"] .alignment-button.active{background:#f5e6dc;border-color:#c98b75;color:#743c33}
+body[data-editor-language="ja"] .alignment-button:hover{border-color:#c98b75;background:#fff6ed}
+body[data-editor-language="ja"] .progress-track span{background:#9c493e}
+@media(max-width:720px){.japanese-layout-map{grid-template-columns:1fr}.japanese-layout-map>label,.japanese-layout-map>select,.japanese-layout-map>small{grid-column:1}}

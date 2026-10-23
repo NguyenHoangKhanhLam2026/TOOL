@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PATHS, DEFAULTS } from '../config.mjs';
 import { TOPICS } from '../topics.mjs';
-import { ensureBrandHashtag, formatCaption } from '../ai/hashtag-utils.mjs';
+import { ensureBrandHashtag, formatCaption, preserveJapaneseHashtags } from '../ai/hashtag-utils.mjs';
 import { localScheduleSlot, randomNextScheduledTime } from '../scheduler/time.mjs';
 import { formatEnglishShadowingCaption } from '../english-shadowing/caption.mjs';
 import { normalizeEnglishShadowingSettings } from '../english-shadowing/settings.mjs';
@@ -358,7 +358,8 @@ export function facebookPageProfileMatchesLanguage(profileId, contentLanguage) {
 }
 
 export function getFacebookPageForLanguage(contentLanguage = 'en') {
-  const language = ['en', 'ja', 'zh', 'english-shadowing'].includes(String(contentLanguage)) ? String(contentLanguage) : 'en';
+  const requestedLanguage = String(contentLanguage || 'en');
+  const language = ['en', 'ja', 'zh', 'english-shadowing'].includes(requestedLanguage) ? requestedLanguage : 'en';
   const route = db.prepare('SELECT profile_id FROM facebook_page_routes WHERE content_language=?').get(language)?.profile_id;
   if (route) return facebookPageProfileMatchesLanguage(route, language) ? getFacebookPageProfile(route) : null;
   if (language === 'english-shadowing') return null;
@@ -484,12 +485,15 @@ export function getOverview() {
     ORDER BY v.created_at DESC LIMIT 12`).all()
     .map((row) => {
       const contentLanguage = row.content_language || 'en';
+      const storedHashtags = JSON.parse(row.hashtags_json);
+      const japaneseContent = contentLanguage === 'ja';
       const hashtags = contentLanguage === 'english-shadowing'
-        ? JSON.parse(row.hashtags_json)
-        : ensureBrandHashtag(JSON.parse(row.hashtags_json), contentLanguage);
+        ? storedHashtags
+        : japaneseContent ? preserveJapaneseHashtags(storedHashtags)
+          : ensureBrandHashtag(storedHashtags, contentLanguage);
       const captionText = contentLanguage === 'english-shadowing'
         ? formatEnglishShadowingCaption(row.caption, hashtags)
-        : formatCaption(row.caption, hashtags, contentLanguage);
+        : formatCaption(row.caption, hashtags, contentLanguage, { preserveJapaneseTags: japaneseContent });
       return { ...row, backgroundEffectConfig: parseVideoBackgroundEffect(row.background_effect_json), hashtags, captionText };
     });
   const contentHistory = db.prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(length(CAST(topic || category || level || title || hook || dialogues_json || caption || hashtags_json || thumbnail_title || content_hash AS BLOB))),0) AS bytes FROM scripts`).get();
@@ -532,8 +536,11 @@ export function pickTopic(requestedId = null) {
 
 export function insertScript(script, topicId, provider) {
   const contentLanguage = script.contentLanguage || 'en';
-  script.hashtags = ensureBrandHashtag(script.hashtags, contentLanguage);
-  script.caption = formatCaption(script.caption, script.hashtags, contentLanguage);
+  const japaneseContent = contentLanguage === 'ja';
+  script.hashtags = japaneseContent
+    ? preserveJapaneseHashtags(script.hashtags)
+    : ensureBrandHashtag(script.hashtags, contentLanguage);
+  script.caption = formatCaption(script.caption, script.hashtags, contentLanguage, { preserveJapaneseTags: japaneseContent });
   const speechSegments = Array.isArray(script.speechSegments) && script.speechSegments.length
     ? script.speechSegments
     : Array.isArray(script.audioSegments) ? script.audioSegments : [];
@@ -599,11 +606,15 @@ export function getScript(scriptId) {
   if (!row) return null;
   const contentLanguage = row.content_language || 'en';
   const storedHashtags = JSON.parse(row.hashtags_json);
-  const hashtags = contentLanguage === 'english-shadowing' ? storedHashtags : ensureBrandHashtag(storedHashtags, contentLanguage);
+  const dialogues = JSON.parse(row.dialogues_json);
+  const japaneseContent = contentLanguage === 'ja';
+  const hashtags = contentLanguage === 'english-shadowing' ? storedHashtags
+    : japaneseContent ? preserveJapaneseHashtags(storedHashtags)
+      : ensureBrandHashtag(storedHashtags, contentLanguage);
   const captionText = contentLanguage === 'english-shadowing'
     ? formatEnglishShadowingCaption(row.caption, hashtags)
-    : formatCaption(row.caption, hashtags, contentLanguage);
-  return { ...row, dialogues: JSON.parse(row.dialogues_json), speechSegments: JSON.parse(row.speech_segments_json || '[]'), hashtags, captionText, thumbnailTitle: row.thumbnail_title, createdAt: row.created_at, contentHash: row.content_hash, contentLanguage };
+    : formatCaption(row.caption, hashtags, contentLanguage, { preserveJapaneseTags: japaneseContent });
+  return { ...row, dialogues, speechSegments: JSON.parse(row.speech_segments_json || '[]'), hashtags, captionText, thumbnailTitle: row.thumbnail_title, createdAt: row.created_at, contentHash: row.content_hash, contentLanguage };
 }
 
 function parseVideoBackgroundEffect(value) {
@@ -722,11 +733,15 @@ export function listVideos() {
     .map((video) => {
       const contentLanguage = video.content_language || 'en';
       const storedHashtags = JSON.parse(video.hashtags_json);
-      const hashtags = contentLanguage === 'english-shadowing' ? storedHashtags : ensureBrandHashtag(storedHashtags, contentLanguage);
+      const dialogues = JSON.parse(video.dialogues_json);
+      const japaneseContent = contentLanguage === 'ja';
+      const hashtags = contentLanguage === 'english-shadowing' ? storedHashtags
+        : japaneseContent ? preserveJapaneseHashtags(storedHashtags)
+          : ensureBrandHashtag(storedHashtags, contentLanguage);
       const captionText = contentLanguage === 'english-shadowing'
         ? formatEnglishShadowingCaption(video.caption, hashtags)
-        : formatCaption(video.caption, hashtags, contentLanguage);
-      return { ...video, backgroundEffectConfig: parseVideoBackgroundEffect(video.background_effect_json), englishShadowingProfile: parseEnglishShadowingProfile(video.english_shadowing_profile_json), dialogues: JSON.parse(video.dialogues_json), hashtags, captionText };
+        : formatCaption(video.caption, hashtags, contentLanguage, { preserveJapaneseTags: japaneseContent });
+      return { ...video, backgroundEffectConfig: parseVideoBackgroundEffect(video.background_effect_json), englishShadowingProfile: parseEnglishShadowingProfile(video.english_shadowing_profile_json), dialogues, hashtags, captionText };
     });
 }
 
@@ -818,8 +833,8 @@ function scheduleConstraints(videoId, scheduledAt, timeZone, postsPerDay) {
   const video = db.prepare('SELECT id,status,archived_at FROM videos WHERE id=?').get(videoId);
   if (!video) throw new Error('Không tìm thấy video.');
   if (video.archived_at || !['ready', 'scheduled'].includes(video.status)) throw new Error('Video chưa sẵn sàng để lên lịch.');
-  if (db.prepare('SELECT 1 FROM scheduled_posts WHERE video_id=? LIMIT 1').get(videoId)) throw new Error('Video này đã có trong lịch đăng.');
   const contentLanguage = videoContentLanguage(videoId);
+  if (db.prepare('SELECT 1 FROM scheduled_posts WHERE video_id=? LIMIT 1').get(videoId)) throw new Error('Video này đã có trong lịch đăng.');
   const slot = localScheduleSlot(scheduledAt, timeZone);
   const sameDay = occupiedScheduleTimes({ contentLanguage })
     .map((row) => ({ ...localScheduleSlot(row.scheduled_at, timeZone), countsTowardLimit: row.counts_toward_limit !== 0 }))

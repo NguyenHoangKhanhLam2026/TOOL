@@ -21,12 +21,12 @@ const VOCABULARY = Object.freeze(['hello', 'learn', 'speak', 'dream', 'grow', 'A
 const VOCABULARY_BY_LANGUAGE = Object.freeze({
   en: VOCABULARY,
   zh: Object.freeze(['你好', '学习', '表达', '梦想', '成长', '中文', '词语', '坚持']),
-  ja: Object.freeze(['こんにちは', '学ぶ', '会話', '夢', '成長', '日本語', '言葉', '挑戦'])
+  ja: Object.freeze(['こんにちは', '学ぶ', '会話', '夢', '成長', '日本語', '言葉', '挑戦']),
 });
 const VOCABULARY_FONT_FAMILY_BY_LANGUAGE = Object.freeze({
   en: 'Be Vietnam Pro, Segoe UI, sans-serif',
   zh: 'Microsoft YaHei, Noto Sans CJK SC, SimHei, sans-serif',
-  ja: 'Yu Gothic, Meiryo, Noto Sans CJK JP, sans-serif'
+  ja: 'Yu Gothic, Meiryo, Noto Sans CJK JP, sans-serif',
 });
 export const BACKGROUND_EFFECT_LANGUAGES = Object.freeze(['en', 'zh', 'ja']);
 
@@ -114,7 +114,7 @@ function sparklesMarkup({ width, height, time, seed, motionScale, opacityScale, 
 }
 
 function vocabularyMarkup({ width, height, time, seed, motionScale, opacityScale, density, contentLanguage }) {
-  const language = contentLanguage === 'zh' || contentLanguage === 'ja' ? contentLanguage : 'en';
+  const language = ['zh', 'ja'].includes(contentLanguage) ? contentLanguage : 'en';
   const words = VOCABULARY_BY_LANGUAGE[language];
   const fontFamily = VOCABULARY_FONT_FAMILY_BY_LANGUAGE[language];
   return Array.from({ length: density }, (_, index) => {

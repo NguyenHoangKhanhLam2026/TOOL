@@ -36,6 +36,21 @@ export function ensureBrandHashtag(hashtags, contentLanguage = 'en') {
   return [...unique, BRAND_HASHTAG];
 }
 
+export function preserveJapaneseHashtags(hashtags) {
+  const blocked = new Set(['#sinhradenoitienganh', '#conotiengtrung']);
+  const seen = new Set();
+  const tags = [];
+  for (const value of Array.isArray(hashtags) ? hashtags : []) {
+    const tag = String(value || '').trim();
+    const key = tag.toLocaleLowerCase('ja');
+    if (!/^#[\p{L}\p{N}_]+$/u.test(tag) || blocked.has(key) || /english|tienganh|tiengtrung|hoctienganh/iu.test(tag) || seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length === 5) break;
+  }
+  return tags;
+}
+
 function captionSections(value) {
   const paragraphs = String(value || '')
     .replace(/\r\n?/g, '\n')
@@ -53,10 +68,17 @@ function captionSections(value) {
   return paragraphs.join('\n\n');
 }
 
-export function formatCaption(caption, hashtags, contentLanguage = 'en') {
+export function formatCaption(caption, hashtags, contentLanguage = 'en', { preserveJapaneseTags = false } = {}) {
   const body = String(caption || '').replace(/\r\n?/g, '\n').trim();
   const embedded = body.match(HASHTAG_PATTERN) || [];
   const cleanBody = captionSections(body.replace(HASHTAG_PATTERN, ' ').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
-  const tags = ensureBrandHashtag([...(Array.isArray(hashtags) ? hashtags : []), ...embedded], contentLanguage);
+  const rawTags = [...(Array.isArray(hashtags) ? hashtags : []), ...embedded];
+  let tags;
+  if (contentLanguage === 'ja') {
+    tags = preserveJapaneseHashtags(rawTags);
+  } else {
+    tags = ensureBrandHashtag(rawTags, contentLanguage);
+  }
+  if (contentLanguage === 'ja' && preserveJapaneseTags && tags.length === 0) return cleanBody;
   return cleanBody ? `${cleanBody}\n\n${tags.join(' ')}` : tags.join(' ');
 }

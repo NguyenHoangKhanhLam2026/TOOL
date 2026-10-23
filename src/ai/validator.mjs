@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto';
 
+function targetFieldForLanguage(language) {
+  return language === 'ja' ? 'japanese' : language === 'zh' ? 'chinese' : 'english';
+}
+
 export function normalizeText(value) {
   return String(value || '').normalize('NFKC').toLocaleLowerCase('en-US').replace(/[\p{P}\p{S}\s]+/gu, ' ').trim();
 }
 
 export function contentHash(script) {
-  const targetField = script.contentLanguage === 'ja' ? 'japanese' : script.contentLanguage === 'zh' ? 'chinese' : 'english';
+  const targetField = targetFieldForLanguage(script.contentLanguage);
   const dialogueText = (Array.isArray(script.dialogues) ? script.dialogues : []).flatMap((item) => [
     item?.english,
     item?.vietnamese,
@@ -16,8 +20,8 @@ export function contentHash(script) {
     ...(Array.isArray(script.speechSegments) ? script.speechSegments : []),
     ...(Array.isArray(script.audioSegments) ? script.audioSegments : [])
   ].map((item) => item?.text);
-  const englishStyle = script.contentLanguage === 'en' && script.presentationStyle ? [`presentation:${script.presentationStyle}`] : [];
-  const basis = [script.topic, ...(script.contentLanguage && script.contentLanguage !== 'en' ? [script.contentLanguage] : []), ...englishStyle, ...dialogueText, ...speechText].map(normalizeText).join('|');
+  const languageStyle = ['en', 'ja'].includes(script.contentLanguage) && script.presentationStyle ? [`presentation:${script.presentationStyle}`] : [];
+  const basis = [script.topic, ...(script.contentLanguage && script.contentLanguage !== 'en' ? [script.contentLanguage] : []), ...languageStyle, ...dialogueText, ...speechText].map(normalizeText).join('|');
   return createHash('sha256').update(basis).digest('hex');
 }
 
@@ -48,9 +52,10 @@ export function assertDistinctFromRecent(script, recentSentences, threshold = 0.
 }
 
 export function assertDistinctFromHistory(script, history, threshold = 0.82) {
-  const targetField = script.contentLanguage === 'ja' ? 'japanese' : script.contentLanguage === 'zh' ? 'chinese' : 'english';
+  const targetField = targetFieldForLanguage(script.contentLanguage);
   for (const previous of history) {
     if (script.contentLanguage === 'zh' && previous?.contentLanguage !== 'zh') continue;
+    if (script.contentLanguage === 'ja' && previous?.contentLanguage !== 'ja') continue;
     const previousItems = Array.isArray(previous)
       ? previous
       : [...(Array.isArray(previous?.dialogues) ? previous.dialogues : []), ...speechSegments(previous)];
@@ -197,8 +202,108 @@ function validateEnglishPresentationScript(raw, presentationStyle) {
   return script;
 }
 
+const JAPANESE_PRESENTATION_STYLES = ['legacy', 'dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'];
+
+function validateJapanesePresentationScript(raw, presentationStyle) {
+  const script = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (!script || typeof script !== 'object' || Array.isArray(script)) throw new Error('Kịch bản tiếng Nhật không phải đối tượng JSON.');
+  const errors = [];
+  const style = String(presentationStyle || '').replace(/^ja-en-v1-/u, '');
+  if (!JAPANESE_PRESENTATION_STYLES.includes(style)) throw new Error(`Kiểu trình bày tiếng Nhật không hợp lệ: ${presentationStyle}.`);
+  const expectedCount = ['inline-meaning', 'inline-keyphrase'].includes(style) ? 1 : 3;
+  const hasInlineCards = ['inline-meaning', 'inline-keyphrase'].includes(style);
+  const hasScenarioPhrase = style === 'numbered-scenario' || style === 'legacy';
+  script.contentLanguage = 'ja';
+  script.presentationStyle = `ja-en-v1-${style}`;
+  for (const key of ['topic', 'category', 'level', 'title', 'hook', 'caption', 'thumbnailTitle']) {
+    if (typeof script[key] !== 'string' || !script[key].trim()) errors.push(`Thiếu trường ${key} của nội dung tiếng Nhật.`);
+    if (typeof script[key] === 'string') script[key] = script[key].normalize('NFC');
+  }
+  if (!Array.isArray(script.dialogues) || script.dialogues.length !== expectedCount) {
+    errors.push(`Kiểu tiếng Nhật ${style} cần đúng ${expectedCount} câu học.`);
+  }
+  if (!Array.isArray(script.dialogues)) script.dialogues = [];
+  const phraseOccursIn = (phrase, sentence) => Boolean(phrase && sentence && String(sentence).includes(String(phrase)));
+  const normalizeVietnamese = (value, label) => {
+    const text = String(value || '').normalize('NFC').trim();
+    if (/[\u00B4\u02CA\u02CB]/u.test(text)) errors.push(`${label}: dấu tiếng Việt bị tách khỏi chữ; hãy dùng dấu thanh Unicode chuẩn.`);
+    return text;
+  };
+  const addSpeech = (segments, { text, language, layerId, dialogueIndex, id, state, vocabularyIndex, pauseAfterSeconds = 0 }) => {
+    segments.push({
+      segmentId: `ja-en-v1-${style}-${dialogueIndex + 1}-${id}`,
+      turnId: `ja-en-v1-${style}-dialogue-${dialogueIndex + 1}`,
+      language, text, state, pauseAfterSeconds,
+      target: { layerId, dialogueIndex, ...(Number.isInteger(vocabularyIndex) ? { vocabularyIndex } : {}) }
+    });
+  };
+  const speechSegments = [];
+  script.dialogues = script.dialogues.slice(0, expectedCount).map((dialogue, index) => {
+    const prefix = `Câu học tiếng Nhật ${index + 1}`;
+    const vietnamese = normalizeVietnamese(dialogue?.vietnamese, `${prefix}, câu tiếng Việt`);
+    const japanese = String(dialogue?.japanese || '').normalize('NFC').trim();
+    const meaningVi = normalizeVietnamese(dialogue?.meaningVi, `${prefix}, nghĩa tiếng Việt`);
+    const noteVi = normalizeVietnamese(dialogue?.noteVi, `${prefix}, ghi chú tiếng Việt`);
+    const grammarNote = normalizeVietnamese(dialogue?.grammarNote, `${prefix}, ghi chú ngữ pháp`);
+    if (!vietnamese) errors.push(`${prefix}: thiếu câu tiếng Việt.`);
+    if (!japanese) errors.push(`${prefix}: thiếu câu tiếng Nhật.`);
+    const viWords = wordCount(vietnamese);
+    if (viWords < 5 || viWords > 14) errors.push(`${prefix}: câu tiếng Việt cần từ 5 đến 14 từ (hiện có ${viWords}).`);
+    if ([...japanese].length < 3 || [...japanese].length > 80) errors.push(`${prefix}: câu tiếng Nhật cần từ 3 đến 80 ký tự.`);
+    let vocabularyCards = [];
+    if (hasScenarioPhrase) {
+      const term = String(dialogue?.term || '').normalize('NFC').trim();
+      if (!term || !meaningVi) errors.push(`${prefix}: thiếu cụm tiếng Nhật hoặc nghĩa tiếng Việt.`);
+      if (term && !phraseOccursIn(term, japanese)) errors.push(`${prefix}: cụm “${term}” không xuất hiện nguyên văn trong câu tiếng Nhật.`);
+      if (wordCount(meaningVi) < 2 || wordCount(meaningVi) > 20) errors.push(`${prefix}: phần nghĩa tiếng Việt cần từ 2 đến 20 từ.`);
+      vocabularyCards = term && meaningVi ? [{ term, meaningVi: [meaningVi, noteVi, grammarNote].filter(Boolean).join(' ') }] : [];
+    } else if (hasInlineCards) {
+      if (!Array.isArray(dialogue?.vocabularyCards) || dialogue.vocabularyCards.length !== 2) errors.push(`${prefix}: cần đúng 2 thẻ cụm từ.`);
+      vocabularyCards = (Array.isArray(dialogue?.vocabularyCards) ? dialogue.vocabularyCards : []).slice(0, 2).map((card, cardIndex) => {
+        const sourceVi = normalizeVietnamese(card?.sourceVi, `${prefix}, thẻ ${cardIndex + 1}, cụm tiếng Việt`);
+        const term = String(card?.term || '').normalize('NFC').trim();
+        const meaningVi = normalizeVietnamese(card?.meaningVi, `${prefix}, thẻ ${cardIndex + 1}, giải thích`);
+        if (!sourceVi || !term || !meaningVi) errors.push(`${prefix}, thẻ ${cardIndex + 1}: thiếu cụm tiếng Việt, cụm tiếng Nhật hoặc giải thích.`);
+        if (!phraseOccursIn(sourceVi, vietnamese)) errors.push(`${prefix}, thẻ ${cardIndex + 1}: cụm tiếng Việt không nằm trong câu nguồn.`);
+        if (!phraseOccursIn(term, japanese)) errors.push(`${prefix}, thẻ ${cardIndex + 1}: cụm tiếng Nhật không nằm trong câu.`);
+        if (wordCount(meaningVi) < 3 || wordCount(meaningVi) > 24) errors.push(`${prefix}, thẻ ${cardIndex + 1}: giải thích cần từ 3 đến 24 từ.`);
+        return { sourceVi, term, meaningVi };
+      });
+      if (vocabularyCards.length === 2 && normalizeText(vocabularyCards[0].term) === normalizeText(vocabularyCards[1].term)) errors.push(`${prefix}: hai cụm tiếng Nhật không được trùng nhau.`);
+    } else if (style === 'dialogue-cards') {
+      vocabularyCards = [];
+    }
+    const result = {
+      ...dialogue, index: index + 1, vietnamese, japanese, meaningVi, noteVi, grammarNote,
+      presentationStyle: script.presentationStyle,
+      term: vocabularyCards[0]?.term || '',
+      meaningVi: vocabularyCards[0]?.meaningVi || '',
+      ...(hasInlineCards ? { vocabularyCards } : { vocabularyCards: undefined })
+    };
+    addSpeech(speechSegments, { text: vietnamese, language: 'vi', layerId: 'vietnamese-card', dialogueIndex: index, id: 'vi', state: 'vietnamese', pauseAfterSeconds: 0.55 });
+    addSpeech(speechSegments, { text: japanese, language: 'ja', layerId: 'english-card', dialogueIndex: index, id: 'ja', state: 'bilingual' });
+    vocabularyCards.forEach((card, cardIndex) => {
+      addSpeech(speechSegments, { text: card.term, language: 'ja', layerId: 'vocabulary', dialogueIndex: index, id: `term-${cardIndex + 1}`, state: 'vocabulary', vocabularyIndex: cardIndex });
+      addSpeech(speechSegments, { text: card.meaningVi, language: 'vi', layerId: 'vocabulary', dialogueIndex: index, id: `meaning-${cardIndex + 1}`, state: 'vocabulary', vocabularyIndex: cardIndex });
+    });
+    return result;
+  });
+  const japaneseLines = script.dialogues.map((dialogue) => normalizeText(dialogue.japanese)).filter(Boolean);
+  if (new Set(japaneseLines).size !== japaneseLines.length) errors.push('Các câu tiếng Nhật trong cùng video bị lặp.');
+  if (errors.length) throw new Error(errors.join(' '));
+  script.speechSegments = speechSegments;
+  if (!Array.isArray(script.hashtags)) script.hashtags = [];
+  script.createdAt = new Date().toISOString();
+  script.id = crypto.randomUUID();
+  script.contentHash = contentHash(script);
+  return script;
+}
+
 export function validateScript(raw, { contentLanguage = 'en', requireChineseScenes = true, presentationStyle = null } = {}) {
   if (contentLanguage === 'zh') return validateChineseScript(raw, { requireScenes: requireChineseScenes });
+  if (contentLanguage === 'ja' && String(presentationStyle || '').startsWith('ja-en-v1-')) {
+    return validateJapanesePresentationScript(raw, presentationStyle);
+  }
   if (contentLanguage === 'en' && ENGLISH_PRESENTATION_STYLES.includes(presentationStyle)) {
     return validateEnglishPresentationScript(raw, presentationStyle);
   }
@@ -229,7 +334,7 @@ export function validateScript(raw, { contentLanguage = 'en', requireChineseScen
       }
       continue;
     }
-    const targetField = contentLanguage === 'ja' ? 'japanese' : contentLanguage === 'zh' ? 'chinese' : 'english';
+    const targetField = targetFieldForLanguage(contentLanguage);
     for (const key of ['vietnamese', targetField, 'term', 'meaningVi', 'noteVi']) {
       if (typeof d?.[key] !== 'string' || !d[key].trim()) errors.push(`Câu ${i + 1}: thiếu ${key}.`);
     }
@@ -253,7 +358,7 @@ export function validateScript(raw, { contentLanguage = 'en', requireChineseScen
       }
     }
   }
-  const targetField = contentLanguage === 'ja' ? 'japanese' : contentLanguage === 'zh' ? 'chinese' : 'english';
+  const targetField = targetFieldForLanguage(contentLanguage);
   const englishLines = script.dialogues.filter((d) => !Array.isArray(d?.turns)).map((d) => normalizeText(d?.[targetField])).filter(Boolean);
   if (new Set(englishLines).size !== englishLines.length) errors.push(`Các câu ${contentLanguage === 'ja' ? 'tiếng Nhật' : contentLanguage === 'zh' ? 'tiếng Trung' : 'tiếng Anh'} bị lặp.`);
   const terms = script.dialogues.map((d) => normalizeText(d?.term)).filter(Boolean);

@@ -12,6 +12,16 @@ const SCRIPT_PROMPT = fs.readFileSync(new URL('../../packages/ai-engine/prompts/
 const CHINESE_PRESENTATION_STYLES = ['dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'];
 const ENGLISH_PRESENTATION_STYLES = ['dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase'];
 const ENGLISH_ROTATION_STYLES = ['legacy', ...ENGLISH_PRESENTATION_STYLES];
+const JAPANESE_ROTATION_STYLES = ['legacy', ...ENGLISH_PRESENTATION_STYLES];
+
+function savedStyle(row) {
+  try { return JSON.parse(row.dialogues_json || '[]')[0]?.presentationStyle || null; }
+  catch { return null; }
+}
+
+function isJapaneseV1Row(row) {
+  return row.content_language === 'ja' && String(savedStyle(row) || '').startsWith('ja-en-v1-');
+}
 
 function chineseLessonCount(presentationStyle) {
   if (presentationStyle === 'numbered-scenario') return 3;
@@ -20,7 +30,7 @@ function chineseLessonCount(presentationStyle) {
 }
 
 function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopics = [], contentLanguage = 'en', presentationStyle = null } = {}) {
-  const modelChoosesTopic = autoTopic && ['en', 'zh'].includes(contentLanguage);
+  const modelChoosesTopic = autoTopic && ['en', 'zh', 'ja'].includes(contentLanguage);
   const promptTopic = modelChoosesTopic ? 'Chủ đề mới, cụ thể do ChatGPT Plan tự chọn' : topic.title;
   const promptCategory = modelChoosesTopic ? 'Nhóm chủ đề do ChatGPT Plan tự chọn' : topic.category;
   const openTopicInstruction = modelChoosesTopic
@@ -89,6 +99,38 @@ function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopic
       `Avoid Chinese phrases and lesson angles similar to these saved Chinese lessons: ${recent.join(' | ') || 'none'}.` +
       openTopicInstruction;
   }
+  if (contentLanguage === 'ja' && String(presentationStyle || '').startsWith('ja-en-v1-')) {
+    const style = String(presentationStyle).slice('ja-en-v1-'.length);
+    const count = ['inline-meaning', 'inline-keyphrase'].includes(style) ? 1 : 3;
+    const exampleDialogue = (index) => ({
+      index,
+      vietnamese: 'Một câu tiếng Việt tự nhiên, phù hợp tình huống',
+      japanese: 'Một câu tiếng Nhật tự nhiên, đúng tình huống',
+      ...(style === 'numbered-scenario' || style === 'legacy' ? { term: 'Cụm tiếng Nhật nguyên văn trong câu', meaningVi: 'Nghĩa và cách dùng bằng tiếng Việt' } : {}),
+      ...(style === 'legacy' ? { noteVi: 'Ghi chú cách dùng ngắn gọn' } : {}),
+      ...(style === 'inline-meaning' || style === 'inline-keyphrase' ? { vocabularyCards: [
+        { sourceVi: 'Cụm tiếng Việt thứ nhất có trong câu', term: 'Cụm tiếng Nhật thứ nhất có trong câu', meaningVi: 'Giải thích ngắn bằng tiếng Việt' },
+        { sourceVi: 'Cụm tiếng Việt thứ hai có trong câu', term: 'Cụm tiếng Nhật thứ hai có trong câu', meaningVi: 'Giải thích ngắn bằng tiếng Việt' }
+      ] } : {})
+    });
+    const schema = {
+      topic: promptTopic, category: promptCategory, level: settings.level,
+      title: 'Tiêu đề video bằng tiếng Việt', hook: 'Câu mở đầu ngắn bằng tiếng Việt', presentationStyle,
+      dialogues: Array.from({ length: count }, (_, index) => exampleDialogue(index + 1)),
+      caption: 'Caption tiếng Việt sẽ được tạo riêng sau khi kiểm tra kịch bản', hashtags: [], thumbnailTitle: 'Tiêu đề thumbnail bằng tiếng Việt'
+    };
+    const instructions = {
+      legacy: 'Tạo đúng 3 câu Việt–Nhật độc lập nhưng cùng chủ đề. Mỗi câu có một cụm tiếng Nhật chép nguyên văn, nghĩa tiếng Việt và ghi chú ngắn. Mỗi lượt đọc theo thứ tự: câu Việt, câu Nhật, cụm Nhật, rồi nghĩa và ghi chú Việt.',
+      'dialogue-cards': 'Tạo đúng 3 lượt hội thoại liên tiếp trong cùng một tình huống đời thường. Mỗi lượt gồm câu Việt và bản dịch Nhật tự nhiên. Không thêm thẻ cụm từ. Mỗi lượt đọc câu Việt trước rồi câu Nhật.',
+      'numbered-scenario': 'Tạo đúng 3 nhịp liên tiếp trong một tình huống đời thường. Mỗi nhịp gồm câu Việt, câu Nhật, một cụm Nhật chép đúng nguyên văn trong câu và nghĩa tiếng Việt ngắn. Mỗi nhịp đọc theo thứ tự: câu Việt, câu Nhật, cụm Nhật, nghĩa Việt.',
+      'inline-meaning': 'Tạo đúng một cặp câu Việt–Nhật tự nhiên trong tình huống cụ thể, kèm đúng hai thẻ cụm từ. Mỗi thẻ có sourceVi chép nguyên văn từ câu Việt, term chép nguyên văn từ câu Nhật, và meaningVi giải thích cách dùng ngắn. Đọc câu Việt, câu Nhật, rồi lần lượt từng cụm Nhật và giải thích Việt.',
+      'inline-keyphrase': 'Tạo đúng một cặp câu Việt–Nhật tự nhiên trong tình huống cụ thể, kèm đúng hai thẻ cụm từ đáng nhớ. Mỗi thẻ có sourceVi chép nguyên văn từ câu Việt, term chép nguyên văn từ câu Nhật, và meaningVi giải thích cách dùng ngắn. Đọc câu Việt, câu Nhật, rồi lần lượt từng cụm Nhật và giải thích Việt.'
+    }[style];
+    return `Create a practical Vietnamese–Japanese lesson for Vietnamese learners. Return valid JSON only using this schema: ${JSON.stringify(schema)}\n` +
+      `Presentation style: ${style}. ${instructions}\n` +
+      `Choose a fresh, specific everyday Japanese topic from your broad knowledge. Do not use, infer, or compare with English-topic data. Put the actual topic and category in the JSON. Avoid only these previously used Japanese topic angles: ${previousTopics.slice(0, 50).join(' | ') || 'none'}.\n` +
+      `Requirements: write natural spoken Japanese using Japanese script; do not put English or romaji in japanese. Every Vietnamese line must be one natural sentence of 5–14 words with standard Vietnamese spelling, correct diacritics, and no spaces inserted inside a syllable. Keep Vietnamese tone marks attached to their letters using normal Unicode text. Every Japanese line must be 3–80 characters. Keep phrases exactly present in their source sentences. Give accurate concise Vietnamese meanings; do not invent grammar facts. For inline styles return exactly two vocabularyCards; for numbered-scenario and legacy return term and meaningVi; dialogue-cards has no phrase card. Fill every schema field with real content. Caption, title, hook and thumbnailTitle must be Vietnamese. Do not include stage directions, pronunciation notes, follow/subscribe calls, or unsupported claims in speech. Do not reuse recent Japanese lines: ${recent.join(' | ') || 'none'}.`;
+  }
   if (contentLanguage === 'ja') {
     const languageName = contentLanguage === 'ja' ? 'Japanese' : 'Simplified Chinese';
     const field = contentLanguage === 'ja' ? 'japanese' : 'chinese';
@@ -128,16 +170,47 @@ export async function reviewChineseScript(script) {
   return script;
 }
 
+function assertJapaneseReviewResponse(value) {
+  let response = value;
+  if (typeof value === 'string') {
+    const clean = value.trim().replace(/^\x60{3}(?:json)?\s*/i, '').replace(/\s*\x60{3}$/, '');
+    const start = clean.indexOf('{'); const end = clean.lastIndexOf('}');
+    if (start < 0 || end < start) throw new Error('Lượt rà soát tiếng Nhật không trả JSON hợp lệ.');
+    try { response = JSON.parse(clean.slice(start, end + 1)); }
+    catch { throw new Error('Lượt rà soát tiếng Nhật không trả JSON hợp lệ.'); }
+  }
+  if (!response || typeof response !== 'object' || Array.isArray(response)
+    || typeof response.approved !== 'boolean' || !Array.isArray(response.issues)
+    || response.issues.some((issue) => typeof issue !== 'string')
+    || Object.keys(response).some((key) => !['approved', 'issues'].includes(key))) {
+    throw new Error('Lượt rà soát tiếng Nhật trả sai cấu trúc.');
+  }
+  const issues = response.issues.map((issue) => issue.trim()).filter(Boolean);
+  if (!response.approved || issues.length) throw new Error('Rà soát tiếng Nhật chưa đạt: ' + (issues.join(' | ') || 'chưa xác nhận nội dung đạt.'));
+}
+
+function buildJapaneseReviewPrompt(script) {
+  const draft = {
+    topic: script.topic, presentationStyle: script.presentationStyle,
+    dialogues: script.dialogues,
+    speechSegments: (script.speechSegments || []).map(({ language, text, target }) => ({
+      language, text, layerId: target && target.layerId, dialogueIndex: target && target.dialogueIndex
+    }))
+  };
+  return 'Bạn là biên tập viên bản ngữ tiếng Nhật và biên tập viên dịch Việt–Nhật nghiêm khắc. Hãy rà như bản nháp mới: kiểm tra câu tiếng Nhật tự nhiên, đúng ngữ pháp; nghĩa Việt khớp; cụm từ có nguyên văn trong câu; đúng cấu trúc và trình tự đọc theo kiểu trình bày. Mọi thẻ cụm từ phải được đọc tiếng Nhật trước rồi đến giải thích tiếng Việt. Dialogue-cards không được có thẻ cụm từ. Không cho phép lời thừa, hướng dẫn phát âm, kêu gọi theo dõi hoặc nội dung không có căn cứ. Nếu có lỗi, ghi rõ câu/trường. Trả duy nhất JSON {"approved":true,"issues":[]} nếu đạt hoàn toàn, hoặc {"approved":false,"issues":["..."]} nếu có lỗi. Không viết lại bản nháp và không thêm gợi ý tùy chọn.\nBản nháp: ' + JSON.stringify(draft);
+}
+
 export async function createScript(topicId, { contentLanguage = 'en', presentationStyle = null } = {}) {
-  const modelChoosesTopic = !topicId && ['en', 'zh'].includes(contentLanguage);
-  const topic = topicId
-    ? db.prepare('SELECT * FROM topics WHERE id=?').get(topicId)
+  const effectiveTopicId = contentLanguage === 'ja' ? null : topicId;
+  const modelChoosesTopic = !effectiveTopicId && ['en', 'zh', 'ja'].includes(contentLanguage);
+  const topic = effectiveTopicId
+    ? db.prepare('SELECT * FROM topics WHERE id=?').get(effectiveTopicId)
     : modelChoosesTopic
       ? { id: null, title: 'Chủ đề mới do ChatGPT Plan tự chọn', category: 'ChatGPT Plan tự chọn' }
       : pickTopic();
   if (!topic) throw new Error('Không tìm thấy chủ đề đã chọn.');
   const settings = getSettings();
-  if (['en', 'zh'].includes(contentLanguage) && !chatgptStatus().connected) {
+  if (['en', 'zh', 'ja'].includes(contentLanguage) && !chatgptStatus().connected) {
     throw new Error('ChatGPT Plan chưa kết nối. Hãy kết nối lại trong Kết nối & cài đặt để tạo nội dung; không có nội dung cục bộ thay thế.');
   }
   const historyRows = db.prepare('SELECT topic,dialogues_json,speech_segments_json,content_language FROM scripts ORDER BY created_at DESC').all();
@@ -163,13 +236,22 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
   const selectedChineseStyle = contentLanguage === 'zh'
     ? (CHINESE_PRESENTATION_STYLES.includes(presentationStyle) ? presentationStyle : nextChineseStyle)
     : null;
+  const japaneseHistoryRows = historyRows.filter((row) => row.content_language === 'ja');
+  const latestJapaneseV1Row = japaneseHistoryRows.find(isJapaneseV1Row);
+  const latestJapaneseStyle = latestJapaneseV1Row ? savedStyle(latestJapaneseV1Row) : null;
+  const latestJapaneseStyleIndex = JAPANESE_ROTATION_STYLES.indexOf(String(latestJapaneseStyle || '').replace(/^ja-en-v1-/u, ''));
+  const nextJapaneseStyle = latestJapaneseStyleIndex < 0
+    ? JAPANESE_ROTATION_STYLES[0]
+    : JAPANESE_ROTATION_STYLES[(latestJapaneseStyleIndex + 1) % JAPANESE_ROTATION_STYLES.length];
+  const selectedJapaneseStyle = contentLanguage === 'ja' ? 'ja-en-v1-' + nextJapaneseStyle : null;
   const requestedEnglishStyle = ENGLISH_PRESENTATION_STYLES.includes(presentationStyle)
     ? presentationStyle
     : nextEnglishStyle;
   const selectedEnglishStyle = contentLanguage === 'en' && requestedEnglishStyle !== 'legacy'
     ? requestedEnglishStyle
     : null;
-  const history = historyRows.map((row) => ({
+  const relevantHistoryRows = contentLanguage === 'ja' ? japaneseHistoryRows : historyRows;
+  const history = relevantHistoryRows.map((row) => ({
     dialogues: JSON.parse(row.dialogues_json),
     speechSegments: JSON.parse(row.speech_segments_json || '[]'),
     contentLanguage: row.content_language || 'en'
@@ -178,8 +260,14 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
   const recent = contentLanguage === 'en' ? history.flatMap((item) => [
     ...item.dialogues.flatMap((dialogue) => [dialogue.english, ...(dialogue.turns || []).filter((turn) => /^(en|english)(?:-|$)/i.test(turn.language || '')).map((turn) => turn.text)]),
     ...item.speechSegments.filter((segment) => /^(en|english)(?:-|$)/i.test(segment.language || '')).map((segment) => segment.text)
-  ]).filter(Boolean).slice(0, 30) : history.flatMap((item) => item.dialogues.map((dialogue) => dialogue[targetField]).filter(Boolean)).slice(0, 30);
-  const prompt = buildPrompt(topic, recent, settings, { autoTopic: !topicId, previousTopics: historyRows.map((row) => row.topic), contentLanguage, presentationStyle: selectedEnglishStyle || selectedChineseStyle || undefined });
+  ]).filter(Boolean).slice(0, 30) : contentLanguage === 'ja' ? history.flatMap((item) => [
+    ...item.dialogues.flatMap((dialogue) => [dialogue.japanese, dialogue.term, ...(dialogue.vocabularyCards || []).map((card) => card.term)]),
+    ...item.speechSegments.filter((segment) => /^(ja|japanese)(?:-|$)/i.test(segment.language || '')).map((segment) => segment.text)
+  ]).filter(Boolean).slice(0, 50) : history.flatMap((item) => item.dialogues.map((dialogue) => dialogue[targetField]).filter(Boolean)).slice(0, 30);
+  const priorTopics = contentLanguage === 'ja'
+    ? japaneseHistoryRows.map((row) => row.topic)
+    : historyRows.filter((row) => !isJapaneseV1Row(row)).map((row) => row.topic);
+  const prompt = buildPrompt(topic, recent, settings, { autoTopic: modelChoosesTopic, previousTopics: priorTopics, contentLanguage, presentationStyle: selectedEnglishStyle || selectedChineseStyle || selectedJapaneseStyle || undefined });
   const providers = [];
   if (chatgptStatus().connected) providers.push(['chatgpt-plan', (value) => generateWithChatGPT(value)]);
   let script;
@@ -192,7 +280,7 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
     for (let attempt = 0; attempt < 3; attempt++) {
       let candidate;
       try {
-        candidate = validateScript(parseJSON(await call(repairPrompt)), { contentLanguage, presentationStyle: selectedEnglishStyle });
+        candidate = validateScript(parseJSON(await call(repairPrompt)), { contentLanguage, presentationStyle: selectedEnglishStyle || selectedJapaneseStyle });
         if (modelChoosesTopic && [
           'Chủ đề mới, cụ thể do ChatGPT Plan tự chọn',
           'Nhóm chủ đề do ChatGPT Plan tự chọn'
@@ -223,6 +311,10 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
           englishPresentationReviewPassed = true;
           log('INFO', 'EN_PRESENTATION_SCRIPT_QA_PASSED', 'Kịch bản tiếng Anh và trình tự lời đọc đã qua lượt rà soát độc lập.');
         }
+        if (selectedJapaneseStyle) {
+          assertJapaneseReviewResponse(await generateWithChatGPT(buildJapaneseReviewPrompt(candidate)));
+          log('INFO', 'JA_PRESENTATION_SCRIPT_QA_PASSED', 'Kịch bản tiếng Nhật và trình tự lời đọc đã qua lượt rà soát độc lập.');
+        }
         script = candidate;
         provider = name;
         break;
@@ -237,6 +329,8 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
           ? `Return exactly ${selectedEnglishStyle === 'inline-meaning' || selectedEnglishStyle === 'inline-keyphrase' ? 1 : 3} dialogue item(s), with presentationStyle set to ${selectedEnglishStyle}, and follow its schema exactly.`
           : contentLanguage === 'zh'
           ? `Return exactly ${chineseLessonCount(selectedChineseStyle)} items in lessons, with presentationStyle set to ${selectedChineseStyle}.`
+          : selectedJapaneseStyle
+          ? 'Return exactly ' + (['inline-meaning', 'inline-keyphrase'].includes(nextJapaneseStyle) ? 1 : 3) + ' Japanese dialogue item(s), with presentationStyle set to ' + selectedJapaneseStyle + ', and follow that style schema exactly.'
           : 'Return valid JSON with exactly three items in dialogues, indexed 1, 2, 3. Never add a fourth item.';
         repairPrompt = `${prompt}\n\nDo not repeat rejected ${contentLanguage === 'en' ? 'English' : contentLanguage === 'ja' ? 'Japanese' : 'Chinese'} lines: ${rejected}\nFix this validation error: ${error.message}\n${outputShape}`;
       }
@@ -254,7 +348,7 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
       log('WARN', 'CAPTION_GENERATION_FALLBACK', `Caption generation failed: ${error.message}`);
     }
   }
-  const scriptId = insertScript(script, topic.id, provider);
+  const scriptId = insertScript(script, contentLanguage === 'ja' ? null : topic.id, provider);
   return { scriptId, provider, script };
 }
 export function providerStatus() {

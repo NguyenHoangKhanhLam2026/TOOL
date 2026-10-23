@@ -21,9 +21,10 @@ import { synthesizeVieNeuPreview, vieneuModelStatus, VIENEU_VOICES } from './tts
 import { KOKORO_VOICES, kokoroModelStatus, synthesizeKokoroPreview } from './tts/kokoro-tts.mjs';
 import { getLocalTtsManagerStatus, withLocalTtsModel } from './tts/local-model-manager.mjs';
 import { styleBertVits2Status, cosyVoice3Status, STYLE_BERT_VITS2_VOICES, synthesizeMultilingualSegments } from './tts/multilingual-local-tts.mjs';
+import { SUPERTONIC_KOREAN_VOICES, supertonicKoreanStatus, synthesizeSupertonicKoreanPreview } from './tts/supertonic-korean-tts.mjs';
 import { cancelCosyVoiceLibraryInstall, cosyVoiceLibraryStatus, deleteCosyVoiceLibraryProfile, isCosyVoiceLibraryId, renameCosyVoiceLibraryProfile, startCosyVoiceLibraryInstall } from './tts/cosyvoice-voice-library.mjs';
 import { buildHighlightIntervals, mapWordBoundariesToTokens, normalizeLanguage, prepareSpeechText } from '../packages/audio-highlight/highlight-engine.mjs';
-import { BRANDING_DIR, buildSceneSvg, rasterizeScene, readVisualTemplate, saveVisualTemplate, resetChineseVisualTemplate, getDesignPrompts } from '../packages/video-engine/visual-template-engine.mjs';
+import { BRANDING_DIR, buildSceneSvg, rasterizeScene, readVisualTemplate, saveVisualTemplate, resetChineseVisualTemplate, resetJapaneseVisualTemplate, getDesignPrompts } from '../packages/video-engine/visual-template-engine.mjs';
 import { BACKGROUND_EFFECTS, BACKGROUND_EFFECT_LANGUAGES, normalizeBackgroundEffectProfiles } from '../packages/video-engine/background-effects.mjs';
 import { deleteAsset, listAssets, resetBrandAssets, saveUploadedAsset, setDefaultAsset } from '../packages/video-engine/asset-manager.mjs';
 import { normalizeEnglishShadowingSettings } from './english-shadowing/settings.mjs';
@@ -88,12 +89,29 @@ function latestPreviewScript(scriptId = '', contentLanguage = '') {
 
 function visualPreviewScript(contentLanguage = 'en', scriptId = '') {
   const existing = latestPreviewScript(scriptId, contentLanguage);
-  if (existing || contentLanguage !== 'zh') return existing || latestPreviewScript(scriptId) || undefined;
+  if (existing) return existing;
+  if (contentLanguage === 'ja') return {
+    id: 'ja-visual-preview', contentLanguage: 'ja', presentationStyle: 'ja-en-v1-dialogue-cards',
+    title: 'Gọi món ở nhà hàng Nhật', topic: 'Nhà hàng · A2–B1',
+    dialogues: [{
+      index: 1, vietnamese: 'Cho mình một suất cơm cá nướng với ít cơm.',
+      japanese: '焼き魚の定食をお願いします。', romaji: 'Yakizakana no teishoku o onegaishimasu.',
+      term: '焼き魚の定食', meaningVi: 'suất cơm cá nướng',
+      vocabularyCards: [{ sourceVi: 'suất cơm cá nướng', term: '焼き魚の定食', meaningVi: 'suất cơm cá nướng' }]
+    }], speechSegments: []
+  };
+  if (contentLanguage !== 'zh') return latestPreviewScript(scriptId, 'en') || undefined;
   return {
     id: 'zh-visual-preview', contentLanguage: 'zh', title: 'Làm quen bằng tiếng Trung', topic: 'Chào hỏi',
     dialogues: [{ index: 1, vietnamese: 'Xin chào, rất vui được gặp bạn.', chinese: '你好，很高兴认识你。', pinyin: 'Nǐ hǎo, hěn gāoxìng rènshi nǐ.', term: '很高兴', termPinyin: 'hěn gāoxìng', meaningVi: 'rất vui', noteVi: 'Dùng để thể hiện niềm vui khi làm quen hoặc gặp ai đó.' }],
     speechSegments: []
   };
+}
+
+const JAPANESE_VISUAL_PREVIEW_STYLES = new Set(['legacy', 'dialogue-cards', 'numbered-scenario', 'inline-meaning', 'inline-keyphrase']);
+function japaneseVisualPreviewStyle(script, style) {
+  if (script?.contentLanguage !== 'ja' || !JAPANESE_VISUAL_PREVIEW_STYLES.has(style)) return script;
+  return { ...script, presentationStyle: `ja-en-v1-${style}` };
 }
 
 const websocketClients = new Set();
@@ -234,14 +252,16 @@ async function systemStatus() {
   const kokoro = kokoroModelStatus(settings);
   const styleBertVits2 = styleBertVits2Status();
   const cosyVoice3 = cosyVoice3Status(settings);
+  const supertonicKorean = supertonicKoreanStatus();
   const localTts = getLocalTtsManagerStatus();
-  const [python, alignment, vieneuPython, kokoroPython, sbv2Python, cosyVoicePython, ffmpeg, ffprobe] = await Promise.all([
+  const [python, alignment, vieneuPython, kokoroPython, sbv2Python, cosyVoicePython, supertonicPython, ffmpeg, ffprobe] = await Promise.all([
     runCommand(PYTHON_BIN, ['--version'], 6000),
     runCommand(PYTHON_BIN, ['-c', "import importlib.util; print('yes' if importlib.util.find_spec('stable_whisper') else 'no')"], 6000),
     vieneu.installed ? runCommand(vieneu.python, ['--version'], 6000) : null,
     kokoro.installed ? runCommand(kokoro.python, ['--version'], 6000) : null,
     styleBertVits2.installed ? runCommand(styleBertVits2.python, ['-c', "from importlib.metadata import version; from packaging.version import Version; from transformers.utils import is_torch_available; import pkg_resources, pyopenjtalk; torch=Version(version('torch').split('+')[0]); torchaudio=Version(version('torchaudio').split('+')[0]); numpy=Version(version('numpy')); assert torch >= Version('2.6.0'); assert torchaudio == torch; assert numpy < Version('2'); assert is_torch_available()"], 6000) : null,
     cosyVoice3.installed ? runCommand(cosyVoice3.python, ['--version'], 6000) : null,
+    supertonicKorean.installed ? runCommand(supertonicKorean.python, ['-c', "from importlib.metadata import version; import supertonic; assert version('supertonic') == '1.3.1'; print('ready')"], 6000) : null,
     checkTool(FFMPEG_BIN, ['-version']),
     checkTool(FFPROBE_BIN, ['-version'])
   ]);
@@ -267,6 +287,7 @@ async function systemStatus() {
       kokoroTts: Boolean(kokoro.ready && kokoroPython && !kokoroPython.error && kokoroPython.status === 0),
       styleBertVits2Tts: Boolean(styleBertVits2.ready && sbv2Python && !sbv2Python.error && sbv2Python.status === 0),
       cosyVoice3Tts: Boolean(cosyVoice3.ready && cosyVoicePython && !cosyVoicePython.error && cosyVoicePython.status === 0),
+      supertonicKoreanTts: Boolean(supertonicKorean.ready && supertonicPython && !supertonicPython.error && supertonicPython.status === 0),
       localWordAlignment,
       errors: {
         python: python.error?.code || (python.status === 0 ? null : 'EXIT'),
@@ -275,13 +296,15 @@ async function systemStatus() {
         vieneuTts: vieneuPython?.error?.code || (vieneuPython && vieneuPython.status !== 0 ? 'EXIT' : null),
         kokoroTts: kokoroPython?.error?.code || (kokoroPython && kokoroPython.status !== 0 ? 'EXIT' : null),
         styleBertVits2Tts: sbv2Python?.error?.code || (sbv2Python && sbv2Python.status !== 0 ? 'EXIT' : null),
-        cosyVoice3Tts: cosyVoicePython?.error?.code || (cosyVoicePython && cosyVoicePython.status !== 0 ? 'EXIT' : null)
+        cosyVoice3Tts: cosyVoicePython?.error?.code || (cosyVoicePython && cosyVoicePython.status !== 0 ? 'EXIT' : null),
+        supertonicKoreanTts: supertonicPython?.error?.code || (supertonicPython && supertonicPython.status !== 0 ? 'EXIT' : null)
       }
     },
     vieneu,
     kokoro: { ...kokoro, voices: KOKORO_VOICES },
     styleBertVits2,
     cosyVoice3,
+    supertonicKorean: { ...supertonicKorean, ready: Boolean(supertonicKorean.ready && supertonicPython && !supertonicPython.error && supertonicPython.status === 0) },
     localTts,
     aiReady: chatgpt.connected,
     liveFacebookReady: hasVerifiedFacebookPageProfile()
@@ -380,16 +403,23 @@ async function handleApi(req, res, url) {
   if (req.method !== 'GET' && !sameOrigin(req)) return json(res, 403, { error: 'Yêu cầu không cùng nguồn.' });
   const route = `${req.method} ${url.pathname}`;
   if (route === 'GET /api/visual-template') {
-    const contentLanguage = url.searchParams.get('lang') === 'zh' ? 'zh' : 'en';
+    const requestedLanguage = url.searchParams.get('lang');
+    const contentLanguage = ['zh', 'ja'].includes(requestedLanguage) ? requestedLanguage : 'en';
     return json(res, 200, { template: readVisualTemplate({ contentLanguage }), contentLanguage });
   }
   if (route === 'PUT /api/visual-template') {
-    const contentLanguage = url.searchParams.get('lang') === 'zh' ? 'zh' : 'en';
+    const requestedLanguage = url.searchParams.get('lang');
+    const contentLanguage = ['zh', 'ja'].includes(requestedLanguage) ? requestedLanguage : 'en';
     const template = saveVisualTemplate(await readJson(req), { contentLanguage });
     broadcast('template:saved', { templateId: template.templateId, version: template.version, contentLanguage });
     return json(res, 200, { template });
   }
   if (route === 'POST /api/visual-template/reset') {
+    if (url.searchParams.get('lang') === 'ja') {
+      const template = resetJapaneseVisualTemplate();
+      broadcast('template:saved', { templateId: template.templateId, version: template.version, contentLanguage: 'ja', reset: true });
+      return json(res, 200, { template });
+    }
     if (url.searchParams.get('lang') === 'zh') {
       const template = resetChineseVisualTemplate();
       broadcast('template:saved', { templateId: template.templateId, version: template.version, contentLanguage: 'zh', reset: true });
@@ -403,16 +433,18 @@ async function handleApi(req, res, url) {
   if (route === 'GET /api/visual-template/preview.svg' || route === 'GET /api/visual-template/preview.png') {
     const state = url.searchParams.get('state') || 'vietnamese';
     const requestedLanguage = url.searchParams.get('lang');
-    const contentLanguage = requestedLanguage === 'zh' ? 'zh' : 'en';
+    const contentLanguage = ['zh', 'ja'].includes(requestedLanguage) ? requestedLanguage : 'en';
     const effectLanguage = BACKGROUND_EFFECT_LANGUAGES.includes(requestedLanguage) ? requestedLanguage : contentLanguage;
     const index = contentLanguage === 'zh' ? 0 : Math.max(0, Math.min(2, Number(url.searchParams.get('index') || 0)));
-    const script = visualPreviewScript(contentLanguage, url.searchParams.get('scriptId') || '');
+    let script = visualPreviewScript(contentLanguage, url.searchParams.get('scriptId') || '');
+    if (contentLanguage === 'ja') script = japaneseVisualPreviewStyle(script, url.searchParams.get('jaStyle'));
     const template = readVisualTemplate({ contentLanguage });
     const settings = getSettings();
     const backgroundEffectConfig = normalizeBackgroundEffectProfiles(settings.backgroundEffectProfiles, settings)[effectLanguage];
     const { backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity } = backgroundEffectConfig;
-    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ template, script, state, index, embedAssets: false, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state })));
-    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ template, script, state, index, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state }));
+    const highlightSettings = contentLanguage === 'ja' ? { ...settings, highlightEnabled: settings.japaneseHighlightEnabled === true } : undefined;
+    if (route.endsWith('.svg')) return sendBuffer(res, 200, 'image/svg+xml; charset=utf-8', Buffer.from(await buildSceneSvg({ template, script, state, index, embedAssets: false, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state, ...(highlightSettings ? { highlightSettings } : {}) })));
+    return sendBuffer(res, 200, 'image/png', await rasterizeScene({ template, script, state, index, backgroundEffect, backgroundEffectDensity, backgroundEffectSpeed, backgroundEffectOpacity, effectSeed: script?.id || state, ...(highlightSettings ? { highlightSettings } : {}) }));
   }
   if (route === 'POST /api/visual-template/render-test') {
     const body = await readJson(req, 100_000);
@@ -420,17 +452,22 @@ async function handleApi(req, res, url) {
     const imagePath = path.join(PATHS.temporary, 'visual-previews', `${id}.png`);
     const videoPath = path.join(PATHS.temporary, 'visual-previews', `${id}.mp4`);
     const settings = getSettings();
-    const contentLanguage = body.contentLanguage === 'zh' ? 'zh' : 'en';
+    const contentLanguage = ['zh', 'ja'].includes(body.contentLanguage) ? body.contentLanguage : 'en';
     const effectLanguage = BACKGROUND_EFFECT_LANGUAGES.includes(body.contentLanguage) ? body.contentLanguage : contentLanguage;
     const backgroundEffectConfig = normalizeBackgroundEffectProfiles(settings.backgroundEffectProfiles, settings)[effectLanguage];
-    await rasterizeScene({ template: readVisualTemplate({ contentLanguage }), state: body.state || 'bilingual', index: contentLanguage === 'zh' ? 0 : Number(body.index || 0), script: visualPreviewScript(contentLanguage, body.scriptId || ''), outputPath: imagePath, ...backgroundEffectConfig, effectSeed: id });
+    const template = readVisualTemplate({ contentLanguage });
+    const highlightSettings = contentLanguage === 'ja' ? { ...settings, highlightEnabled: settings.japaneseHighlightEnabled === true } : undefined;
+    const previewScript = contentLanguage === 'ja'
+      ? japaneseVisualPreviewStyle(visualPreviewScript(contentLanguage, body.scriptId || ''), body.jaStyle)
+      : visualPreviewScript(contentLanguage, body.scriptId || '');
+    await rasterizeScene({ template, state: body.state || 'bilingual', index: contentLanguage === 'zh' ? 0 : Number(body.index || 0), script: previewScript, outputPath: imagePath, ...backgroundEffectConfig, effectSeed: id, ...(highlightSettings ? { highlightSettings } : {}) });
     const jobId = queueJob('render_preview', { previewId: id, imagePath, videoPath, seconds: 5 });
     log('INFO', 'PREVIEW_RENDER_QUEUED', `Đã xếp render thử scene ${body.state || 'bilingual'}.`, jobId);
     return json(res, 202, { id, jobId, status: 'pending', url: `/api/visual-template/test-video/${id}` });
   }
   if (route === 'POST /api/visual-template/render-full') {
     const body = await readJson(req, 100_000);
-    const contentLanguage = body.contentLanguage === 'zh' ? 'zh' : 'en';
+    const contentLanguage = ['zh', 'ja'].includes(body.contentLanguage) ? body.contentLanguage : 'en';
     const script = body.scriptId ? latestPreviewScript(body.scriptId, contentLanguage) : latestPreviewScript('', contentLanguage);
     if (!script) return json(res, 404, { error: 'Chưa có kịch bản đã lưu để render.' });
     const jobId = queueJob('create_video', { scriptId: script.id, provider: script.provider, forceRender: true });
@@ -582,6 +619,7 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const currentSettings = getSettings();
     const next = { ...currentSettings, ...body };
+    if (next.contentLanguage === 'ko') next.contentLanguage = currentSettings.contentLanguage === 'ko' ? 'en' : currentSettings.contentLanguage;
     const migrateRemovedBackgroundEffect = body.backgroundEffectProfiles === undefined && body.backgroundEffect === undefined
       && !BACKGROUND_EFFECTS.some((effect) => effect.id === String(next.backgroundEffect || ''));
     if (migrateRemovedBackgroundEffect) next.backgroundEffect = 'bubbles';
@@ -598,7 +636,7 @@ async function handleApi(req, res, url) {
       const validation = validateBackgroundEffectProfiles(body.backgroundEffectProfiles);
       if (validation.error) return json(res, 400, { error: validation.error });
       next.backgroundEffectProfiles = validation.profiles;
-      Object.assign(next, validation.profiles.en);
+      Object.assign(next, next.backgroundEffectProfiles.en);
     } else {
       const englishProfile = { ...currentEffectProfiles.en };
       for (const key of effectProfileKeys) {
@@ -619,6 +657,9 @@ async function handleApi(req, res, url) {
     if (next.ttsProvider !== 'vieneu') return json(res, 400, { error: 'English content uses the VieNeu + Kokoro local TTS provider.' });
     if (next.japaneseTtsProvider !== 'vieneu-sbv2') return json(res, 400, { error: 'Japanese content uses Style-Bert-VITS2.' });
     if (next.chineseTtsProvider !== 'vieneu-cosyvoice3') return json(res, 400, { error: 'Chinese content uses CosyVoice 3.0.' });
+    if (next.koreanTtsProvider !== 'supertonic3-ko') return json(res, 400, { error: 'Tiếng Hàn dùng Supertonic 3.' });
+    if (!SUPERTONIC_KOREAN_VOICES.some((voice) => voice.id === String(next.supertonicKoreanVoice))) return json(res, 400, { error: 'Unsupported Supertonic Korean voice.' });
+    if (!Number.isFinite(Number(next.supertonicKoreanSpeed)) || Number(next.supertonicKoreanSpeed) < 0.7 || Number(next.supertonicKoreanSpeed) > 1.4) return json(res, 400, { error: 'Tốc độ Supertonic 3 phải từ 0,7x đến 1,4x.' });
     if (!['en', 'ja', 'zh'].includes(String(next.contentLanguage))) return json(res, 400, { error: 'Content language must be English, Japanese, or Chinese.' });
     const vietnameseVoices = [next.vieneuViVoice, next.vieneuJaViVoice || next.vieneuViVoice, next.vieneuZhViVoice || next.vieneuViVoice];
     if (vietnameseVoices.some((voice) => !VIENEU_VOICES.includes(String(voice))) || !VIENEU_VOICES.includes(String(next.vieneuEnVoice))) return json(res, 400, { error: 'Giọng VieNeu không nằm trong danh sách được hỗ trợ.' });
@@ -664,6 +705,7 @@ async function handleApi(req, res, url) {
     if (!Number.isInteger(Number(next.localTtsMinFreeRamMb)) || Number(next.localTtsMinFreeRamMb) < 512 || Number(next.localTtsMinFreeRamMb) > 65536) return json(res, 400, { error: 'Ngưỡng RAM trống trước khi nạp phải từ 512 đến 65536 MB.' });
     if (!Number.isInteger(Number(next.localTtsMinRemainingRamMb)) || Number(next.localTtsMinRemainingRamMb) < 256 || Number(next.localTtsMinRemainingRamMb) > 32768) return json(res, 400, { error: 'Ngưỡng RAM dự trữ sau khi nạp phải từ 256 đến 32768 MB.' });
     if (typeof next.highlightEnabled !== 'boolean') return json(res, 400, { error: 'Trạng thái highlight không hợp lệ.' });
+    if (typeof next.japaneseHighlightEnabled !== 'boolean') return json(res, 400, { error: 'Trạng thái highlight tiếng Nhật không hợp lệ.' });
     if (!['word', 'phrase'].includes(next.highlightMode)) return json(res, 400, { error: 'Kiểu highlight phải là từng từ hoặc từng cụm từ.' });
     if (!/^#[0-9a-f]{6}$/i.test(String(next.highlightColor))) return json(res, 400, { error: 'Màu highlight phải là mã hex 6 ký tự.' });
     if (!Number.isInteger(Number(next.highlightPadding)) || Number(next.highlightPadding) < 0 || Number(next.highlightPadding) > 24) return json(res, 400, { error: 'Padding highlight phải từ 0 đến 24 px.' });
@@ -1030,28 +1072,30 @@ async function handleApi(req, res, url) {
     const text = String(body.text || '').trim();
     const language = normalizeLanguage(body.language || 'vi');
     const settings = getSettings();
-    if (!['vi', 'en', 'ja', 'zh'].includes(language)) return json(res, 400, { error: 'Unsupported preview language.' });
+    if (!['vi', 'en', 'ja', 'zh', 'ko'].includes(language)) return json(res, 400, { error: 'Unsupported preview language.' });
     if (!text || text.length > 2000) return json(res, 400, { error: 'Câu nghe thử phải có từ 1 đến 2000 ký tự.' });
     if (body.highlightMode !== undefined && !['word', 'phrase'].includes(body.highlightMode)) return json(res, 400, { error: 'Kiểu highlight preview không hợp lệ.' });
-    const ttsProvider = body.ttsProvider || (language === 'ja' ? 'vieneu-sbv2' : language === 'zh' ? 'vieneu-cosyvoice3' : 'vieneu');
-    if (!['vieneu', 'vieneu-sbv2', 'vieneu-cosyvoice3'].includes(ttsProvider)) return json(res, 400, { error: 'Invalid TTS provider.' });
-    const providerLanguage = { vieneu: 'en', 'vieneu-sbv2': 'ja', 'vieneu-cosyvoice3': 'zh' }[ttsProvider];
+    const ttsProvider = body.ttsProvider || (language === 'ja' ? 'vieneu-sbv2' : language === 'zh' ? 'vieneu-cosyvoice3' : language === 'ko' ? 'supertonic3-ko' : 'vieneu');
+    if (!['vieneu', 'vieneu-sbv2', 'vieneu-cosyvoice3', 'supertonic3-ko'].includes(ttsProvider)) return json(res, 400, { error: 'Invalid TTS provider.' });
+    if (ttsProvider === 'supertonic3-ko' && language !== 'ko') return json(res, 400, { error: 'Supertonic 3 chỉ dùng cho giọng tiếng Hàn.' });
+    const providerLanguage = { vieneu: 'en', 'vieneu-sbv2': 'ja', 'vieneu-cosyvoice3': 'zh', 'supertonic3-ko': 'ko' }[ttsProvider];
     const multilingualProvider = ['vieneu-sbv2', 'vieneu-cosyvoice3'].includes(ttsProvider);
     if (ttsProvider === 'vieneu' && !['vi', 'en'].includes(language)) return json(res, 400, { error: 'VieNeu local mode supports Vietnamese and English.' });
     const configuredVoice = ttsProvider === 'vieneu'
       ? (language === 'vi' ? settings.vieneuViVoice : settings.kokoroEnVoice)
-      : ttsProvider === 'vieneu-sbv2' ? settings.styleBertVits2Voice : 'cosyvoice3-reference';
+      : ttsProvider === 'vieneu-sbv2' ? settings.styleBertVits2Voice : ttsProvider === 'supertonic3-ko' ? settings.supertonicKoreanVoice : 'cosyvoice3-reference';
     const voice = String(body.voice || configuredVoice).trim();
     const localVoiceValid = ttsProvider === 'vieneu'
       ? (language === 'vi' ? VIENEU_VOICES.includes(voice) : KOKORO_VOICES.some((item) => item.id === voice))
       : ttsProvider === 'vieneu-sbv2' ? STYLE_BERT_VITS2_VOICES.some((item) => item.id === voice)
-        : voice === 'cosyvoice3-reference';
+        : ttsProvider === 'supertonic3-ko' ? SUPERTONIC_KOREAN_VOICES.some((item) => item.id === voice)
+          : voice === 'cosyvoice3-reference';
     if (!localVoiceValid) return json(res, 400, { error: 'Invalid selected TTS voice.' });
     const configuredSpeed = ttsProvider === 'vieneu'
       ? (language === 'vi' ? settings.vieneuViSpeed : settings.kokoroEnSpeed)
       : ttsProvider === 'vieneu-sbv2' ? settings.styleBertVits2Speed
         : 1;
-    const speed = ttsProvider === 'vieneu-cosyvoice3' ? 1 : Number(body.speed ?? configuredSpeed);
+    const speed = ttsProvider === 'vieneu-cosyvoice3' ? 1 : Number(body.speed ?? (ttsProvider === 'supertonic3-ko' ? settings.supertonicKoreanSpeed : configuredSpeed));
     if (ttsProvider === 'vieneu' && (!Number.isFinite(speed) || speed < (language === 'vi' ? 0.75 : 0.5) || speed > 1.25)) return json(res, 400, { error: 'Tốc độ nghe thử nằm ngoài giới hạn model.' });
     if (multilingualProvider && (!Number.isFinite(speed) || speed < 0.7 || speed > 1.4)) return json(res, 400, { error: 'TTS preview speed must be 0.7x-1.4x.' });
     const id = crypto.randomUUID();
@@ -1099,6 +1143,11 @@ async function handleApi(req, res, url) {
         await withLocalTtsModel(modelName, (lease) => synthesizeMultilingualSegments([{
           segmentId: `preview-${id}`, language, text, speechText, order: 0, rate: speed, outputPath: output
         }], `preview-${id}`, { provider: ttsProvider, settings: selectedSettings, lease }));
+      } else if (ttsProvider === 'supertonic3-ko') {
+        await withLocalTtsModel('Supertonic 3 Korean', (lease) => synthesizeSupertonicKoreanPreview({
+          text: speechText, voice, outputPath: output, settings,
+          onProgress: (progress, detail) => lease.update({ phase: detail?.phase || 'supertonic-preview', progress })
+        }));
       }
       if (!wordTimingsPath) {
         fs.rmSync(`${output}.wordtimings.json`, { force: true });
@@ -1212,7 +1261,8 @@ async function handleApi(req, res, url) {
     if (blockers.length) return json(res, 503, { error: blockers.join(' ') });
     const activeJob = db.prepare("SELECT id FROM jobs WHERE type='create_video' AND status IN ('pending','running') ORDER BY created_at DESC LIMIT 1").get();
     if (activeJob) return json(res, 409, { error: `Đang có video chờ xử lý (${activeJob.id}); chờ job hiện tại xong rồi hãy tạo tiếp.` });
-    const id = queueJob('create_video', { topicId: body.topicId || null, contentLanguage, ttsProvider, ...(presentationStyle ? { presentationStyle } : {}) });
+    const topicId = contentLanguage === 'ja' ? null : body.topicId || null;
+    const id = queueJob('create_video', { topicId, contentLanguage, ttsProvider, ...(presentationStyle ? { presentationStyle } : {}) });
     log('INFO', 'VIDEO_JOB_QUEUED', 'Đã thêm yêu cầu tạo video vào hàng đợi.', id);
     return json(res, 202, { jobId: id, status: 'pending' });
   }

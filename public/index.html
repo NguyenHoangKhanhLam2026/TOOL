@@ -68,7 +68,7 @@
                 <h2>Biến một chủ đề<br />thành <span>video học nhanh.</span></h2>
                 <p>Chọn ngôn ngữ, tạo nội dung học thực tế và chuẩn bị video dọc để đăng lên Facebook.</p>
                 <div class="hero-controls">
-                  <label class="select-wrap" id="content-language-wrap"><span class="sr-only">Chọn ngôn ngữ nội dung</span><select id="content-language"><option value="en">Nội dung: Tiếng Việt + Tiếng Anh</option><option value="ja">Nội dung: Tiếng Việt + Tiếng Nhật</option><option value="zh">Nội dung: Tiếng Việt + Tiếng Trung</option><option value="english-shadowing">EnglishShadowing</option></select><span class="select-chevron">⌄</span></label>
+                  <label class="select-wrap" id="content-language-wrap"><span class="sr-only">Chọn ngôn ngữ nội dung</span><select id="content-language"><option value="en">Nội dung: Tiếng Việt + Tiếng Anh</option><option value="ja">Nội dung: Tiếng Việt + Tiếng Nhật</option><option value="zh">Nội dung: Tiếng Việt + Tiếng Trung</option><option value="ko">Nội dung: Tiếng Việt + Tiếng Hàn</option><option value="english-shadowing">EnglishShadowing</option></select><span class="select-chevron">⌄</span></label>
                   <label class="select-wrap"><span class="sr-only">Chọn chủ đề</span><select id="topic-select"><option value="">AI t&#7921; ch&#7885;n ch&#7911; &#273;&#7873;</option></select><span class="select-chevron">⌄</span></label>
                   <button class="button button-outline" id="add-topic">+ Thêm chủ đề</button>
                   <button class="button button-dark" id="generate-button"><span>✳</span> Tạo video mới <span class="button-arrow">↗</span></button>
@@ -103,7 +103,7 @@
 
           <section class="view" id="view-library">
             <div class="page-title-row"><div><div class="eyebrow">TUS VIDEO CỦA BẠN</div><h1>Thư viện video</h1><p class="lead">Video Facebook đã nhận lịch được tách khỏi danh sách Tất cả; xem lại ở tab Đã lên lịch hoặc mục Lịch đăng.</p></div><button class="button button-dark" data-generate><span>✳</span> Tạo video mới</button></div>
-            <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><label class="content-language-filter">Ngôn ngữ<select id="content-language-filter"><option value="all">Tất cả</option><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option><option value="english-shadowing">EnglishShadowing</option></select></label><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
+            <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><label class="content-language-filter">Ngôn ngữ<select id="content-language-filter"><option value="all">Tất cả</option><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option><option value="ko">Tiếng Hàn</option><option value="english-shadowing">EnglishShadowing</option></select></label><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
             <div class="library-list" id="library-list"></div>
           </section>
 
@@ -134,7 +134,7 @@
                   <div class="tts-provider-combobox" id="tts-provider-combobox">
                     <button class="tts-provider-trigger" id="tts-provider-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="tts-provider-options" aria-labelledby="tts-provider-label tts-provider-value"><span id="tts-provider-value"></span><span class="tts-provider-chevron" aria-hidden="true">⌄</span></button>
                     <div class="tts-provider-menu" id="tts-provider-options" role="listbox" aria-labelledby="tts-provider-label" hidden></div>
-                    <select id="tts-provider" class="tts-provider-native" aria-hidden="true" tabindex="-1"><option value="vieneu">Local AI TTS · VieNeu tiếng Việt + Kokoro tiếng Anh</option><option value="vieneu-sbv2">Local AI TTS · VieNeu tiếng Việt + Style-Bert-VITS2 tiếng Nhật</option><option value="vieneu-cosyvoice3">Local AI TTS · VieNeu tiếng Việt + CosyVoice 3.0 tiếng Trung</option></select>
+                    <select id="tts-provider" class="tts-provider-native" aria-hidden="true" tabindex="-1"><option value="vieneu">Local AI TTS · VieNeu tiếng Việt + Kokoro tiếng Anh</option><option value="vieneu-sbv2">Local AI TTS · VieNeu tiếng Việt + Style-Bert-VITS2 tiếng Nhật</option><option value="vieneu-cosyvoice3">Local AI TTS · VieNeu tiếng Việt + CosyVoice 3.0 tiếng Trung</option><option value="supertonic3-ko">Local AI TTS · VieNeu tiếng Việt + Supertonic 3 tiếng Hàn</option></select>
                   </div>
                   <span class="tts-provider-hint">Menu sẽ giữ mở khi rê chuột; bấm một model để chọn, hoặc bấm ngoài để đóng.</span>
                 </div>
@@ -191,6 +191,13 @@
                   </div>
                   <div class="button-row vieneu-preview-actions"><button class="button button-outline button-small" id="preview-vieneu-vi-cosyvoice" type="button">▶ Nghe thử tiếng Việt</button><button class="button button-outline button-small" id="preview-zh" type="button">▶ Nghe thử tiếng Trung</button></div>
                   <p class="vieneu-note" id="cosyvoice-status" aria-live="polite">CosyVoice 3.0 chạy CPU. Chọn giọng Trung đã lưu trong danh sách.</p>
+                </div>                <div id="supertonic-ko-tts-settings" class="tts-provider-panel vieneu-settings" hidden>
+                  <div class="vieneu-voice-grid">
+                    <label>Tiếng Hàn · Supertonic 3<select id="supertonic-ko-voice"><option value="F1">F1 · Nữ 1</option><option value="F2">F2 · Nữ 2</option><option value="F3">F3 · Nữ 3</option><option value="F4">F4 · Nữ 4</option><option value="F5">F5 · Nữ 5</option><option value="M1">M1 · Nam 1</option><option value="M2">M2 · Nam 2</option><option value="M3">M3 · Nam 3</option><option value="M4">M4 · Nam 4</option><option value="M5">M5 · Nam 5</option></select></label>
+                  </div>
+                  <div class="vieneu-speed-grid"><div class="speed-control vieneu-speed-control"><label for="supertonic-ko-speed">Tốc độ giọng tiếng Hàn <output id="supertonic-ko-speed-label">1x</output></label><input id="supertonic-ko-speed" type="range" min="0.7" max="1.4" step="0.05" value="1" /></div></div>
+                  <div class="button-row vieneu-preview-actions"><button class="button button-outline button-small" id="preview-ko" type="button">▶ Nghe thử tiếng Hàn</button></div>
+                  <p class="vieneu-note" id="supertonic-ko-status" aria-live="polite">Supertonic 3 · 10 giọng tiếng Hàn, chạy cục bộ trên CPU.</p>
                 </div>
                 <div class="tool-checks" id="tool-checks"></div>
               </article>
@@ -209,7 +216,7 @@
 
               <article class="panel settings-panel span-two" id="highlight-settings-panel"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Chọn nội dung để chỉnh Highlight. Cài đặt EnglishShadowing được lưu tách biệt khỏi EN, ZH và JA.</p></div></div></div>
                 <div class="background-effect-controls">
-                  <label>Nội dung<select id="voice-highlight-content-profile"><option value="standard">Tiếng Anh · Tiếng Trung · Tiếng Nhật</option><option value="english-shadowing">EasyEnglishShadowing</option></select></label>
+                  <label>Nội dung<select id="voice-highlight-content-profile"><option value="standard">Tiếng Anh · Tiếng Trung</option><option value="japanese">Tiếng Nhật</option><option value="english-shadowing">EasyEnglishShadowing</option></select></label>
                 </div>
                 <div class="highlight-settings-grid" id="standard-highlight-controls">
                   <label class="switch-row highlight-enable"><input type="checkbox" id="highlight-enabled" checked /><span class="switch"></span><span><strong>Bật highlight đồng bộ</strong><small>Áp dụng tự động cho video mới.</small></span></label>
@@ -222,6 +229,12 @@
                   <label class="highlight-preview-source">Câu nghe thử<textarea id="highlight-preview-source">Xin chào, hôm nay mình cùng luyện nói tiếng Anh nhé.</textarea></label>
                   <div class="highlight-preview-actions"><button class="button button-outline button-small" id="highlight-preview-play" type="button">▶ Nghe thử Highlight</button><span class="muted-copy" id="highlight-preview-status" aria-live="polite">Mẫu thử sẽ dùng giọng đang chọn ở trên.</span></div>
                   <div class="highlight-preview-text" id="highlight-preview-words" aria-label="Văn bản xem trước highlight"></div>
+                </div>
+                <div id="japanese-highlight-controls" style="display:none">
+                  <div class="highlight-settings-grid">
+                    <label class="switch-row highlight-enable"><input type="checkbox" id="japanese-highlight-enabled" /><span class="switch"></span><span><strong>Bật Highlight tiếng Nhật</strong><small>Cài đặt riêng cho video tiếng Nhật.</small></span></label>
+                    <p class="muted-copy">Tắt mặc định. Cài đặt này không đổi Highlight tiếng Anh, tiếng Trung hoặc EnglishShadowing.</p>
+                  </div>
                 </div>
                 <div id="english-shadowing-highlight-controls" style="display:none">
                 <div class="highlight-settings-grid">
