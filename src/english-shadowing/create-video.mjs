@@ -9,6 +9,8 @@ import {
 } from '../database/db.mjs';
 import { buildEnglishShadowingPrompt, parseEnglishShadowingCandidate } from './prompt.mjs';
 import { englishShadowingTtsSettings, normalizeEnglishShadowingSettings } from './settings.mjs';
+import { normalizeEnglishShadowingVisualDesign } from './visual-design.mjs';
+import { getEnglishShadowingVisualDesign } from './visual-design-store.mjs';
 import { renderEnglishShadowingVideo, getEnglishShadowingMediaDuration } from './renderer.mjs';
 import { buildEnglishShadowingSentencePlan, getEnglishShadowingDeliveryProfile, resolveEnglishShadowingDeliveryStyle } from './delivery.mjs';
 import { generateWithChatGPT } from '../ai/chatgpt-plan.mjs';
@@ -157,7 +159,12 @@ export async function createEnglishShadowingVideoJob(job) {
   const requestedProfile = job.payload.englishShadowingSettings || getEnglishShadowingSettings();
   const requestedVoice = String(requestedProfile.voice || 'af_heart');
   if (!validVoices.includes(requestedVoice)) throw new Error('EnglishShadowing: giọng Kokoro đã chọn không hợp lệ. Hãy lưu lại cài đặt giọng.');
-  const profile = normalizeEnglishShadowingSettings(requestedProfile, { validVoices });
+  const requestedVisualDesign = job.payload.englishShadowingVisualDesign ?? requestedProfile.visualDesign
+    ?? (job.payload.englishShadowingSettings ? undefined : getEnglishShadowingVisualDesign());
+  const profile = {
+    ...normalizeEnglishShadowingSettings(requestedProfile, { validVoices }),
+    visualDesign: normalizeEnglishShadowingVisualDesign(requestedVisualDesign)
+  };
   const savedScript = job.payload.scriptId ? getScript(job.payload.scriptId) : null;
   let script = savedScript ? {
     ...savedScript,
@@ -201,12 +208,12 @@ export async function createEnglishShadowingVideoJob(job) {
         speechSegments: sentencePlan
       };
       insertEnglishShadowingScript(script);
-      updateJobPayload(job.id, { scriptId: script.id, englishShadowingSettings: profile });
+      updateJobPayload(job.id, { scriptId: script.id, englishShadowingSettings: profile, englishShadowingVisualDesign: profile.visualDesign });
       log('INFO', 'ENGLISH_SHADOWING_SCRIPT_READY', `Đã tạo kịch bản và caption riêng cho EnglishShadowing: ${script.title}.`, job.id);
     }
     if (!videoId) {
       videoId = insertEnglishShadowingVideo(script.id, profile, 'processing');
-      updateJobPayload(job.id, { videoId, scriptId: script.id, englishShadowingSettings: profile });
+      updateJobPayload(job.id, { videoId, scriptId: script.id, englishShadowingSettings: profile, englishShadowingVisualDesign: profile.visualDesign });
     } else {
       updateVideo(videoId, { status: 'processing', last_error: null });
     }

@@ -16,7 +16,7 @@ import { facebookPageHasSavedToken, verifyFacebookPageTarget } from '../facebook
 import { MockFacebookAdapter } from '../../packages/facebook-engine/mock-adapter.mjs';
 import { chatgptStatus } from '../ai/chatgpt-plan.mjs';
 import { startOfLocalDay } from '../scheduler/time.mjs';
-import { createEnglishShadowingVideoJob } from '../english-shadowing/create-video.mjs';
+import { runEnglishShadowingFontTask } from '../english-shadowing/font-render-process.mjs';
 
 const workerId = `worker-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 const heartbeatPath = path.join(PATHS.logs, 'worker-heartbeat.json');
@@ -333,7 +333,7 @@ async function publishVideo(job) {
 
 async function processJob(job) {
   if (job.type === 'create_video') return createVideoJob(job);
-  if (job.type === 'create_english_shadowing_video') return createEnglishShadowingVideoJob(job);
+  if (job.type === 'create_english_shadowing_video') return runEnglishShadowingFontTask('video-job', job);
   if (job.type === 'render_preview') {
     const { previewId, imagePath, videoPath, seconds } = job.payload;
     const result = await renderStillPreviewVideo(imagePath, videoPath, seconds, {

@@ -7,6 +7,7 @@ import { ensureBrandHashtag, formatCaption, preserveJapaneseHashtags } from '../
 import { localScheduleSlot, randomNextScheduledTime } from '../scheduler/time.mjs';
 import { formatEnglishShadowingCaption } from '../english-shadowing/caption.mjs';
 import { normalizeEnglishShadowingSettings } from '../english-shadowing/settings.mjs';
+import { normalizeEnglishShadowingVisualDesign } from '../english-shadowing/visual-design.mjs';
 import {
   getEnglishShadowingBackgroundTheme,
   getNextEnglishShadowingBackgroundThemeId
@@ -589,8 +590,12 @@ export function insertEnglishShadowingVideo(scriptId, profile = {}, status = 'pr
       ? sequenceState.value
       : getNextEnglishShadowingBackgroundThemeId(null);
     const nextThemeId = getNextEnglishShadowingBackgroundThemeId(themeId);
+    const savedProfile = {
+      ...normalizeEnglishShadowingSettings(profile),
+      visualDesign: normalizeEnglishShadowingVisualDesign(profile.visualDesign)
+    };
     db.prepare('INSERT INTO videos(id,script_id,status,english_shadowing_profile_json,english_shadowing_theme_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)')
-      .run(id, scriptId, status, JSON.stringify(normalizeEnglishShadowingSettings(profile)), themeId, stamp, stamp);
+      .run(id, scriptId, status, JSON.stringify(savedProfile), themeId, stamp, stamp);
     db.prepare(`INSERT INTO english_shadowing_state(key,value,updated_at) VALUES('next_background_theme_id',?,?)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`).run(nextThemeId, stamp);
     db.exec('COMMIT');
@@ -637,8 +642,18 @@ export function findVideoByScriptId(scriptId) {
 
 function parseEnglishShadowingProfile(value) {
   if (!value) return null;
-  try { return normalizeEnglishShadowingSettings(JSON.parse(value)); }
-  catch { return normalizeEnglishShadowingSettings(); }
+  try {
+    const parsed = JSON.parse(value);
+    return {
+      ...normalizeEnglishShadowingSettings(parsed),
+      visualDesign: normalizeEnglishShadowingVisualDesign(parsed.visualDesign)
+    };
+  } catch {
+    return {
+      ...normalizeEnglishShadowingSettings(),
+      visualDesign: normalizeEnglishShadowingVisualDesign()
+    };
+  }
 }
 
 export function updateVideo(videoId, patch) {

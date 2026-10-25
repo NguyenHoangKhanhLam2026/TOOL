@@ -133,7 +133,7 @@ function openShadowingEditor() {
   $('#shadowing-workspace').hidden = false;
   $('#shadowing-editor-button').classList.add('active');
   $('#template-language-label').textContent = activeLanguage === 'ja' ? 'Mẫu luyện nhại · khung dọc 1080 × 1920' : 'EnglishShadowing · preset riêng · 1080 × 1920';
-  $('#shadowing-editor-status').textContent = activeLanguage === 'ja' ? 'Mẫu tự động đang hoạt động. Tùy chỉnh riêng sẽ được bổ sung tại đây.' : 'Preset tự động đang hoạt động. Các tùy chỉnh riêng sẽ được thêm tại đây sau.';
+  $('#shadowing-editor-status').textContent = 'Preset hiện tại vẫn là quy trình mặc định. Dùng phần mở rộng bên dưới để thiết kế Thumbnail và Nội dung.';
 }
 function snapshot() { undoStack.push(clone(template)); if (undoStack.length > 40) undoStack.shift(); $('#undo').disabled = !undoStack.length; }
 function debouncePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 120); }

@@ -28,7 +28,10 @@ import { BRANDING_DIR, buildSceneSvg, rasterizeScene, readVisualTemplate, saveVi
 import { BACKGROUND_EFFECTS, BACKGROUND_EFFECT_LANGUAGES, normalizeBackgroundEffectProfiles } from '../packages/video-engine/background-effects.mjs';
 import { deleteAsset, listAssets, resetBrandAssets, saveUploadedAsset, setDefaultAsset } from '../packages/video-engine/asset-manager.mjs';
 import { normalizeEnglishShadowingSettings } from './english-shadowing/settings.mjs';
-import { buildEnglishShadowingVisualPreviewSvg } from './english-shadowing/renderer.mjs';
+import { ENGLISH_SHADOWING_VISUAL_DESIGN_DEFAULTS, normalizeEnglishShadowingVisualDesign } from './english-shadowing/visual-design.mjs';
+import { getEnglishShadowingVisualDesign, saveEnglishShadowingVisualDesign } from './english-shadowing/visual-design-store.mjs';
+import { buildEnglishShadowingVisualDesignPreviewSvg, buildEnglishShadowingVisualPreviewSvg } from './english-shadowing/renderer.mjs';
+import { runEnglishShadowingFontTask } from './english-shadowing/font-render-process.mjs';
 
 const mimeTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff2': 'font/woff2' };
 
@@ -515,7 +518,45 @@ async function handleApi(req, res, url) {
   if (route === 'GET /api/english-shadowing/settings') return json(res, 200, { settings: getEnglishShadowingSettings(), voices: KOKORO_VOICES });
   if (route === 'GET /api/english-shadowing/visual-preview.svg') {
     res.writeHead(200, { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
-    return res.end(await buildEnglishShadowingVisualPreviewSvg(getEnglishShadowingSettings()));
+    return res.end(await buildEnglishShadowingVisualPreviewSvg(getEnglishShadowingSettings(), undefined, getEnglishShadowingVisualDesign()));
+  }
+  if (route === 'GET /api/english-shadowing/visual-design') {
+    return json(res, 200, { visualDesign: getEnglishShadowingVisualDesign() });
+  }
+  if (route === 'GET /api/english-shadowing/visual-design/defaults') {
+    return json(res, 200, { visualDesign: normalizeEnglishShadowingVisualDesign(ENGLISH_SHADOWING_VISUAL_DESIGN_DEFAULTS) });
+  }
+  if (route === 'POST /api/english-shadowing/visual-design') {
+    const body = await readJson(req, 50_000);
+    if (!body || typeof body !== 'object' || Array.isArray(body)
+      || Object.keys(body).some((key) => !['schemaVersion', 'enabled', 'thumbnail', 'content'].includes(key))) {
+      return json(res, 400, { error: 'Cấu hình thiết kế Shadowing không hợp lệ.' });
+    }
+    return json(res, 200, { saved: true, visualDesign: saveEnglishShadowingVisualDesign(body) });
+  }
+  if (route === 'POST /api/english-shadowing/visual-design/preview.svg') {
+    const body = await readJson(req, 50_000);
+    if (!['thumbnail', 'content'].includes(String(body?.mode || ''))) {
+      return json(res, 400, { error: 'Chọn Thumbnail hoặc Nội dung để xem trước.' });
+    }
+    if (body.render === true) {
+      const png = await runEnglishShadowingFontTask('preview', {
+        mode: body.mode,
+        profile: getEnglishShadowingSettings(),
+        visualDesign: body.visualDesign,
+        sample: body.sample
+      });
+      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      return res.end(png);
+    }
+    const svg = await buildEnglishShadowingVisualDesignPreviewSvg({
+      mode: body.mode,
+      profile: getEnglishShadowingSettings(),
+      visualDesign: body.visualDesign,
+      sample: body.sample
+    });
+    res.writeHead(200, { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+    return res.end(svg);
   }
   if (route === 'GET /api/facebook/pages') {
     const legacy = getFacebookPageProfile('legacy');
@@ -890,7 +931,10 @@ async function handleApi(req, res, url) {
         }
         let savedProfile = {};
         try { savedProfile = JSON.parse(video.english_shadowing_profile_json || '{}'); } catch { savedProfile = {}; }
-        const englishShadowingSettings = normalizeEnglishShadowingSettings({ ...savedProfile, backgroundEffectConfig }, { validVoices: KOKORO_VOICES.map((voice) => voice.id) });
+        const englishShadowingSettings = {
+          ...normalizeEnglishShadowingSettings({ ...savedProfile, backgroundEffectConfig }, { validVoices: KOKORO_VOICES.map((voice) => voice.id) }),
+          visualDesign: normalizeEnglishShadowingVisualDesign(savedProfile.visualDesign)
+        };
         const jobId = queueJob('create_english_shadowing_video', {
           scriptId: video.script_id,
           videoId: video.id,
@@ -1218,7 +1262,10 @@ async function handleApi(req, res, url) {
       if (blockers.length) return json(res, 503, { error: blockers.join(' ') });
       const activeJob = db.prepare("SELECT id FROM jobs WHERE type='create_english_shadowing_video' AND status IN ('pending','running') ORDER BY created_at DESC LIMIT 1").get();
       if (activeJob) return json(res, 409, { error: `EnglishShadowing đang được xử lý (${activeJob.id}); chờ job hiện tại xong rồi hãy tạo tiếp.` });
-      const id = queueJob('create_english_shadowing_video', { englishShadowingSettings: getEnglishShadowingSettings() });
+      const id = queueJob('create_english_shadowing_video', {
+        englishShadowingSettings: getEnglishShadowingSettings(),
+        englishShadowingVisualDesign: getEnglishShadowingVisualDesign()
+      });
       log('INFO', 'ENGLISH_SHADOWING_JOB_QUEUED', 'Đã thêm video EnglishShadowing vào hàng đợi.', id);
       return json(res, 202, { jobId: id, status: 'pending', contentLanguage });
     }

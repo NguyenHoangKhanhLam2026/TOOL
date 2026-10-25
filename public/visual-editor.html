@@ -7,6 +7,7 @@
   <title>Visual Editor · Auto English Reels Studio</title>
   <link rel="stylesheet" href="/visual-editor.css" />
   <link rel="stylesheet" href="/visual-editor-overrides.css" />
+  <link rel="stylesheet" href="/shadowing-visual-tools.css" />
   <style>
     .visual-language-switch select { border: 1px solid #d9e0db; border-radius: 9px; padding: 10px 13px; background: #fff; color: #315f54; font: inherit; cursor: pointer; }
     .visual-language-switch button.active { background: #315f54; color: #fff; font-weight: 700; }
@@ -20,6 +21,7 @@
     @media (max-width: 720px) { .shadowing-workspace { padding: 12px; } .shadowing-editor-card { padding: 18px; } }
   </style>
   <script type="module" src="/visual-editor.js"></script>
+  <script type="module" src="/shadowing-visual-tools.js"></script>
 </head>
 <body>
   <header class="topbar"><a id="editor-back-link" class="wordmark" href="/">← Studio</a><div><strong id="editor-title">Visual Editor</strong><span id="template-language-label">Branded Dialogue V2 · 1080 × 1920</span></div><div class="visual-language-switch" role="group" aria-label="Ngôn ngữ template"><select id="editor-language-select" aria-label="Chọn ngôn ngữ"><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option></select><button type="button" id="shadowing-editor-button">Shadowing</button></div><div class="top-actions"><span id="connection" class="connection">Đang kết nối…</span><button id="undo" class="button light">↶ Hoàn tác</button><button id="reset" class="button light">Đặt lại</button><button id="save" class="button primary">Lưu template</button></div></header>
@@ -72,7 +74,55 @@
       <h1 id="shadowing-title">Preset dựng video EnglishShadowing</h1>
       <p id="shadowing-description">Shadowing dùng preset riêng: nền giấy ấm, tiêu đề navy và burgundy, toàn bộ đoạn tiếng Anh luôn hiển thị, từ đang đọc được tô nổi bật. Đây là khu vực riêng; các layer EN/ZH bên cạnh không được dùng cho video Shadowing.</p>
       <img id="shadowing-preview-image" class="shadowing-editor-preview" src="/api/english-shadowing/visual-preview.svg" alt="Xem trước preset hình ảnh EnglishShadowing" />
-      <p class="shadowing-editor-note" id="shadowing-editor-status" role="status">Preset tự động đang sẵn sàng. Phần chỉnh nền, chữ và tiêu đề riêng sẽ được mở rộng sau.</p>
+      <p class="shadowing-editor-note" id="shadowing-editor-status" role="status">Preset hiện tại vẫn là quy trình mặc định. Mở thiết kế Thumbnail hoặc Nội dung để chỉnh trực tiếp trên ảnh và xem kết quả render.</p>
+      <section class="shadowing-visual-tools" id="shadowing-visual-tools" aria-labelledby="shadowing-visual-tools-heading">
+        <div class="shadowing-visual-tools-heading">
+          <div><h2 id="shadowing-visual-tools-heading">Thiết kế Thumbnail và Nội dung</h2><p>Bố cục và thuộc tính theo trình thiết kế gốc; cấu hình được lưu riêng cho Shadowing.</p></div>
+          <div class="shadowing-visual-heading-actions"><label class="shadowing-visual-enable"><input type="checkbox" id="shadowing-visual-enabled" /> Dùng thiết kế này cho video Shadowing mới</label><button type="button" class="button primary" id="shadowing-visual-save-settings">Lưu thiết lập</button></div>
+        </div>
+        <div class="shadowing-visual-source-modules">
+          <section class="shadowing-visual-source-module" aria-labelledby="shadowing-visual-thumbnail-heading">
+            <div class="shadowing-visual-source-module-preview"><h3 id="shadowing-visual-thumbnail-heading">Thumbnail</h3><div class="shadowing-visual-source-card" id="shadowing-visual-thumbnail-card" aria-label="Thumbnail mẫu"></div></div>
+            <button type="button" class="button light" id="shadowing-visual-open-thumbnail">Thiết kế thumbnail</button>
+            <p class="shadowing-visual-source-caption">Ảnh bìa ở đầu mỗi video. Kéo thả để thiết kế và xem ảnh render thử trước khi áp dụng.</p>
+          </section>
+          <section class="shadowing-visual-source-module" aria-labelledby="shadowing-visual-content-heading">
+            <div class="shadowing-visual-source-module-preview"><h3 id="shadowing-visual-content-heading">Nội dung</h3><div class="shadowing-visual-source-card" id="shadowing-visual-content-card" aria-label="Nội dung mẫu"></div></div>
+            <button type="button" class="button light" id="shadowing-visual-open-content">Thiết kế nội dung</button>
+            <p class="shadowing-visual-source-caption">Thẻ ảnh nội dung trong video. Kéo thả để thiết kế và xem ảnh render thử trước khi áp dụng.</p>
+          </section>
+        </div>
+        <p class="shadowing-visual-source-caption" id="shadowing-visual-source-caption" role="status">Thiết kế được lưu riêng cho Shadowing. Mở từng mục để chỉnh sửa.</p>
+        <div class="shadowing-visual-dialog" id="shadowing-visual-dialog" hidden>
+          <section class="shadowing-visual-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="shadowing-visual-dialog-title">
+            <header class="shadowing-visual-dialog-head"><div><h2 id="shadowing-visual-dialog-title">Thiết kế thumbnail</h2><p id="shadowing-visual-dialog-help">Kéo tên Page và vùng headline trên ảnh. Bấm “Render thử” để xem ảnh do server vẽ.</p></div><button type="button" class="shadowing-visual-dialog-close" id="shadowing-visual-close" aria-label="Đóng">×</button></header>
+            <div class="shadowing-visual-editor-grid">
+              <section class="shadowing-visual-preview-panel">
+                <div class="shadowing-visual-render-tabs" role="tablist" aria-label="Chế độ xem">
+                  <button type="button" class="active" id="shadowing-visual-tab-design" role="tab" aria-selected="true">Thiết kế</button>
+                  <button type="button" id="shadowing-visual-tab-render" role="tab" aria-selected="false">Kết quả render</button>
+                </div>
+                <div class="shadowing-visual-canvas" id="shadowing-visual-canvas" aria-label="Bản xem trước thiết kế Shadowing"></div>
+                <p id="shadowing-visual-fit-note" class="shadowing-visual-fit-note" role="status"></p>
+              </section>
+              <section class="shadowing-visual-properties">
+                <div id="shadowing-visual-samples" class="shadowing-visual-samples"></div>
+                <h3 id="shadowing-visual-controls-heading">Thiết kế thumbnail</h3>
+                <div id="shadowing-visual-controls" class="shadowing-visual-controls"></div>
+                <div class="shadowing-visual-actions">
+                  <button type="button" class="button light" id="shadowing-visual-default">Về mặc định</button>
+                  <button type="button" class="button light" id="shadowing-visual-render">Render thử</button>
+                  <span class="shadowing-visual-actions-spacer"></span>
+                  <button type="button" class="button light" id="shadowing-visual-cancel">Huỷ</button>
+                  <button type="button" class="button primary" id="shadowing-visual-save">Dùng thiết kế này</button>
+                </div>
+                <p id="shadowing-visual-status" class="shadowing-visual-status" role="status">Đang tải thiết kế…</p>
+              </section>
+            </div>
+          </section>
+        </div>
+        <p class="shadowing-visual-footnote">Ảnh mẫu chỉ dùng trong cửa sổ thiết kế. “Render thử” xem ảnh do bộ dựng Shadowing tạo; chỉnh sửa chỉ áp dụng sau khi bấm “Dùng thiết kế này”. Video đang có không bị thay đổi.</p>
+      </section>
     </section>
   </main>
 </body>
