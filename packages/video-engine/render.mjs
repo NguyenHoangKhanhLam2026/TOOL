@@ -118,12 +118,33 @@ export function sequentialTransitionOpacities(frameIndex, frameCount) {
   };
 }
 
-export async function createSequentialTransitionFrames(previousPath, nextPath, basePath, duration, outputDir, prefix) {
+function softHandoffTransitionOpacities(frameIndex, frameCount) {
+  const count = Math.max(1, Math.floor(Number(frameCount) || 1));
+  const index = Math.max(0, Math.min(count - 1, Math.floor(Number(frameIndex) || 0)));
+  const opacities = sequentialTransitionOpacities(index, count);
+  if (opacities.previous > 0 || opacities.next > 0) return opacities;
+
+  const fadeOutFrames = Math.ceil(count / 2);
+  const fadeInFrames = count - fadeOutFrames;
+  const fadeOutStep = fadeOutFrames > 1 ? 1 / (fadeOutFrames - 1) : 0;
+  const fadeInStep = fadeInFrames > 1 ? 1 / (fadeInFrames - 1) : 1;
+  if (index === fadeOutFrames - 1) {
+    return { previous: fadeOutStep, next: fadeInStep * 0.3 };
+  }
+  if (index === fadeOutFrames) {
+    return { previous: fadeOutStep * 0.4, next: fadeInStep };
+  }
+  return opacities;
+}
+
+export async function createSequentialTransitionFrames(previousPath, nextPath, basePath, duration, outputDir, prefix, { softHandoff = false } = {}) {
   const frameCount = Math.max(1, Math.round(duration * OUTPUT_FRAME_RATE));
   const frames = [];
   for (let frame = 0; frame < frameCount; frame += 1) {
     const file = path.join(outputDir, `${prefix}-${String(frame + 1).padStart(2, '0')}.png`);
-    const opacities = sequentialTransitionOpacities(frame, frameCount);
+    const opacities = softHandoff
+      ? softHandoffTransitionOpacities(frame, frameCount)
+      : sequentialTransitionOpacities(frame, frameCount);
     const overlays = [];
     if (opacities.previous > 0) overlays.push({ input: previousPath, blend: 'over', opacity: opacities.previous });
     if (opacities.next > 0) overlays.push({ input: nextPath, blend: 'over', opacity: opacities.next });
@@ -258,6 +279,9 @@ export async function renderVideo(script, videoId, audioFiles, {
     : null;
   const japanesePresentationStyle = script.contentLanguage === 'ja'
     && String(requestedEnglishPresentationStyle || '').startsWith('ja-en-v1-');
+  // Type 02 changes card positions between turns; crossfading the full scenes stacks both cards.
+  const japaneseSoftPastelTransition = script.contentLanguage === 'ja'
+    && String(requestedEnglishPresentationStyle || '') === 'ja-en-v1-dialogue-cards';
   settings.backgroundEffect = normalizeBackgroundEffect(settings.backgroundEffect);
   settings.backgroundEffectDensity = normalizeBackgroundEffectDensity(settings.backgroundEffectDensity);
   settings.backgroundEffectSpeed = normalizeBackgroundEffectSpeed(settings.backgroundEffectSpeed);
@@ -273,12 +297,14 @@ export async function renderVideo(script, videoId, audioFiles, {
       ? (script.speechSegments || []).find((segment) => String(segment.segmentId || segment.id || '') === String(item.segmentId || item.id || ''))
       : null;
     const requestedPause = Number(item.pauseAfterSeconds ?? source?.pauseAfterSeconds);
+    const resolvedTarget = resolveSpeechTarget(template, item);
     const isJapaneseLead = script.contentLanguage === 'ja' && item.target?.layerId === 'vietnamese-card';
     const dialogueIndex = Number(item.target?.dialogueIndex ?? source?.target?.dialogueIndex);
+    const speechLayerId = item.target?.layerId ?? source?.target?.layerId ?? resolvedTarget.layerId;
     const isJapaneseSentenceWithPhrase = script.contentLanguage === 'ja'
       && japanesePresentationStyle
       && item.language === 'ja'
-      && item.target?.layerId === 'english-card'
+      && speechLayerId === 'english-card'
       && Number.isInteger(dialogueIndex)
       && (script.speechSegments || []).some((segment) => Number(segment.target?.dialogueIndex) === dialogueIndex
         && segment.target?.layerId === 'vocabulary');
@@ -291,7 +317,7 @@ export async function renderVideo(script, videoId, audioFiles, {
       : supportsSpeechPauses && Number.isFinite(requestedPause)
         ? isFinalChineseSpeech ? 0 : Math.max(0, Math.min(2, requestedPause))
         : 0;
-    durations.push({ ...item, target: resolveSpeechTarget(template, item), duration, pauseAfterSeconds });
+    durations.push({ ...item, target: resolvedTarget, duration, pauseAfterSeconds });
   }
 
   const ctaItems = durations.filter((item) => item.state === 'cta' || item.target?.layerId === 'cta');
@@ -563,7 +589,7 @@ export async function renderVideo(script, videoId, audioFiles, {
   if (settings.backgroundEffect !== 'none') {
     backgroundBaseFile = path.join(layerDir, 'background-base.png');
     await rasterizeScene({ template, script, state: 'intro', index: 0, outputPath: backgroundBaseFile, includeLayers: ['background'] });
-  } else if (script.contentLanguage === 'en' && transitionFrames > 0 && groups.length > 1) {
+  } else if ((script.contentLanguage === 'en' || japaneseSoftPastelTransition) && transitionFrames > 0 && groups.length > 1) {
     transitionBaseFile = path.join(layerDir, 'transition-base.png');
     await rasterizeScene({ template, script, state: 'intro', index: 0, outputPath: transitionBaseFile, includeLayers: persistentLayers });
   }
@@ -677,9 +703,11 @@ export async function renderVideo(script, videoId, audioFiles, {
         const effectSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${template.canvas.width}" height="${template.canvas.height}" viewBox="0 0 ${template.canvas.width} ${template.canvas.height}">${effectMarkup}</svg>`);
         const overlays = [{ input: effectSvg, blend: 'over' }];
         if (item.transition && previous?.file && next?.file) {
-          if (script.contentLanguage === 'en') {
+          if (script.contentLanguage === 'en' || japaneseSoftPastelTransition) {
             const frameCount = Math.max(1, endOutputFrame - firstOutputFrame);
-            const opacities = sequentialTransitionOpacities(frameIndex - firstOutputFrame, frameCount);
+            const opacities = script.contentLanguage === 'en'
+              ? softHandoffTransitionOpacities(frameIndex - firstOutputFrame, frameCount)
+              : sequentialTransitionOpacities(frameIndex - firstOutputFrame, frameCount);
             if (opacities.previous > 0) overlays.push({ input: previous.file, blend: 'over', opacity: opacities.previous });
             if (opacities.next > 0) overlays.push({ input: next.file, blend: 'over', opacity: opacities.next });
           } else {
@@ -727,8 +755,10 @@ export async function renderVideo(script, videoId, audioFiles, {
       const next = imageEntries.slice(index + 1).find((entry) => entry.file);
       if (previous?.file && next?.file) {
         const prefix = `transition-${String(index + 1).padStart(4, '0')}`;
-        if (script.contentLanguage === 'en' && transitionBaseFile) {
-          renderedImageEntries.push(...await createSequentialTransitionFrames(previous.file, next.file, transitionBaseFile, item.duration, layerDir, prefix));
+        if ((script.contentLanguage === 'en' || japaneseSoftPastelTransition) && transitionBaseFile) {
+          renderedImageEntries.push(...await createSequentialTransitionFrames(previous.file, next.file, transitionBaseFile, item.duration, layerDir, prefix, {
+            softHandoff: script.contentLanguage === 'en'
+          }));
         } else {
           renderedImageEntries.push(...await createCrossfadeFrames(previous.file, next.file, item.duration, layerDir, prefix));
         }

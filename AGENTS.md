@@ -4,6 +4,24 @@
 
 Luồng tạo, lưu, xử lý, render và đăng nội dung tiếng Anh (`en`) và tiếng Trung (`zh`) hiện tại được khóa. Đây là quy tắc bắt buộc cho mọi công việc tiếp theo trong repository, trừ khi người dùng nói rõ cho phép mở khóa phạm vi cụ thể.
 
+### Khóa tuyệt đối nội dung Việt–Nhật đã hoàn thiện
+
+Nội dung Việt–Nhật (câu tiếng Việt nguồn và câu tiếng Nhật đích) đã được người dùng xác nhận hoàn thiện 100% và khóa. Giữ nguyên nội dung và mọi thành phần xử lý hoặc đầu ra gắn với nội dung này.
+
+- Giữ nguyên kịch bản, dữ liệu, thứ tự, bản dịch, cụm từ, lời giải thích, caption/hashtag, giọng đọc, audio, căn chỉnh/tô sáng, thời lượng, bố cục, template, chuyển cảnh, cấu hình, pipeline và video Việt–Nhật đã hoàn thiện.
+- Không sửa, tái tạo, ghi đè, migration hoặc render lại nội dung/video Việt–Nhật đã khóa; không để cập nhật chung làm thay đổi gián tiếp đầu ra của luồng này.
+- Mọi nội dung/ngôn ngữ mới phải được rẽ nhánh bằng ID/phiên bản, prompt/schema/validator, cấu hình, khóa lưu trữ và thành phần render riêng. Không dùng cấu hình Việt–Nhật đã khóa làm fallback hoặc kế thừa rồi sửa; không sửa mã dùng chung nếu có thể ảnh hưởng luồng Việt–Nhật.
+- Trước thay đổi không thể cô lập khỏi luồng Việt–Nhật, dừng lại, nêu rõ file/thành phần, nội dung/video bị ảnh hưởng, thay đổi và rủi ro; chờ người dùng mở khóa chính xác phạm vi đó.
+
+### Khóa tuyệt đối nội dung Việt–Anh đã hoàn thiện
+
+Luồng Việt–Anh (`contentLanguage: en`, gồm câu tiếng Việt nguồn và câu tiếng Anh đích) đã được người dùng chấp nhận và khóa 100%. Phạm vi này bao gồm cả năm kiểu: `legacy`, `dialogue-cards`, `numbered-scenario`, `inline-meaning` và `inline-keyphrase`.
+
+- Giữ nguyên toàn bộ kịch bản, dữ liệu, thứ tự, bản dịch, cụm từ, lời giải thích, caption/hashtag, giọng đọc, audio, căn chỉnh/tô sáng, thời lượng, bố cục, template, chuyển cảnh, cấu hình, pipeline và video Việt–Anh đã hoàn thiện.
+- Không sửa, tái tạo, ghi đè, migration hoặc render lại nội dung/video Việt–Anh đã khóa; không để cập nhật chung làm thay đổi gián tiếp đầu ra của luồng này.
+- Mọi nội dung/ngôn ngữ mới có liên quan phải được rẽ nhánh bằng ID/phiên bản, prompt/schema/validator, cấu hình, khóa lưu trữ và thành phần render riêng. Không dùng `en` làm fallback, không kế thừa rồi sửa cấu hình EN, và không sửa mã dùng chung nếu có thể ảnh hưởng luồng Việt–Anh.
+- Trước thay đổi không thể cô lập khỏi luồng Việt–Anh, dừng lại, nêu rõ file/thành phần, nội dung/video bị ảnh hưởng, thay đổi và rủi ro; chờ người dùng mở khóa chính xác phạm vi đó.
+
 ## Phạm vi được khóa
 
 Giữ nguyên hành vi và đầu ra hiện có của cả tiếng Anh và tiếng Trung, bao gồm:

@@ -64,6 +64,7 @@ function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopic
     }[presentationStyle];
     return `Create a polished beginner-friendly Vietnamese–English lesson video. Return valid JSON only, matching this schema: ${JSON.stringify(schema)}\n` +
       `Presentation style: ${presentationStyle}. ${instructions}\n` +
+      `The Vietnamese sentence in dialogue index 1 must contain 7–9 space-separated Vietnamese words, with punctuation attached to its word. All later Vietnamese lines keep the existing 5–14-word range.\n` +
       `Requirements: exactly ${dialogueCount} dialogue item(s), with sequential index values. Every Vietnamese line must be one clear, natural sentence of 5–14 words. Every English line must be one faithful, conversational sentence of 5–18 words; use correct articles, tense, prepositions, and idiom, without literal translation. For each numbered-scenario term and every vocabularyCards[].term, verify that the exact phrase appears as a whole phrase in its English sentence. For every inline vocabulary card, sourceVi must occur exactly in its Vietnamese sentence and term must occur exactly in its English sentence. Explanations must match the phrase and context, never invent a grammar rule; inline explanations should teach one useful point in a complete, concise sentence. Keep the voice script limited to lesson lines and phrase explanations; do not put stage directions, pronunciation notes, headings, or calls to follow/subscribe in speech. Use short punctuation that supports natural TTS pauses. Do not repeat previous English/Vietnamese lesson lines or phrase choices: ${recent.join(' | ') || 'none'}.\n` +
       `Write title, hook, caption, explanations, and thumbnail text in Vietnamese. Do not add a follow or subscribe call to action inside generated lesson content. Avoid these previously used topic angles: ${previousTopics.slice(0, 50).join(' | ') || 'none'}.` +
       openTopicInstruction;
@@ -129,7 +130,7 @@ function buildPrompt(topic, recent, settings, { autoTopic = false, previousTopic
     return `Create a practical Vietnamese–Japanese lesson for Vietnamese learners. Return valid JSON only using this schema: ${JSON.stringify(schema)}\n` +
       `Presentation style: ${style}. ${instructions}\n` +
       `Choose a fresh, specific everyday Japanese topic from your broad knowledge. Do not use, infer, or compare with English-topic data. Put the actual topic and category in the JSON. Avoid only these previously used Japanese topic angles: ${previousTopics.slice(0, 50).join(' | ') || 'none'}.\n` +
-      `Requirements: write natural spoken Japanese using Japanese script; do not put English or romaji in japanese. Every Vietnamese line must be one natural sentence of 5–14 words with standard Vietnamese spelling, correct diacritics, and no spaces inserted inside a syllable. Keep Vietnamese tone marks attached to their letters using normal Unicode text. Every Japanese line must be 3–80 characters. Keep phrases exactly present in their source sentences. Give accurate concise Vietnamese meanings; do not invent grammar facts. For inline styles return exactly two vocabularyCards; for numbered-scenario and legacy return term and meaningVi; dialogue-cards has no phrase card. Fill every schema field with real content. Caption, title, hook and thumbnailTitle must be Vietnamese. Do not include stage directions, pronunciation notes, follow/subscribe calls, or unsupported claims in speech. Do not reuse recent Japanese lines: ${recent.join(' | ') || 'none'}.`;
+      `Requirements: write natural spoken Japanese using Japanese script; do not put English or romaji in japanese. Every Vietnamese dialogue line must be one natural sentence of 7–9 space-separated words, with punctuation attached to its word, standard Vietnamese spelling, and correct diacritics. Keep tone marks attached to their letters using normal Unicode text; do not insert spaces inside a syllable. Every Japanese line must be 3–80 characters. Keep phrases exactly present in their source sentences. Give accurate concise Vietnamese meanings; do not invent grammar facts. For inline styles return exactly two vocabularyCards; for numbered-scenario and legacy return term and meaningVi; dialogue-cards has no phrase card. Fill every schema field with real content. Caption, title, hook and thumbnailTitle must be Vietnamese. Do not include stage directions, pronunciation notes, follow/subscribe calls, or unsupported claims in speech. Do not reuse recent Japanese lines: ${recent.join(' | ') || 'none'}.`;
   }
   if (contentLanguage === 'ja') {
     const languageName = contentLanguage === 'ja' ? 'Japanese' : 'Simplified Chinese';
@@ -268,6 +269,10 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
     ? japaneseHistoryRows.map((row) => row.topic)
     : historyRows.filter((row) => !isJapaneseV1Row(row)).map((row) => row.topic);
   const prompt = buildPrompt(topic, recent, settings, { autoTopic: modelChoosesTopic, previousTopics: priorTopics, contentLanguage, presentationStyle: selectedEnglishStyle || selectedChineseStyle || selectedJapaneseStyle || undefined });
+  const isEnglishLegacyStyle = contentLanguage === 'en' && !selectedEnglishStyle;
+  const generationPrompt = isEnglishLegacyStyle
+    ? `${prompt}\n\nLegacy Vietnamese–English style rule: the Vietnamese sentence in dialogue item 1 must contain 7–9 space-separated words, with punctuation attached to its word. Keep Vietnamese sentences in dialogue items 2 and 3 within the existing 7–10-word range.`
+    : prompt;
   const providers = [];
   if (chatgptStatus().connected) providers.push(['chatgpt-plan', (value) => generateWithChatGPT(value)]);
   let script;
@@ -276,11 +281,12 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
   let chineseCaptionError = null;
   const errors = [];
   for (const [name, call] of providers) {
-    let repairPrompt = prompt;
+    let repairPrompt = generationPrompt;
     for (let attempt = 0; attempt < 3; attempt++) {
       let candidate;
       try {
         candidate = validateScript(parseJSON(await call(repairPrompt)), { contentLanguage, presentationStyle: selectedEnglishStyle || selectedJapaneseStyle });
+        if (isEnglishLegacyStyle && candidate.dialogues?.[0]) candidate.dialogues[0].firstVietnameseCardLayout = 'compact-v1';
         if (modelChoosesTopic && [
           'Chủ đề mới, cụ thể do ChatGPT Plan tự chọn',
           'Nhóm chủ đề do ChatGPT Plan tự chọn'
@@ -332,7 +338,7 @@ export async function createScript(topicId, { contentLanguage = 'en', presentati
           : selectedJapaneseStyle
           ? 'Return exactly ' + (['inline-meaning', 'inline-keyphrase'].includes(nextJapaneseStyle) ? 1 : 3) + ' Japanese dialogue item(s), with presentationStyle set to ' + selectedJapaneseStyle + ', and follow that style schema exactly.'
           : 'Return valid JSON with exactly three items in dialogues, indexed 1, 2, 3. Never add a fourth item.';
-        repairPrompt = `${prompt}\n\nDo not repeat rejected ${contentLanguage === 'en' ? 'English' : contentLanguage === 'ja' ? 'Japanese' : 'Chinese'} lines: ${rejected}\nFix this validation error: ${error.message}\n${outputShape}`;
+        repairPrompt = `${generationPrompt}\n\nDo not repeat rejected ${contentLanguage === 'en' ? 'English' : contentLanguage === 'ja' ? 'Japanese' : 'Chinese'} lines: ${rejected}\nFix this validation error: ${error.message}\n${outputShape}`;
       }
     }
     if (script) break;

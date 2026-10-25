@@ -272,6 +272,7 @@ function japanesePhraseColors(script) {
 }
 
 function japaneseTextRightReserve(design, role) {
+  if (role === 'vietnamese') return 0;
   if (design === 'premium') return 0;
   if (role === 'vocabulary') return design === 'pastel' ? 82 : design === 'accent-border' ? 104 : 72;
   return {
@@ -670,6 +671,27 @@ function layoutWordLines(value, widthPx, fontSize, segmentId, language = 'und') 
   return { segmentId, lines: lines.map(({ fragments }) => ({ fragments })) };
 }
 
+function fitJapaneseVietnameseCardText(value, layer, segmentId) {
+  const preferredFontSize = Number(layer.fontSize || 52);
+  const minFontSize = Math.max(14, Math.floor(preferredFontSize * 0.36));
+  const padding = Number(layer.padding || 40);
+  const textWidth = Math.max(1, Number(layer.width) - padding * 2) * 0.92;
+
+  for (let fontSize = preferredFontSize; fontSize >= minFontSize; fontSize -= 1) {
+    const textLayout = layoutWordLines(value, textWidth, fontSize, segmentId, 'vi');
+    if (textLayout.lines.length > 2) continue;
+    const lineHeight = fontSize + 15;
+    return {
+      lines: textLayout.lines.map((line) => line.fragments.map((fragment) => fragment.text).join('')),
+      fontSize,
+      lineHeight,
+      height: Math.max(Number(layer.height || 0), 116 + textLayout.lines.length * lineHeight)
+    };
+  }
+
+  throw new Error('Câu tiếng Việt trong video Nhật không thể vừa tối đa hai dòng ở cỡ chữ tối thiểu.');
+}
+
 const wordMetricsCache = new Map();
 const WORD_METRICS_CACHE_LIMIT = 256;
 
@@ -860,11 +882,20 @@ function layerGeometry(template, script, index, speechSegment = null) {
   const inlineTarget = Boolean(style?.inlineTarget);
   const viRightReserve = contentLanguage === 'ja' ? japaneseTextRightReserve(japaneseDesign, 'vietnamese') : 0;
   const enRightReserve = contentLanguage === 'ja' ? japaneseTextRightReserve(japaneseDesign, 'japanese') : 0;
-  const viFitLayer = viRightReserve ? { ...vi, width: Math.max(1, Number(vi.width) - viRightReserve) } : vi;
+  const compactLegacyFirstCard = contentLanguage === 'en' && index === 0
+    && script.dialogues?.[0]?.firstVietnameseCardLayout === 'compact-v1';
+  const japaneseV1 = contentLanguage === 'ja' && isJapaneseV1Script(script);
+  const viFitLayer = japaneseV1
+    ? { ...vi, padding: Math.min(Number(vi.padding || 40), 42) }
+    : contentLanguage === 'en' && index === 0 && (Boolean(style) || compactLegacyFirstCard)
+      ? { ...vi, height: 170, fontSize: 44, padding: 30 }
+      : viRightReserve ? { ...vi, width: Math.max(1, Number(vi.width) - viRightReserve) } : vi;
   const enFitLayer = enRightReserve ? { ...en, width: Math.max(1, Number(en.width) - enRightReserve) } : en;
-  const viLayout = contentLanguage === 'zh' ? fitChineseDialogueText(dialogue.vietnamese, vi, true) : fitDialogueText(dialogue.vietnamese, viFitLayer, true);
+  const viLayout = japaneseV1
+    ? fitJapaneseVietnameseCardText(dialogue.vietnamese, viFitLayer, viSegmentId)
+    : contentLanguage === 'zh' ? fitChineseDialogueText(dialogue.vietnamese, vi, true) : fitDialogueText(dialogue.vietnamese, viFitLayer, true);
   const enLayout = contentLanguage === 'zh' ? fitChineseDialogueText(dialogue.english, en, false, inlineTarget) : fitDialogueText(dialogue.english, enFitLayer, false);
-  const viText = layoutWordLines(dialogue.vietnamese, (Number(vi.width) - Number(vi.padding || 40) * 2 - viRightReserve) * (contentLanguage === 'zh' ? 0.96 : 0.92), viLayout.fontSize, viSegmentId, contentLanguage === 'en' ? 'en' : 'vi');
+  const viText = layoutWordLines(dialogue.vietnamese, (Number(viFitLayer.width) - Number(viFitLayer.padding || 40) * 2 - viRightReserve) * (contentLanguage === 'zh' ? 0.96 : 0.92), viLayout.fontSize, viSegmentId, contentLanguage === 'en' ? 'en' : 'vi');
   const enTextWidth = inlineTarget ? Number(en.width) * 0.96 : (Number(en.width) - Number(en.padding || 40) * 2 - enRightReserve) * (contentLanguage === 'zh' ? 0.96 : 0.92);
   const enText = layoutWordLines(dialogue.english, enTextWidth, enLayout.fontSize, enSegmentId, contentLanguage);
   const termText = `${dialogue.term || ''} = ${dialogue.meaningVi || ''}`;
@@ -1042,6 +1073,7 @@ function layerGeometry(template, script, index, speechSegment = null) {
     styleName,
     inlineTarget,
     viText,
+    viPadding: Number(viFitLayer.padding || 40),
     viFontSize: viLayout.fontSize,
     viLineHeight: viLayout.lineHeight,
     viHeight,
@@ -1322,7 +1354,7 @@ async function layerMarkup(layerId, context) {
     const isChineseCard = layerId === 'chinese-card';
     const x = layer.x; const y = isVi ? layer.y : geometry.enY; const w = layer.width; const h = isVi ? geometry.viHeight : geometry.enHeight;
     const textLayout = isVi ? geometry.viText : geometry.enText;
-    const padding = Number(layer.padding || 40); const fontSize = isVi ? geometry.viFontSize : geometry.enFontSize; const lineHeight = isVi ? geometry.viLineHeight : geometry.enLineHeight;
+    const padding = isVi ? geometry.viPadding : Number(layer.padding || 40); const fontSize = isVi ? geometry.viFontSize : geometry.enFontSize; const lineHeight = isVi ? geometry.viLineHeight : geometry.enLineHeight;
     const fill = color(layer.fill, isVi ? '#E8E8E4' : '#E6F0EC');
     const accent = color(layer.accent, isVi ? brand.primaryColor : brand.secondaryColor);
     const targetLanguage = contentLanguage === 'ja' ? 'JAPANESE' : contentLanguage === 'zh' ? 'CHINESE' : 'ENGLISH';
@@ -1372,7 +1404,7 @@ async function layerMarkup(layerId, context) {
     const cardLabel = label ? `<text x="${centered ? x + w / 2 : x + padding}" y="${y + 44}"${centered ? ' text-anchor="middle"' : ''} fill="${accent}" font-family="${cardLabelFont}" font-size="21" font-weight="700" letter-spacing="1.5">${label}</text>` : '';
     const surfaceAttributes = japaneseSurfaceAttributes(contentLanguage, japaneseDesign);
     let cardSurface = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${layer.radius || 28}" fill="${fill}" stroke="${color(layer.stroke, '#CFD9D6')}" ${surfaceAttributes}/>`;
-    if (contentLanguage === 'ja') cardSurface += japaneseCardOrnament(japaneseDesign, x, y, w, h, layer.stroke, layer.radius, isVi ? 'vietnamese' : 'japanese');
+    if (contentLanguage === 'ja' && !isVi) cardSurface += japaneseCardOrnament(japaneseDesign, x, y, w, h, layer.stroke, layer.radius, 'japanese');
     return `${groupStart}${cardSurface}${accentRail}${cardLabel}${textMarkup}</g>`;
   }
   if (layerId === 'vocabulary') {

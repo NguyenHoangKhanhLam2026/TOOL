@@ -133,7 +133,8 @@ function validateEnglishPresentationScript(raw, presentationStyle) {
     if (!english) errors.push(`${prefix}: thiếu câu tiếng Anh.`);
     const vietnameseWords = wordCount(vietnamese);
     const englishWords = wordCount(english);
-    if (vietnameseWords < 5 || vietnameseWords > 14) errors.push(`${prefix}: câu tiếng Việt cần từ 5 đến 14 từ (hiện có ${vietnameseWords}).`);
+    if (index === 0 && (vietnameseWords < 7 || vietnameseWords > 9)) errors.push(`${prefix}: câu tiếng Việt đầu tiên cần từ 7 đến 9 từ (hiện có ${vietnameseWords}).`);
+    if (index > 0 && (vietnameseWords < 5 || vietnameseWords > 14)) errors.push(`${prefix}: câu tiếng Việt cần từ 5 đến 14 từ (hiện có ${vietnameseWords}).`);
     if (englishWords < 5 || englishWords > 18) errors.push(`${prefix}: câu tiếng Anh cần từ 5 đến 18 từ (hiện có ${englishWords}).`);
     let vocabularyCards = [];
     if (numberedStyle) {
@@ -248,7 +249,7 @@ function validateJapanesePresentationScript(raw, presentationStyle) {
     if (!vietnamese) errors.push(`${prefix}: thiếu câu tiếng Việt.`);
     if (!japanese) errors.push(`${prefix}: thiếu câu tiếng Nhật.`);
     const viWords = wordCount(vietnamese);
-    if (viWords < 5 || viWords > 14) errors.push(`${prefix}: câu tiếng Việt cần từ 5 đến 14 từ (hiện có ${viWords}).`);
+    if (viWords < 7 || viWords > 9) errors.push(`${prefix}: câu tiếng Việt cần từ 7 đến 9 từ (hiện có ${viWords}).`);
     if ([...japanese].length < 3 || [...japanese].length > 80) errors.push(`${prefix}: câu tiếng Nhật cần từ 3 đến 80 ký tự.`);
     let vocabularyCards = [];
     if (hasScenarioPhrase) {
@@ -323,7 +324,8 @@ export function validateScript(raw, { contentLanguage = 'en', requireChineseScen
   for (const [i, d] of script.dialogues.entries()) {
     for (const text of vietnameseTexts(d)) {
       const count = wordCount(text);
-      if (count && (count < 7 || count > 10)) errors.push(`Câu tiếng Việt ${i + 1} cần từ 7 đến 10 từ (hiện có ${count}).`);
+      const maxVietnameseWords = contentLanguage === 'en' && i === 0 ? 9 : 10;
+      if (count && (count < 7 || count > maxVietnameseWords)) errors.push(`Câu tiếng Việt ${i + 1} cần từ 7 đến ${maxVietnameseWords} từ (hiện có ${count}).`);
     }
     if (d?.turns !== undefined && !Array.isArray(d.turns)) errors.push(`Lượt hội thoại ${i + 1}: turns phải là một mảng.`);
     if (Array.isArray(d?.turns) && d.turns.length) {
