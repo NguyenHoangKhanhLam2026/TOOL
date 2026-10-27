@@ -1,0 +1,1579 @@
+{
+  "module": "mot-phut-vo-le",
+  "language": "vi",
+  "source": "stable-ts-local",
+  "status": "aligned",
+  "reliable": true,
+  "wordTimings": [
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:1",
+      "tokenIndex": 0,
+      "text": "Khóa",
+      "boundaryText": "Khóa",
+      "boundaryIndex": 0,
+      "boundaryIndexes": [
+        0
+      ],
+      "startSeconds": 0.10999999999999999,
+      "endSeconds": 0.31000000000000005
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:2",
+      "tokenIndex": 1,
+      "text": "kéo",
+      "boundaryText": "kéo",
+      "boundaryIndex": 1,
+      "boundaryIndexes": [
+        1
+      ],
+      "startSeconds": 0.32999999999999996,
+      "endSeconds": 0.53
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:3",
+      "tokenIndex": 2,
+      "text": "đóng",
+      "boundaryText": "đóng",
+      "boundaryIndex": 2,
+      "boundaryIndexes": [
+        2
+      ],
+      "startSeconds": 0.53,
+      "endSeconds": 0.75
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:4",
+      "tokenIndex": 3,
+      "text": "nhờ",
+      "boundaryText": "nhờ",
+      "boundaryIndex": 3,
+      "boundaryIndexes": [
+        3
+      ],
+      "startSeconds": 0.75,
+      "endSeconds": 0.9099999999999999
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:5",
+      "tokenIndex": 4,
+      "text": "con",
+      "boundaryText": "con",
+      "boundaryIndex": 4,
+      "boundaryIndexes": [
+        4
+      ],
+      "startSeconds": 0.9099999999999999,
+      "endSeconds": 1.03
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:6",
+      "tokenIndex": 5,
+      "text": "trượt",
+      "boundaryText": "trượt",
+      "boundaryIndex": 5,
+      "boundaryIndexes": [
+        5
+      ],
+      "startSeconds": 1.03,
+      "endSeconds": 1.35
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:7",
+      "tokenIndex": 6,
+      "text": "dẫn",
+      "boundaryText": "dẫn",
+      "boundaryIndex": 6,
+      "boundaryIndexes": [
+        6
+      ],
+      "startSeconds": 1.39,
+      "endSeconds": 1.55
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:8",
+      "tokenIndex": 7,
+      "text": "hai",
+      "boundaryText": "hai",
+      "boundaryIndex": 7,
+      "boundaryIndexes": [
+        7
+      ],
+      "startSeconds": 1.55,
+      "endSeconds": 1.79
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:9",
+      "tokenIndex": 8,
+      "text": "dải",
+      "boundaryText": "dải",
+      "boundaryIndex": 8,
+      "boundaryIndexes": [
+        8
+      ],
+      "startSeconds": 1.79,
+      "endSeconds": 2.01
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:10",
+      "tokenIndex": 9,
+      "text": "răng",
+      "boundaryText": "răng",
+      "boundaryIndex": 9,
+      "boundaryIndexes": [
+        9
+      ],
+      "startSeconds": 2.01,
+      "endSeconds": 2.25
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:11",
+      "tokenIndex": 10,
+      "text": "vào",
+      "boundaryText": "vào",
+      "boundaryIndex": 10,
+      "boundaryIndexes": [
+        10
+      ],
+      "startSeconds": 2.25,
+      "endSeconds": 2.39
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:12",
+      "tokenIndex": 11,
+      "text": "vị",
+      "boundaryText": "vị",
+      "boundaryIndex": 11,
+      "boundaryIndexes": [
+        11
+      ],
+      "startSeconds": 2.39,
+      "endSeconds": 2.55
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:13",
+      "tokenIndex": 12,
+      "text": "trí",
+      "boundaryText": "trí",
+      "boundaryIndex": 12,
+      "boundaryIndexes": [
+        12
+      ],
+      "startSeconds": 2.55,
+      "endSeconds": 2.75
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:14",
+      "tokenIndex": 13,
+      "text": "ăn",
+      "boundaryText": "ăn",
+      "boundaryIndex": 13,
+      "boundaryIndexes": [
+        13
+      ],
+      "startSeconds": 2.75,
+      "endSeconds": 2.91
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:15",
+      "tokenIndex": 14,
+      "text": "khớp,",
+      "boundaryText": "khớp,",
+      "boundaryIndex": 14,
+      "boundaryIndexes": [
+        14
+      ],
+      "startSeconds": 2.91,
+      "endSeconds": 3.15
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:16",
+      "tokenIndex": 15,
+      "text": "không",
+      "boundaryText": "không",
+      "boundaryIndex": 15,
+      "boundaryIndexes": [
+        15
+      ],
+      "startSeconds": 3.57,
+      "endSeconds": 3.67
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:17",
+      "tokenIndex": 16,
+      "text": "phải",
+      "boundaryText": "phải",
+      "boundaryIndex": 16,
+      "boundaryIndexes": [
+        16
+      ],
+      "startSeconds": 3.67,
+      "endSeconds": 3.8499999999999996
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:18",
+      "tokenIndex": 17,
+      "text": "nhờ",
+      "boundaryText": "nhờ",
+      "boundaryIndex": 17,
+      "boundaryIndexes": [
+        17
+      ],
+      "startSeconds": 3.8499999999999996,
+      "endSeconds": 4.03
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:19",
+      "tokenIndex": 18,
+      "text": "lực",
+      "boundaryText": "lực",
+      "boundaryIndex": 18,
+      "boundaryIndexes": [
+        18
+      ],
+      "startSeconds": 4.03,
+      "endSeconds": 4.19
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:20",
+      "tokenIndex": 19,
+      "text": "dính.",
+      "boundaryText": "dính.",
+      "boundaryIndex": 19,
+      "boundaryIndexes": [
+        19
+      ],
+      "startSeconds": 4.19,
+      "endSeconds": 4.55
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:21",
+      "tokenIndex": 20,
+      "text": "Bên",
+      "boundaryText": "Bên",
+      "boundaryIndex": 20,
+      "boundaryIndexes": [
+        20
+      ],
+      "startSeconds": 4.97,
+      "endSeconds": 5.11
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:22",
+      "tokenIndex": 21,
+      "text": "trong",
+      "boundaryText": "trong",
+      "boundaryIndex": 21,
+      "boundaryIndexes": [
+        21
+      ],
+      "startSeconds": 5.11,
+      "endSeconds": 5.31
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:23",
+      "tokenIndex": 22,
+      "text": "con",
+      "boundaryText": "con",
+      "boundaryIndex": 22,
+      "boundaryIndexes": [
+        22
+      ],
+      "startSeconds": 5.31,
+      "endSeconds": 5.45
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:24",
+      "tokenIndex": 23,
+      "text": "trượt,",
+      "boundaryText": "trượt,",
+      "boundaryIndex": 23,
+      "boundaryIndexes": [
+        23
+      ],
+      "startSeconds": 5.45,
+      "endSeconds": 5.75
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:25",
+      "tokenIndex": 24,
+      "text": "các",
+      "boundaryText": "các",
+      "boundaryIndex": 24,
+      "boundaryIndexes": [
+        24
+      ],
+      "startSeconds": 6.15,
+      "endSeconds": 6.25
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:26",
+      "tokenIndex": 25,
+      "text": "rãnh",
+      "boundaryText": "rãnh",
+      "boundaryIndex": 25,
+      "boundaryIndexes": [
+        25
+      ],
+      "startSeconds": 6.25,
+      "endSeconds": 6.47
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:27",
+      "tokenIndex": 26,
+      "text": "dẫn",
+      "boundaryText": "dẫn",
+      "boundaryIndex": 26,
+      "boundaryIndexes": [
+        26
+      ],
+      "startSeconds": 6.47,
+      "endSeconds": 6.67
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:28",
+      "tokenIndex": 27,
+      "text": "đưa",
+      "boundaryText": "đưa",
+      "boundaryIndex": 27,
+      "boundaryIndexes": [
+        27
+      ],
+      "startSeconds": 6.67,
+      "endSeconds": 6.93
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:29",
+      "tokenIndex": 28,
+      "text": "hai",
+      "boundaryText": "hai",
+      "boundaryIndex": 28,
+      "boundaryIndexes": [
+        28
+      ],
+      "startSeconds": 6.93,
+      "endSeconds": 7.15
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:30",
+      "tokenIndex": 29,
+      "text": "dải",
+      "boundaryText": "dải",
+      "boundaryIndex": 29,
+      "boundaryIndexes": [
+        29
+      ],
+      "startSeconds": 7.15,
+      "endSeconds": 7.43
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:31",
+      "tokenIndex": 30,
+      "text": "răng",
+      "boundaryText": "răng",
+      "boundaryIndex": 30,
+      "boundaryIndexes": [
+        30
+      ],
+      "startSeconds": 7.43,
+      "endSeconds": 7.63
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:32",
+      "tokenIndex": 31,
+      "text": "hội",
+      "boundaryText": "hội",
+      "boundaryIndex": 31,
+      "boundaryIndexes": [
+        31
+      ],
+      "startSeconds": 7.63,
+      "endSeconds": 7.789999999999999
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:33",
+      "tokenIndex": 32,
+      "text": "tụ",
+      "boundaryText": "tụ",
+      "boundaryIndex": 32,
+      "boundaryIndexes": [
+        32
+      ],
+      "startSeconds": 7.85,
+      "endSeconds": 8.01
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:34",
+      "tokenIndex": 33,
+      "text": "để",
+      "boundaryText": "để",
+      "boundaryIndex": 33,
+      "boundaryIndexes": [
+        33
+      ],
+      "startSeconds": 8.01,
+      "endSeconds": 8.45
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:35",
+      "tokenIndex": 34,
+      "text": "chúng",
+      "boundaryText": "chúng",
+      "boundaryIndex": 34,
+      "boundaryIndexes": [
+        34
+      ],
+      "startSeconds": 8.45,
+      "endSeconds": 8.61
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:36",
+      "tokenIndex": 35,
+      "text": "móc",
+      "boundaryText": "móc",
+      "boundaryIndex": 35,
+      "boundaryIndexes": [
+        35
+      ],
+      "startSeconds": 8.61,
+      "endSeconds": 8.83
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:37",
+      "tokenIndex": 36,
+      "text": "vào",
+      "boundaryText": "vào",
+      "boundaryIndex": 36,
+      "boundaryIndexes": [
+        36
+      ],
+      "startSeconds": 8.83,
+      "endSeconds": 8.91
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:38",
+      "tokenIndex": 37,
+      "text": "nhau",
+      "boundaryText": "nhau",
+      "boundaryIndex": 37,
+      "boundaryIndexes": [
+        37
+      ],
+      "startSeconds": 8.91,
+      "endSeconds": 9.17
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:39",
+      "tokenIndex": 38,
+      "text": "nhờ",
+      "boundaryText": "nhờ",
+      "boundaryIndex": 38,
+      "boundaryIndexes": [
+        38
+      ],
+      "startSeconds": 9.17,
+      "endSeconds": 9.43
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:40",
+      "tokenIndex": 39,
+      "text": "hình",
+      "boundaryText": "hình",
+      "boundaryIndex": 39,
+      "boundaryIndexes": [
+        39
+      ],
+      "startSeconds": 9.43,
+      "endSeconds": 9.61
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:41",
+      "tokenIndex": 40,
+      "text": "dạng.",
+      "boundaryText": "dạng.",
+      "boundaryIndex": 40,
+      "boundaryIndexes": [
+        40
+      ],
+      "startSeconds": 9.61,
+      "endSeconds": 9.91
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:42",
+      "tokenIndex": 41,
+      "text": "Khi",
+      "boundaryText": "Khi",
+      "boundaryIndex": 41,
+      "boundaryIndexes": [
+        41
+      ],
+      "startSeconds": 10.53,
+      "endSeconds": 10.65
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:43",
+      "tokenIndex": 42,
+      "text": "kéo",
+      "boundaryText": "kéo",
+      "boundaryIndex": 42,
+      "boundaryIndexes": [
+        42
+      ],
+      "startSeconds": 10.65,
+      "endSeconds": 10.83
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:44",
+      "tokenIndex": 43,
+      "text": "ngược",
+      "boundaryText": "ngược",
+      "boundaryIndex": 43,
+      "boundaryIndexes": [
+        43
+      ],
+      "startSeconds": 10.83,
+      "endSeconds": 11.03
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:45",
+      "tokenIndex": 44,
+      "text": "chiều,",
+      "boundaryText": "chiều,",
+      "boundaryIndex": 44,
+      "boundaryIndexes": [
+        44
+      ],
+      "startSeconds": 11.03,
+      "endSeconds": 11.47
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:46",
+      "tokenIndex": 45,
+      "text": "phần",
+      "boundaryText": "phần",
+      "boundaryIndex": 45,
+      "boundaryIndexes": [
+        45
+      ],
+      "startSeconds": 11.53,
+      "endSeconds": 11.65
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:47",
+      "tokenIndex": 46,
+      "text": "nêm",
+      "boundaryText": "nêm",
+      "boundaryIndex": 46,
+      "boundaryIndexes": [
+        46
+      ],
+      "startSeconds": 11.65,
+      "endSeconds": 11.85
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:48",
+      "tokenIndex": 47,
+      "text": "trong",
+      "boundaryText": "trong",
+      "boundaryIndex": 47,
+      "boundaryIndexes": [
+        47
+      ],
+      "startSeconds": 11.85,
+      "endSeconds": 12.01
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:49",
+      "tokenIndex": 48,
+      "text": "con",
+      "boundaryText": "con",
+      "boundaryIndex": 48,
+      "boundaryIndexes": [
+        48
+      ],
+      "startSeconds": 12.01,
+      "endSeconds": 12.17
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:50",
+      "tokenIndex": 49,
+      "text": "trượt",
+      "boundaryText": "trượt",
+      "boundaryIndex": 49,
+      "boundaryIndexes": [
+        49
+      ],
+      "startSeconds": 12.17,
+      "endSeconds": 12.55
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:51",
+      "tokenIndex": 50,
+      "text": "tách",
+      "boundaryText": "tách",
+      "boundaryIndex": 50,
+      "boundaryIndexes": [
+        50
+      ],
+      "startSeconds": 12.55,
+      "endSeconds": 12.73
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:52",
+      "tokenIndex": 51,
+      "text": "hai",
+      "boundaryText": "hai",
+      "boundaryIndex": 51,
+      "boundaryIndexes": [
+        51
+      ],
+      "startSeconds": 12.89,
+      "endSeconds": 13.03
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:53",
+      "tokenIndex": 52,
+      "text": "dải",
+      "boundaryText": "dải",
+      "boundaryIndex": 52,
+      "boundaryIndexes": [
+        52
+      ],
+      "startSeconds": 13.03,
+      "endSeconds": 13.19
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:54",
+      "tokenIndex": 53,
+      "text": "răng",
+      "boundaryText": "răng",
+      "boundaryIndex": 53,
+      "boundaryIndexes": [
+        53
+      ],
+      "startSeconds": 13.19,
+      "endSeconds": 13.39
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:55",
+      "tokenIndex": 54,
+      "text": "ra.",
+      "boundaryText": "ra.",
+      "boundaryIndex": 54,
+      "boundaryIndexes": [
+        54
+      ],
+      "startSeconds": 13.39,
+      "endSeconds": 13.67
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:56",
+      "tokenIndex": 55,
+      "text": "Vì",
+      "boundaryText": "Vì",
+      "boundaryIndex": 55,
+      "boundaryIndexes": [
+        55
+      ],
+      "startSeconds": 14.25,
+      "endSeconds": 14.39
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:57",
+      "tokenIndex": 56,
+      "text": "vậy,",
+      "boundaryText": "vậy,",
+      "boundaryIndex": 56,
+      "boundaryIndexes": [
+        56
+      ],
+      "startSeconds": 14.39,
+      "endSeconds": 14.59
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:58",
+      "tokenIndex": 57,
+      "text": "con",
+      "boundaryText": "con",
+      "boundaryIndex": 57,
+      "boundaryIndexes": [
+        57
+      ],
+      "startSeconds": 14.71,
+      "endSeconds": 14.81
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:59",
+      "tokenIndex": 58,
+      "text": "trượt",
+      "boundaryText": "trượt",
+      "boundaryIndex": 58,
+      "boundaryIndexes": [
+        58
+      ],
+      "startSeconds": 14.81,
+      "endSeconds": 15.11
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:60",
+      "tokenIndex": 59,
+      "text": "chỉ",
+      "boundaryText": "chỉ",
+      "boundaryIndex": 59,
+      "boundaryIndexes": [
+        59
+      ],
+      "startSeconds": 15.13,
+      "endSeconds": 15.23
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:61",
+      "tokenIndex": 60,
+      "text": "dẫn",
+      "boundaryText": "dẫn",
+      "boundaryIndex": 60,
+      "boundaryIndexes": [
+        60
+      ],
+      "startSeconds": 15.23,
+      "endSeconds": 15.41
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:62",
+      "tokenIndex": 61,
+      "text": "đường,",
+      "boundaryText": "đường,",
+      "boundaryIndex": 61,
+      "boundaryIndexes": [
+        61
+      ],
+      "startSeconds": 15.41,
+      "endSeconds": 15.71
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:63",
+      "tokenIndex": 62,
+      "text": "còn",
+      "boundaryText": "còn",
+      "boundaryIndex": 62,
+      "boundaryIndexes": [
+        62
+      ],
+      "startSeconds": 16.01,
+      "endSeconds": 16.11
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:64",
+      "tokenIndex": 63,
+      "text": "các",
+      "boundaryText": "các",
+      "boundaryIndex": 63,
+      "boundaryIndexes": [
+        63
+      ],
+      "startSeconds": 16.11,
+      "endSeconds": 16.29
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:65",
+      "tokenIndex": 64,
+      "text": "răng",
+      "boundaryText": "răng",
+      "boundaryIndex": 64,
+      "boundaryIndexes": [
+        64
+      ],
+      "startSeconds": 16.29,
+      "endSeconds": 16.53
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:66",
+      "tokenIndex": 65,
+      "text": "ăn",
+      "boundaryText": "ăn",
+      "boundaryIndex": 65,
+      "boundaryIndexes": [
+        65
+      ],
+      "startSeconds": 16.53,
+      "endSeconds": 16.69
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:67",
+      "tokenIndex": 66,
+      "text": "khớp",
+      "boundaryText": "khớp",
+      "boundaryIndex": 66,
+      "boundaryIndexes": [
+        66
+      ],
+      "startSeconds": 16.69,
+      "endSeconds": 16.97
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:68",
+      "tokenIndex": 67,
+      "text": "mới",
+      "boundaryText": "mới",
+      "boundaryIndex": 67,
+      "boundaryIndexes": [
+        67
+      ],
+      "startSeconds": 16.97,
+      "endSeconds": 17.11
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:69",
+      "tokenIndex": 68,
+      "text": "giữ",
+      "boundaryText": "giữ",
+      "boundaryIndex": 68,
+      "boundaryIndexes": [
+        68
+      ],
+      "startSeconds": 17.11,
+      "endSeconds": 17.39
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:70",
+      "tokenIndex": 69,
+      "text": "hai",
+      "boundaryText": "hai",
+      "boundaryIndex": 69,
+      "boundaryIndexes": [
+        69
+      ],
+      "startSeconds": 17.39,
+      "endSeconds": 17.55
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:71",
+      "tokenIndex": 70,
+      "text": "mép",
+      "boundaryText": "mép",
+      "boundaryIndex": 70,
+      "boundaryIndexes": [
+        70
+      ],
+      "startSeconds": 17.55,
+      "endSeconds": 17.85
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:72",
+      "tokenIndex": 71,
+      "text": "khóa",
+      "boundaryText": "khóa",
+      "boundaryIndex": 71,
+      "boundaryIndexes": [
+        71
+      ],
+      "startSeconds": 17.91,
+      "endSeconds": 18.03
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:73",
+      "tokenIndex": 72,
+      "text": "liền",
+      "boundaryText": "liền",
+      "boundaryIndex": 72,
+      "boundaryIndexes": [
+        72
+      ],
+      "startSeconds": 18.03,
+      "endSeconds": 18.19
+    },
+    {
+      "segmentId": "9714e273-9440-4091-865b-cfb8b4398d97",
+      "tokenId": "9714e273-9440-4091-865b-cfb8b4398d97:word:74",
+      "tokenIndex": 73,
+      "text": "nhau.",
+      "boundaryText": "nhau.",
+      "boundaryIndex": 73,
+      "boundaryIndexes": [
+        73
+      ],
+      "startSeconds": 18.19,
+      "endSeconds": 18.51
+    }
+  ],
+  "tokens": [
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:1",
+      "index": 0,
+      "text": "Khóa",
+      "normalized": "khóa",
+      "start": 0,
+      "end": 4
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:2",
+      "index": 1,
+      "text": "kéo",
+      "normalized": "kéo",
+      "start": 5,
+      "end": 8
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:3",
+      "index": 2,
+      "text": "đóng",
+      "normalized": "đóng",
+      "start": 9,
+      "end": 13
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:4",
+      "index": 3,
+      "text": "nhờ",
+      "normalized": "nhờ",
+      "start": 14,
+      "end": 17
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:5",
+      "index": 4,
+      "text": "con",
+      "normalized": "con",
+      "start": 18,
+      "end": 21
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:6",
+      "index": 5,
+      "text": "trượt",
+      "normalized": "trượt",
+      "start": 22,
+      "end": 27
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:7",
+      "index": 6,
+      "text": "dẫn",
+      "normalized": "dẫn",
+      "start": 28,
+      "end": 31
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:8",
+      "index": 7,
+      "text": "hai",
+      "normalized": "hai",
+      "start": 32,
+      "end": 35
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:9",
+      "index": 8,
+      "text": "dải",
+      "normalized": "dải",
+      "start": 36,
+      "end": 39
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:10",
+      "index": 9,
+      "text": "răng",
+      "normalized": "răng",
+      "start": 40,
+      "end": 44
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:11",
+      "index": 10,
+      "text": "vào",
+      "normalized": "vào",
+      "start": 45,
+      "end": 48
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:12",
+      "index": 11,
+      "text": "vị",
+      "normalized": "vị",
+      "start": 49,
+      "end": 51
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:13",
+      "index": 12,
+      "text": "trí",
+      "normalized": "trí",
+      "start": 52,
+      "end": 55
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:14",
+      "index": 13,
+      "text": "ăn",
+      "normalized": "ăn",
+      "start": 56,
+      "end": 58
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:15",
+      "index": 14,
+      "text": "khớp,",
+      "normalized": "khớp",
+      "start": 59,
+      "end": 64
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:16",
+      "index": 15,
+      "text": "không",
+      "normalized": "không",
+      "start": 65,
+      "end": 70
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:17",
+      "index": 16,
+      "text": "phải",
+      "normalized": "phải",
+      "start": 71,
+      "end": 75
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:18",
+      "index": 17,
+      "text": "nhờ",
+      "normalized": "nhờ",
+      "start": 76,
+      "end": 79
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:19",
+      "index": 18,
+      "text": "lực",
+      "normalized": "lực",
+      "start": 80,
+      "end": 83
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:20",
+      "index": 19,
+      "text": "dính.",
+      "normalized": "dính",
+      "start": 84,
+      "end": 89
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:21",
+      "index": 20,
+      "text": "Bên",
+      "normalized": "bên",
+      "start": 90,
+      "end": 93
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:22",
+      "index": 21,
+      "text": "trong",
+      "normalized": "trong",
+      "start": 94,
+      "end": 99
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:23",
+      "index": 22,
+      "text": "con",
+      "normalized": "con",
+      "start": 100,
+      "end": 103
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:24",
+      "index": 23,
+      "text": "trượt,",
+      "normalized": "trượt",
+      "start": 104,
+      "end": 110
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:25",
+      "index": 24,
+      "text": "các",
+      "normalized": "các",
+      "start": 111,
+      "end": 114
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:26",
+      "index": 25,
+      "text": "rãnh",
+      "normalized": "rãnh",
+      "start": 115,
+      "end": 119
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:27",
+      "index": 26,
+      "text": "dẫn",
+      "normalized": "dẫn",
+      "start": 120,
+      "end": 123
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:28",
+      "index": 27,
+      "text": "đưa",
+      "normalized": "đưa",
+      "start": 124,
+      "end": 127
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:29",
+      "index": 28,
+      "text": "hai",
+      "normalized": "hai",
+      "start": 128,
+      "end": 131
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:30",
+      "index": 29,
+      "text": "dải",
+      "normalized": "dải",
+      "start": 132,
+      "end": 135
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:31",
+      "index": 30,
+      "text": "răng",
+      "normalized": "răng",
+      "start": 136,
+      "end": 140
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:32",
+      "index": 31,
+      "text": "hội",
+      "normalized": "hội",
+      "start": 141,
+      "end": 144
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:33",
+      "index": 32,
+      "text": "tụ",
+      "normalized": "tụ",
+      "start": 145,
+      "end": 147
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:34",
+      "index": 33,
+      "text": "để",
+      "normalized": "để",
+      "start": 148,
+      "end": 150
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:35",
+      "index": 34,
+      "text": "chúng",
+      "normalized": "chúng",
+      "start": 151,
+      "end": 156
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:36",
+      "index": 35,
+      "text": "móc",
+      "normalized": "móc",
+      "start": 157,
+      "end": 160
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:37",
+      "index": 36,
+      "text": "vào",
+      "normalized": "vào",
+      "start": 161,
+      "end": 164
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:38",
+      "index": 37,
+      "text": "nhau",
+      "normalized": "nhau",
+      "start": 165,
+      "end": 169
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:39",
+      "index": 38,
+      "text": "nhờ",
+      "normalized": "nhờ",
+      "start": 170,
+      "end": 173
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:40",
+      "index": 39,
+      "text": "hình",
+      "normalized": "hình",
+      "start": 174,
+      "end": 178
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:41",
+      "index": 40,
+      "text": "dạng.",
+      "normalized": "dạng",
+      "start": 179,
+      "end": 184
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:42",
+      "index": 41,
+      "text": "Khi",
+      "normalized": "khi",
+      "start": 185,
+      "end": 188
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:43",
+      "index": 42,
+      "text": "kéo",
+      "normalized": "kéo",
+      "start": 189,
+      "end": 192
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:44",
+      "index": 43,
+      "text": "ngược",
+      "normalized": "ngược",
+      "start": 193,
+      "end": 198
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:45",
+      "index": 44,
+      "text": "chiều,",
+      "normalized": "chiều",
+      "start": 199,
+      "end": 205
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:46",
+      "index": 45,
+      "text": "phần",
+      "normalized": "phần",
+      "start": 206,
+      "end": 210
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:47",
+      "index": 46,
+      "text": "nêm",
+      "normalized": "nêm",
+      "start": 211,
+      "end": 214
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:48",
+      "index": 47,
+      "text": "trong",
+      "normalized": "trong",
+      "start": 215,
+      "end": 220
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:49",
+      "index": 48,
+      "text": "con",
+      "normalized": "con",
+      "start": 221,
+      "end": 224
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:50",
+      "index": 49,
+      "text": "trượt",
+      "normalized": "trượt",
+      "start": 225,
+      "end": 230
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:51",
+      "index": 50,
+      "text": "tách",
+      "normalized": "tách",
+      "start": 231,
+      "end": 235
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:52",
+      "index": 51,
+      "text": "hai",
+      "normalized": "hai",
+      "start": 236,
+      "end": 239
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:53",
+      "index": 52,
+      "text": "dải",
+      "normalized": "dải",
+      "start": 240,
+      "end": 243
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:54",
+      "index": 53,
+      "text": "răng",
+      "normalized": "răng",
+      "start": 244,
+      "end": 248
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:55",
+      "index": 54,
+      "text": "ra.",
+      "normalized": "ra",
+      "start": 249,
+      "end": 252
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:56",
+      "index": 55,
+      "text": "Vì",
+      "normalized": "vì",
+      "start": 253,
+      "end": 255
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:57",
+      "index": 56,
+      "text": "vậy,",
+      "normalized": "vậy",
+      "start": 256,
+      "end": 260
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:58",
+      "index": 57,
+      "text": "con",
+      "normalized": "con",
+      "start": 261,
+      "end": 264
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:59",
+      "index": 58,
+      "text": "trượt",
+      "normalized": "trượt",
+      "start": 265,
+      "end": 270
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:60",
+      "index": 59,
+      "text": "chỉ",
+      "normalized": "chỉ",
+      "start": 271,
+      "end": 274
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:61",
+      "index": 60,
+      "text": "dẫn",
+      "normalized": "dẫn",
+      "start": 275,
+      "end": 278
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:62",
+      "index": 61,
+      "text": "đường,",
+      "normalized": "đường",
+      "start": 279,
+      "end": 285
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:63",
+      "index": 62,
+      "text": "còn",
+      "normalized": "còn",
+      "start": 286,
+      "end": 289
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:64",
+      "index": 63,
+      "text": "các",
+      "normalized": "các",
+      "start": 290,
+      "end": 293
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:65",
+      "index": 64,
+      "text": "răng",
+      "normalized": "răng",
+      "start": 294,
+      "end": 298
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:66",
+      "index": 65,
+      "text": "ăn",
+      "normalized": "ăn",
+      "start": 299,
+      "end": 301
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:67",
+      "index": 66,
+      "text": "khớp",
+      "normalized": "khớp",
+      "start": 302,
+      "end": 306
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:68",
+      "index": 67,
+      "text": "mới",
+      "normalized": "mới",
+      "start": 307,
+      "end": 310
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:69",
+      "index": 68,
+      "text": "giữ",
+      "normalized": "giữ",
+      "start": 311,
+      "end": 314
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:70",
+      "index": 69,
+      "text": "hai",
+      "normalized": "hai",
+      "start": 315,
+      "end": 318
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:71",
+      "index": 70,
+      "text": "mép",
+      "normalized": "mép",
+      "start": 319,
+      "end": 322
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:72",
+      "index": 71,
+      "text": "khóa",
+      "normalized": "khóa",
+      "start": 323,
+      "end": 327
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:73",
+      "index": 72,
+      "text": "liền",
+      "normalized": "liền",
+      "start": 328,
+      "end": 332
+    },
+    {
+      "id": "9714e273-9440-4091-865b-cfb8b4398d97:word:74",
+      "index": 73,
+      "text": "nhau.",
+      "normalized": "nhau",
+      "start": 333,
+      "end": 338
+    }
+  ],
+  "alignment": {
+    "status": "aligned",
+    "totalBoundaryCount": 74,
+    "mappedBoundaryCount": 74,
+    "mappedTokenCount": 74,
+    "unmatchedBoundaryCount": 0,
+    "unmatchedTokenCount": 0,
+    "reliable": true,
+    "unmatchedBoundaries": [],
+    "unmatchedTokenIds": []
+  },
+  "warning": null,
+  "transcriptLanguage": "vi",
+  "createdAt": "2026-10-27T14:23:11.612Z"
+}
