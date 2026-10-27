@@ -2,6 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
 const MOT_PHUT_CONTENT = 'mot-phut-vo-le';
+const THINGS_YOU_DIDNT_KNOW_CONTENT = 'things-you-didnt-know';
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
 const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], motPhutSchedules: [], motPhutVideos: [], logs: [], jobs: [], filter: 'all', languageFilter: 'all', overview: null, settings: null, system: null, facebookPages: { profiles: [], routes: {} }, backgroundEffects: [], backgroundEffectEditor: null, backgroundEffectLanguage: 'en', backgroundEffectProfiles: { en: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, zh: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, ja: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 } }, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0, contentLanguageSavePromise: Promise.resolve(), contentLanguageRevision: 0, createLanguageSelectionTouched: false, englishShadowingSettings: null, englishShadowingSettingsDirty: false, englishShadowingSettingsRevision: 0, ttsProviderView: 'standard', voiceHighlightContentProfile: 'standard', cosyVoiceUploadedProfileId: '', cosyVoiceActiveProfileId: '', facebookPageLanguageDirty: false, facebookPageCredentialDirty: false, facebookSelectedLanguage: 'en', facebookPageLoadRevision: 0, facebookActiveProfile: null };
 let previewAudio = null;
@@ -204,7 +205,7 @@ function applyBackgroundEffectProfile(language) {
 }
 
 function applyVoiceHighlightContentProfile(profile) {
-  const selected = ['english-shadowing', 'japanese', MOT_PHUT_CONTENT].includes(profile) ? profile : 'standard';
+  const selected = ['english-shadowing', 'japanese', MOT_PHUT_CONTENT, THINGS_YOU_DIDNT_KNOW_CONTENT].includes(profile) ? profile : 'standard';
   state.voiceHighlightContentProfile = selected;
   const selector = $('#voice-highlight-content-profile');
   if (selector) selector.value = selected;
@@ -212,9 +213,12 @@ function applyVoiceHighlightContentProfile(profile) {
   const standardControls = $('#standard-highlight-controls');
   const japaneseControls = $('#japanese-highlight-controls');
   const shadowingControls = $('#english-shadowing-highlight-controls');
+  const thingsControls = $('#things-highlight-settings');
   if (standardControls) standardControls.style.display = selected === 'standard' ? 'grid' : 'none';
   if (japaneseControls) japaneseControls.style.display = selected === 'japanese' ? 'block' : 'none';
   if (shadowingControls) shadowingControls.style.display = selected === 'english-shadowing' ? 'block' : 'none';
+  if (thingsControls) thingsControls.hidden = selected !== THINGS_YOU_DIDNT_KNOW_CONTENT;
+  window.thingsYouDidntKnow?.setHighlightProfileActive?.(selected === THINGS_YOU_DIDNT_KNOW_CONTENT);
 }
 
 function syncVideoBackgroundEffectPreview() {
@@ -314,7 +318,8 @@ function renderOverview() {
   state.system = data.system;
   state.settings = data.settings;
   const savedLanguage = ['en', 'ja', 'zh'].includes(data.settings.contentLanguage) ? data.settings.contentLanguage : 'en';
-  const savedContentMode = localStorage.getItem('mot-phut-vo-le-content-mode') === 'true' ? MOT_PHUT_CONTENT : savedLanguage;
+  const savedContentMode = localStorage.getItem('things-you-didnt-know-content-mode') === 'true' ? THINGS_YOU_DIDNT_KNOW_CONTENT
+    : localStorage.getItem('mot-phut-vo-le-content-mode') === 'true' ? MOT_PHUT_CONTENT : savedLanguage;
   if (!state.createLanguageSelectionTouched && document.activeElement !== $('#content-language')) $('#content-language').value = savedContentMode;
   const visibleLanguage = state.createLanguageSelectionTouched ? $('#content-language').value : savedContentMode;
   if (visibleLanguage !== MOT_PHUT_CONTENT) {
@@ -327,6 +332,7 @@ function renderOverview() {
   const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
   if (heroCopy) heroCopy.textContent = contentLanguageDescription(visibleLanguage);
   window.dispatchEvent(new CustomEvent('mot-phut-mode-change', { detail: { active: visibleLanguage === MOT_PHUT_CONTENT } }));
+  window.dispatchEvent(new CustomEvent('things-you-didnt-know-mode-change', { detail: { active: visibleLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT } }));
   renderToolChecks(data.system.tools);
   $$('.mini-action,[data-publish-id],[data-schedule-id],[data-approve-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
 }
@@ -644,10 +650,12 @@ function renderSchedules() {
     const language = facebookScheduleLanguage(item.content_language || 'en');
     return `<article class="schedule-row published-row"><span class="schedule-date">Đã đăng</span><div class="schedule-copy"><strong>${escapeHtml(item.title || item.topic)}</strong><small>${escapeHtml(item.topic)} · Đã đăng nội dung Facebook ${language.name} (${language.code}) · Facebook xác nhận ${dateText(item.published_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}${mode}</small><small>Giờ đã xếp: ${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</small><details><summary>Xem nội dung bài đăng</summary><p style="white-space:pre-wrap">${escapeHtml(item.caption || '')}</p></details></div><button class="mini-action danger-action" data-delete-published-id="${escapeHtml(item.id)}">Xóa</button></article>`;
   }).join('') : `<div class="empty-state"><strong>Chưa có bài đăng thành công</strong>Khi Facebook xác nhận đăng xong, thông tin bài viết và thời gian sẽ được lưu tại đây.</div>`;
+  window.dispatchEvent(new Event('schedules:rendered'));
 }
 
 function renderLogs() {
   $('#logs-list').innerHTML = state.logs.length ? state.logs.map((item) => `<div class="log-row"><span>${dateText(item.created_at, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><span class="log-level ${escapeHtml(item.level)}">${escapeHtml(item.level)}</span><strong>${escapeHtml(item.code || 'EVENT')}</strong><span>${escapeHtml(item.message)}</span></div>`).join('') : `<div class="empty-state">Chưa có nhật ký.</div>`;
+  window.dispatchEvent(new Event('logs:rendered'));
 }
 
 async function loadOverview() {
@@ -691,36 +699,47 @@ function updateTtsProviderPanels() {
   const provider = $('#tts-provider').value;
   const shadowingSelected = state.ttsProviderView === 'english-shadowing';
   const motPhutSelected = state.ttsProviderView === MOT_PHUT_CONTENT;
-  const specialProfileSelected = shadowingSelected || motPhutSelected;
+  const thingsSelected = state.ttsProviderView === THINGS_YOU_DIDNT_KNOW_CONTENT;
+  const specialProfileSelected = shadowingSelected || motPhutSelected || thingsSelected;
   $('#vieneu-tts-settings').hidden = specialProfileSelected || !['vieneu', 'supertonic3-ko'].includes(provider);
   $('#sbv2-tts-settings').hidden = specialProfileSelected || provider !== 'vieneu-sbv2';
   $('#cosyvoice-tts-settings').hidden = specialProfileSelected || provider !== 'vieneu-cosyvoice3';
   $('#supertonic-ko-tts-settings').hidden = specialProfileSelected || provider !== 'supertonic3-ko';
   $('.english-shadowing-voice-settings').hidden = !shadowingSelected;
   renderTtsProviderMenu();
+  window.dispatchEvent(new CustomEvent('things-you-didnt-know-voice-profile-change', { detail: { active: thingsSelected } }));
 }
 
 function renderTtsProviderMenu() {
   const select = $('#tts-provider');
   const shadowingSelected = state.ttsProviderView === 'english-shadowing';
   const motPhutSelected = state.ttsProviderView === MOT_PHUT_CONTENT;
+  const thingsSelected = state.ttsProviderView === THINGS_YOU_DIDNT_KNOW_CONTENT;
   const selected = select.selectedOptions[0] || select.options[0];
   const shadowingLabel = 'Local AI TTS · Shadowing + Kokoro tiếng Anh';
   const motPhutLabel = 'Local AI TTS · VieNeu tiếng Việt · Một Phút Vỡ Lẽ';
-  $('#tts-provider-value').textContent = shadowingSelected ? shadowingLabel : motPhutSelected ? motPhutLabel : selected?.textContent || 'Chọn model giọng đọc';
+  const thingsLabel = "Local AI TTS · Kokoro tiếng Anh · Things You Didn't Know";
+  $('#tts-provider-value').textContent = shadowingSelected ? shadowingLabel : motPhutSelected ? motPhutLabel : thingsSelected ? thingsLabel : selected?.textContent || 'Chọn model giọng đọc';
   const options = [
     ...Array.from(select.options, (option) => ({ value: option.value, label: option.value === 'supertonic3-ko' ? 'Local AI TTS · VieNeu tiếng Việt + Supertonic 3 tiếng Hàn' : option.textContent })),
     { value: 'english-shadowing', label: shadowingLabel },
-    { value: MOT_PHUT_CONTENT, label: motPhutLabel }
+    { value: MOT_PHUT_CONTENT, label: motPhutLabel },
+    { value: THINGS_YOU_DIDNT_KNOW_CONTENT, label: thingsLabel }
   ];
   $('#tts-provider-options').innerHTML = options.map((option) => {
-    const selectedValue = shadowingSelected ? 'english-shadowing' : motPhutSelected ? MOT_PHUT_CONTENT : select.value;
+    const selectedValue = shadowingSelected ? 'english-shadowing' : motPhutSelected ? MOT_PHUT_CONTENT : thingsSelected ? THINGS_YOU_DIDNT_KNOW_CONTENT : select.value;
     const isSelected = option.value === selectedValue;
     return `<button class="tts-provider-option" type="button" role="option" data-tts-provider="${escapeHtml(option.value)}" aria-selected="${isSelected}"><span>${escapeHtml(option.label)}</span>${isSelected ? '<span class="tts-provider-option-check" aria-hidden="true">✓</span>' : ''}</button>`;
   }).join('');
 }
 
 function selectTtsProviderView(provider) {
+  if (provider === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+    window.motPhutVoLe?.setSettingsProfile?.('voice', false);
+    state.ttsProviderView = THINGS_YOU_DIDNT_KNOW_CONTENT;
+    updateTtsProviderPanels();
+    return;
+  }
   if (provider === MOT_PHUT_CONTENT) {
     state.ttsProviderView = MOT_PHUT_CONTENT;
     window.motPhutVoLe?.setSettingsProfile?.('voice', true);
@@ -804,6 +823,7 @@ function syncTtsProviderForContentLanguage(language, settings = state.settings |
 }
 
 function contentLanguageDescription(language) {
+  if (language === THINGS_YOU_DIDNT_KNOW_CONTENT) return 'Create one English Reel from a rotating country and topic, with its own fact review, Kokoro voice, thumbnail, and content design.';
   if (language === MOT_PHUT_CONTENT) return 'Kể một kiến thức thú vị bằng tiếng Việt, với giọng đọc và thiết kế riêng.';
   if (language === 'english-shadowing') return 'EnglishShadowing dùng giọng Kokoro và preset dựng riêng theo bốn video mẫu. Caption, highlight và Page cũng được tách riêng.';
   if (language === 'ja') return 'AI tự chọn chủ đề tiếng Nhật mới, chỉ đối chiếu lịch sử JA và luân phiên 5 bố cục. Caption, hashtag và ảnh nền Nhật được tách riêng.';
@@ -814,6 +834,24 @@ function contentLanguageDescription(language) {
 async function changeContentLanguage() {
   const language = $('#content-language').value;
   state.createLanguageSelectionTouched = true;
+  if (language === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+    selectTtsProviderView(THINGS_YOU_DIDNT_KNOW_CONTENT);
+    $('#background-effect-language').value = THINGS_YOU_DIDNT_KNOW_CONTENT;
+    state.backgroundEffectLanguage = THINGS_YOU_DIDNT_KNOW_CONTENT;
+    window.motPhutVoLe?.setSettingsProfile?.('background', false);
+    syncBackgroundEffectPreview();
+    $('#voice-highlight-content-profile').value = THINGS_YOU_DIDNT_KNOW_CONTENT;
+    applyVoiceHighlightContentProfile(THINGS_YOU_DIDNT_KNOW_CONTENT);
+    localStorage.setItem('things-you-didnt-know-content-mode', 'true');
+    localStorage.removeItem('mot-phut-vo-le-content-mode');
+    window.dispatchEvent(new CustomEvent('mot-phut-mode-change', { detail: { active: false } }));
+    const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
+    if (heroCopy) heroCopy.textContent = contentLanguageDescription(language);
+    window.dispatchEvent(new CustomEvent('things-you-didnt-know-mode-change', { detail: { active: true } }));
+    return true;
+  }
+  localStorage.removeItem('things-you-didnt-know-content-mode');
+  window.dispatchEvent(new CustomEvent('things-you-didnt-know-mode-change', { detail: { active: false } }));
   if (language === MOT_PHUT_CONTENT) {
     localStorage.setItem('mot-phut-vo-le-content-mode', 'true');
     const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
@@ -1120,6 +1158,7 @@ async function refreshFacebookPageForm(language = $('#facebook-quick-route-langu
 function markSettingsDirty(event) {
   const target = event.target;
   if (!target?.matches('input, select, textarea') || target.disabled) return;
+  if (target.closest('[data-things-you-didnt-know-settings]')) return;
   if (target.closest('.english-shadowing-voice-settings')) {
     state.englishShadowingSettingsDirty = true;
     state.englishShadowingSettingsRevision += 1;
@@ -1137,6 +1176,7 @@ function markSettingsDirty(event) {
     return;
   }
   if (target.id === 'facebook-quick-route-language' || target.id === 'background-effect-language') return;
+  if (target.id === 'background-effect' && state.backgroundEffectLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT) return;
   if (target.id === 'page-id' || target.id === 'page-token') {
     state.facebookPageCredentialDirty = true;
     return;
@@ -1154,6 +1194,10 @@ function syncBackgroundEffectPreview() {
       density: Number($('#mot-phut-setting-effect-density').value || 28),
       speed: Number($('#mot-phut-setting-effect-speed').value || 58),
       opacity: Number($('#mot-phut-setting-effect-opacity').value || 32), language: 'vi' }, location.origin);
+    return;
+  }
+  if (state.backgroundEffectLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+    window.thingsYouDidntKnow?.syncEffectPreview?.();
     return;
   }
   const effectId = $('#background-effect').value;
@@ -1197,7 +1241,11 @@ async function loadSettings() {
     state.backgroundEffectProfiles = normalizeBackgroundEffectProfilesForUi(settings);
     const selectedEffectLanguage = state.backgroundEffectLanguage || $('#background-effect-language').value || 'en';
     if (selectedEffectLanguage === MOT_PHUT_CONTENT) window.motPhutVoLe?.setSettingsProfile?.('background', true);
-    else {
+    else if (selectedEffectLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+      state.backgroundEffectLanguage = THINGS_YOU_DIDNT_KNOW_CONTENT;
+      $('#background-effect-language').value = THINGS_YOU_DIDNT_KNOW_CONTENT;
+      window.thingsYouDidntKnow?.syncEffectPreview?.();
+    } else {
       window.motPhutVoLe?.setSettingsProfile?.('background', false);
       applyBackgroundEffectProfile(selectedEffectLanguage);
     }
@@ -1226,12 +1274,21 @@ async function loadSettings() {
   // edits in the DOM until the user saves them; the server response is only a
   // baseline and must not overwrite a selection or text field mid-edit.
   if (state.settingsDirty) return;
-  if (!state.createLanguageSelectionTouched) $('#content-language').value = localStorage.getItem('mot-phut-vo-le-content-mode') === 'true' ? MOT_PHUT_CONTENT : settings.contentLanguage || 'en';
+  if (!state.createLanguageSelectionTouched) $('#content-language').value = localStorage.getItem('things-you-didnt-know-content-mode') === 'true' ? THINGS_YOU_DIDNT_KNOW_CONTENT
+    : localStorage.getItem('mot-phut-vo-le-content-mode') === 'true' ? MOT_PHUT_CONTENT : settings.contentLanguage || 'en';
   const visibleLanguage = $('#content-language').value;
-  if (visibleLanguage !== 'english-shadowing' && visibleLanguage !== MOT_PHUT_CONTENT) syncTtsProviderForContentLanguage(visibleLanguage, settings);
+  if (visibleLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT) selectTtsProviderView(THINGS_YOU_DIDNT_KNOW_CONTENT);
+  else if (visibleLanguage !== 'english-shadowing' && visibleLanguage !== MOT_PHUT_CONTENT) syncTtsProviderForContentLanguage(visibleLanguage, settings);
+  if (visibleLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+    $('#background-effect-language').value = THINGS_YOU_DIDNT_KNOW_CONTENT;
+    state.backgroundEffectLanguage = THINGS_YOU_DIDNT_KNOW_CONTENT;
+    $('#voice-highlight-content-profile').value = THINGS_YOU_DIDNT_KNOW_CONTENT;
+    applyVoiceHighlightContentProfile(THINGS_YOU_DIDNT_KNOW_CONTENT);
+  }
   const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
   if (heroCopy) heroCopy.textContent = contentLanguageDescription(visibleLanguage);
   window.dispatchEvent(new CustomEvent('mot-phut-mode-change', { detail: { active: visibleLanguage === MOT_PHUT_CONTENT } }));
+  window.dispatchEvent(new CustomEvent('things-you-didnt-know-mode-change', { detail: { active: visibleLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT } }));
   selectSavedVoice($('#vieneu-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
   selectSavedVoice($('#sbv2-vi-voice'), settings.vieneuJaViVoice || settings.vieneuViVoice || 'Hải Đăng');
   selectSavedVoice($('#cosyvoice-vi-voice'), settings.vieneuZhViVoice || settings.vieneuViVoice || 'Hải Đăng');
@@ -1353,6 +1410,15 @@ async function generateVideo() {
       const moduleJob = await api('/api/mot-phut-vo-le/jobs', { method: 'POST', body: JSON.stringify(modulePayload) });
       toast('Đã thêm Một Phút Vỡ Lẽ vào hàng đợi', false, `Job ${moduleJob.job.id} · dùng cấu hình riêng của nhánh nội dung này.`);
       window.dispatchEvent(new CustomEvent('mot-phut-job-created', { detail: { job: moduleJob.job } }));
+      return;
+    }
+    if (contentLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+      const modulePayload = window.thingsYouDidntKnow?.createPayload?.();
+      if (!modulePayload) throw new Error('The Things You Didn\'t Know form is not ready. Reload the page and try again.');
+      const moduleJob = await api('/api/things-you-didnt-know/jobs', { method: 'POST', body: JSON.stringify(modulePayload) });
+      toast('Reel added to the Things You Didn\'t Know queue', false, `Job ${moduleJob.job.id} · one Reel · isolated settings.`);
+      window.dispatchEvent(new CustomEvent('things-you-didnt-know-job-created', { detail: { job: moduleJob.job } }));
+      setView('overview');
       return;
     }
     let payload;
@@ -1579,6 +1645,23 @@ async function retryScheduledPost(event) {
 
 async function saveSettings() {
   const button = $('#save-settings'); button.disabled = true;
+  const thingsSettingsPending = window.thingsYouDidntKnow?.hasPendingSettings?.() === true;
+  if (thingsSettingsPending && (state.settingsDirty || state.englishShadowingSettingsDirty)) {
+    try { await window.thingsYouDidntKnow.saveSettings({ throwOnError: true }); }
+    catch (error) {
+      button.disabled = false;
+      toast("Không lưu được cài đặt Things You Didn't Know", true, error.message);
+      return;
+    }
+  }
+  if (thingsSettingsPending && !state.settingsDirty && !state.englishShadowingSettingsDirty) {
+    try {
+      await window.thingsYouDidntKnow.saveSettings({ throwOnError: true });
+      toast('Đã lưu cài đặt Things You Didn\'t Know', false, 'Giọng đọc, hiệu ứng, highlight và Full Auto được lưu riêng.');
+    } catch (error) { toast('Không lưu được cài đặt Things You Didn\'t Know', true, error.message); }
+    finally { button.disabled = false; }
+    return;
+  }
   const motPhutSettingsPending = window.motPhutVoLe?.hasPendingSettings?.() === true;
   if (motPhutSettingsPending && !state.settingsDirty && !state.englishShadowingSettingsDirty) {
     try {
@@ -2100,6 +2183,12 @@ function setupEvents() {
       window.motPhutVoLe?.setSettingsProfile?.('background', true);
       return;
     }
+    if (event.currentTarget.value === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+      state.backgroundEffectLanguage = THINGS_YOU_DIDNT_KNOW_CONTENT;
+      window.motPhutVoLe?.setSettingsProfile?.('background', false);
+      syncBackgroundEffectPreview();
+      return;
+    }
     window.motPhutVoLe?.setSettingsProfile?.('background', false);
     applyBackgroundEffectProfile(event.currentTarget.value);
     if (event.currentTarget.value === 'english-shadowing') applyVoiceHighlightContentProfile('english-shadowing');
@@ -2107,6 +2196,7 @@ function setupEvents() {
   });
   $('#voice-highlight-content-profile').addEventListener('change', (event) => {
     applyVoiceHighlightContentProfile(event.currentTarget.value);
+    if (event.currentTarget.value === THINGS_YOU_DIDNT_KNOW_CONTENT) return;
     if (event.currentTarget.value === 'english-shadowing') {
       storeCurrentBackgroundEffectProfile();
       applyBackgroundEffectProfile('english-shadowing');
@@ -2153,6 +2243,10 @@ function setupEvents() {
       $(inputSelector).value = String(value);
       $(outputSelector).textContent = String(value);
       $(inputSelector).dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    if (isGlobalPreview && state.backgroundEffectLanguage === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+      window.thingsYouDidntKnow?.applyEffectPreviewChange?.(event.data);
       return;
     }
     const changes = {
@@ -2215,6 +2309,16 @@ function setupEvents() {
     state.facebookPageCredentialDirty = false;
     state.facebookPageLanguageDirty = true;
     state.facebookSelectedLanguage = select.value;
+    if (select.value === THINGS_YOU_DIDNT_KNOW_CONTENT) {
+      $('#page-id').value = '';
+      $('#page-token').value = '';
+      $('#standard-facebook-settings').hidden = true;
+      window.thingsYouDidntKnow?.setFacebookProfileActive?.(true);
+      $('#facebook-result').textContent = '';
+      return;
+    }
+    $('#standard-facebook-settings').hidden = false;
+    window.thingsYouDidntKnow?.setFacebookProfileActive?.(false);
     $('#page-id').value = '';
     $('#page-token').value = '';
     if (select.value === MOT_PHUT_CONTENT) {

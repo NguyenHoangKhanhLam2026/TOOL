@@ -48,6 +48,27 @@ function database() {
     );
     CREATE INDEX IF NOT EXISTS content_records_created_idx ON content_records(created_at DESC);
     CREATE INDEX IF NOT EXISTS content_records_topic_idx ON content_records(category, subcategory, topic);
+    CREATE TABLE IF NOT EXISTS content_dedupe_archive (
+      archive_key TEXT PRIMARY KEY,
+      source_content_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      subcategory TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      angle TEXT NOT NULL,
+      title TEXT NOT NULL,
+      thumbnail_highlight TEXT NOT NULL DEFAULT '',
+      title_key TEXT NOT NULL,
+      script_text TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      caption TEXT NOT NULL DEFAULT '',
+      hashtags_json TEXT NOT NULL DEFAULT '[]',
+      validation_json TEXT,
+      content_hash TEXT NOT NULL,
+      candidate_key TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      archived_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS content_dedupe_archive_created_idx ON content_dedupe_archive(created_at DESC);
     CREATE TABLE IF NOT EXISTS module_jobs (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
@@ -82,6 +103,13 @@ function database() {
   `);
   const contentColumns = new Set(connection.prepare('PRAGMA table_info(content_records)').all().map((column) => column.name));
   if (!contentColumns.has('thumbnail_highlight')) connection.exec("ALTER TABLE content_records ADD COLUMN thumbnail_highlight TEXT NOT NULL DEFAULT ''");
+  const dedupeArchiveColumns = new Set(connection.prepare('PRAGMA table_info(content_dedupe_archive)').all().map((column) => column.name));
+  for (const [column, definition] of Object.entries({
+    thumbnail_highlight: "TEXT NOT NULL DEFAULT ''", caption: "TEXT NOT NULL DEFAULT ''",
+    hashtags_json: "TEXT NOT NULL DEFAULT '[]'", validation_json: 'TEXT'
+  })) {
+    if (!dedupeArchiveColumns.has(column)) connection.exec(`ALTER TABLE content_dedupe_archive ADD COLUMN ${column} ${definition}`);
+  }
   const scheduleColumns = new Set(connection.prepare('PRAGMA table_info(module_schedules)').all().map((column) => column.name));
   if (!scheduleColumns.has('facebook_checked_at')) connection.exec('ALTER TABLE module_schedules ADD COLUMN facebook_checked_at TEXT');
   return connection;
@@ -109,6 +137,55 @@ function ideaKey(candidate) {
   return crypto.createHash('sha256').update(normalized).digest('hex');
 }
 
+function mapDedupeRow(row, sourceContentId = row.id) {
+  return {
+    id: sourceContentId || row.id,
+    sourceContentId: sourceContentId || row.id,
+    historyAt: row.history_at || row.updated_at || row.archived_at || row.created_at || '',
+    category: row.category, subcategory: row.subcategory, topic: row.topic, angle: row.angle,
+    title: row.title, summary: row.summary, scriptText: row.script_text,
+    contentHash: row.content_hash, candidateKey: row.candidate_key
+  };
+}
+
+function listDedupeHistory(db, { excludeId = '' } = {}) {
+  const active = db.prepare(`SELECT id,category,subcategory,topic,angle,title,summary,script_text,content_hash,candidate_key,updated_at AS history_at
+    FROM content_records WHERE status != ?`).all('discarded').map((row) => mapDedupeRow(row));
+  const archived = db.prepare(`SELECT source_content_id,category,subcategory,topic,angle,title,summary,script_text,content_hash,candidate_key,archived_at AS history_at
+    FROM content_dedupe_archive`).all().map((row) => mapDedupeRow(row, row.source_content_id));
+  const seen = new Set();
+  return [...active, ...archived].sort((a, b) => String(b.historyAt).localeCompare(String(a.historyAt))).filter((item) => {
+    if (excludeId && item.sourceContentId === String(excludeId)) return false;
+    const versionKey = [item.sourceContentId || '', item.contentHash || '', item.candidateKey || '', normalizeTitle(item.title || '')].join('|');
+    if (seen.has(versionKey)) return false;
+    seen.add(versionKey);
+    return true;
+  });
+}
+
+function archiveSavedContent(db, row, archivedAt = new Date().toISOString()) {
+  if (!row || row.status === 'discarded' || !String(row.title || '').trim() || !String(row.script_text || '').trim()) return false;
+  const titleKey = row.title_key || normalizeTitle(row.title);
+  const contentHash = row.content_hash || hashContent(row.script_text);
+  const candidateKey = row.candidate_key || ideaKey(row);
+  const archiveKey = crypto.createHash('sha256')
+    .update([row.id, candidateKey, titleKey, contentHash].join('\0')).digest('hex');
+  db.prepare(`INSERT INTO content_dedupe_archive
+    (archive_key,source_content_id,category,subcategory,topic,angle,title,thumbnail_highlight,title_key,script_text,summary,caption,hashtags_json,validation_json,content_hash,candidate_key,created_at,archived_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(archive_key) DO UPDATE SET
+      category=excluded.category,subcategory=excluded.subcategory,topic=excluded.topic,angle=excluded.angle,
+      title=excluded.title,thumbnail_highlight=excluded.thumbnail_highlight,title_key=excluded.title_key,
+      script_text=excluded.script_text,summary=excluded.summary,caption=excluded.caption,
+      hashtags_json=excluded.hashtags_json,validation_json=excluded.validation_json,
+      content_hash=excluded.content_hash,candidate_key=excluded.candidate_key,archived_at=excluded.archived_at`).run(
+    archiveKey, row.id, row.category, row.subcategory, row.topic, row.angle, row.title, row.thumbnail_highlight || '', titleKey,
+    row.script_text, row.summary || '', row.caption || '', row.hashtags_json || '[]', row.validation_json || null,
+    contentHash, candidateKey, row.created_at || archivedAt, archivedAt
+  );
+  return true;
+}
+
 export function listMotPhutVoLeHistory({ query = '', category = '', limit = 200, offset = 0 } = {}) {
   const db = database();
   const search = String(query || '').trim();
@@ -124,19 +201,14 @@ export function listMotPhutVoLeHistory({ query = '', category = '', limit = 200,
 }
 
 export function getAllMotPhutVoLeHistoryForDeduplication({ excludeId = '' } = {}) {
-  return database().prepare('SELECT id,category,subcategory,topic,angle,title,summary,script_text,content_hash,status FROM content_records WHERE status != ? AND id != ? ORDER BY created_at DESC').all('discarded', String(excludeId))
-    .map((row) => ({
-      id: row.id, category: row.category, subcategory: row.subcategory, topic: row.topic, angle: row.angle,
-      title: row.title, summary: row.summary, scriptText: row.script_text, contentHash: row.content_hash
-    }));
+  return listDedupeHistory(database(), { excludeId });
 }
 
 export function reserveMotPhutVoLeIdea(candidate, { threshold = 0.78 } = {}) {
   const db = database();
   db.exec('BEGIN IMMEDIATE');
   try {
-    const history = db.prepare('SELECT id,category,subcategory,topic,angle,title,summary,script_text,content_hash FROM content_records WHERE status != ?').all('discarded')
-      .map((row) => ({ id: row.id, category: row.category, subcategory: row.subcategory, topic: row.topic, angle: row.angle, title: row.title, summary: row.summary, scriptText: row.script_text, contentHash: row.content_hash }));
+    const history = listDedupeHistory(db);
     const duplicate = findIdeaDuplicate(candidate, history, threshold);
     if (duplicate.duplicate) {
       const error = new Error(`Ý tưởng quá giống nội dung đã có (độ tương đồng văn bản ${duplicate.score}; lý do: ${duplicate.reason}).`);
@@ -163,18 +235,29 @@ export function reserveMotPhutVoLeIdea(candidate, { threshold = 0.78 } = {}) {
   }
 }
 
-export function saveMotPhutVoLeScript(id, content, { validation = null } = {}) {
+export function saveMotPhutVoLeScript(id, content, { validation = null, duplicateThreshold = 0.84 } = {}) {
   const db = database();
   const now = new Date().toISOString();
   const titleKey = normalizeTitle(content.title);
   const contentHash = content.contentHash || hashContent(content.scriptText);
+  db.exec('BEGIN IMMEDIATE');
   try {
+    const duplicate = findIdeaDuplicate({ ...content, titleKey, contentHash }, listDedupeHistory(db, { excludeId: id }), duplicateThreshold);
+    if (duplicate.duplicate) {
+      throw Object.assign(new Error(`Kịch bản trùng hoặc quá giống nội dung ${duplicate.matchId || 'đã lưu'} (độ tương đồng văn bản ${duplicate.score}).`), {
+        code: 'MOT_PHUT_VO_LE_DUPLICATE_CONTENT', matchId: duplicate.matchId, similarity: duplicate.score
+      });
+    }
+    archiveSavedContent(db, db.prepare('SELECT * FROM content_records WHERE id=?').get(id), now);
     const result = db.prepare(`UPDATE content_records SET category=?,subcategory=?,topic=?,angle=?,title=?,thumbnail_highlight=?,title_key=?,script_text=?,summary=?,content_hash=?,caption=?,hashtags_json=?,status='script_ready',validation_json=?,last_error=NULL,updated_at=? WHERE id=?`)
       .run(content.category, content.subcategory, content.topic, content.angle, content.title, String(content.thumbnailHighlight || ''), titleKey, content.scriptText, content.summary, contentHash, content.caption,
         JSON.stringify(content.hashtags), validation ? JSON.stringify(validation) : null, now, id);
     if (!result.changes) throw new Error(`Không tìm thấy reservation của nội dung ${id}.`);
+    archiveSavedContent(db, db.prepare('SELECT * FROM content_records WHERE id=?').get(id), now);
+    db.exec('COMMIT');
     return getMotPhutVoLeContent(id);
   } catch (error) {
+    try { db.exec('ROLLBACK'); } catch { }
     if (/UNIQUE constraint failed: content_records\.(title_key|content_hash)/u.test(error.message || '')) {
       error.code = 'MOT_PHUT_VO_LE_DUPLICATE_CONTENT';
       error.message = 'Tiêu đề hoặc nội dung vừa trùng với một mục đã lưu.';
@@ -227,24 +310,33 @@ export function deleteMotPhutVoLeVideo(id) {
   try {
     const row = db.prepare('SELECT * FROM content_records WHERE id=?').get(videoId);
     if (!row) { db.exec('COMMIT'); committed = true; return null; }
-    if (['processing', 'script_ready', 'publishing'].includes(row.status)) {
-      throw Object.assign(new Error('Không thể xóa khi MPVL đang được tạo hoặc đăng.'), { statusCode: 409 });
+
+    const jobs = db.prepare('SELECT id,type,status,payload_json,progress_json FROM module_jobs').all();
+    const relatedJobs = jobs.filter((job) => {
+      const payload = parseJson(job.payload_json, {});
+      const progress = parseJson(job.progress_json, {});
+      const batchContentIds = Object.values(progress.completedBatchContentIds || {}).map(String);
+      return payload.contentId === videoId || progress.contentId === videoId
+        || progress.resumeContentId === videoId || batchContentIds.includes(videoId);
+    });
+    if (relatedJobs.some((job) => ['pending', 'running'].includes(job.status))) {
+      throw Object.assign(new Error('Video MPVL vẫn còn job đang chạy. Chờ job kết thúc rồi xóa.'), { statusCode: 409 });
+    }
+    if (row.status === 'publishing') {
+      throw Object.assign(new Error('Video MPVL đang được gửi lên Facebook nên chưa thể xóa.'), { statusCode: 409 });
+    }
+    if (row.status === 'processing') {
+      const updatedAt = Date.parse(row.updated_at || row.created_at || '');
+      const staleForMs = Number.isFinite(updatedAt) ? Date.now() - updatedAt : 0;
+      if (staleForMs < 15 * 60_000) {
+        throw Object.assign(new Error('MPVL chỉ cho xóa bài Đang tạo khi không còn job chạy và trạng thái đã đứng yên ít nhất 15 phút.'), { statusCode: 409 });
+      }
     }
 
     const schedules = db.prepare('SELECT status,facebook_schedule_state FROM module_schedules WHERE content_id=?').all(videoId);
     const remoteStates = new Set(['queued', 'uploading', 'finishing', 'scheduled', 'uncertain']);
     if (schedules.some((item) => item.status === 'publishing' || remoteStates.has(item.facebook_schedule_state))) {
       throw Object.assign(new Error('Video đã được gửi hoặc đang lên lịch trên Facebook. Hãy hủy lịch tại Facebook trước khi xóa.'), { statusCode: 409 });
-    }
-
-    const jobs = db.prepare('SELECT id,type,status,payload_json,progress_json FROM module_jobs').all();
-    const relatedJobs = jobs.filter((job) => {
-      const payload = parseJson(job.payload_json, {});
-      const progress = parseJson(job.progress_json, {});
-      return payload.contentId === videoId || progress.contentId === videoId;
-    });
-    if (relatedJobs.some((job) => ['pending', 'running'].includes(job.status))) {
-      throw Object.assign(new Error('Video đang được xử lý. Hãy đợi job kết thúc rồi xóa.'), { statusCode: 409 });
     }
 
     const contentRoot = path.resolve(DATA, 'mot-phut-vo-le', 'content');
@@ -275,6 +367,7 @@ export function deleteMotPhutVoLeVideo(id) {
       }
     }
 
+    archiveSavedContent(db, row);
     db.prepare('DELETE FROM module_schedules WHERE content_id=?').run(videoId);
     for (const job of relatedJobs) db.prepare('DELETE FROM module_jobs WHERE id=?').run(job.id);
     db.prepare('DELETE FROM content_records WHERE id=?').run(videoId);
@@ -286,7 +379,7 @@ export function deleteMotPhutVoLeVideo(id) {
       try { fs.rmSync(artifact.staged, { recursive: true, force: true }); }
       catch { cleanupWarnings.push(path.basename(artifact.target)); }
     }
-    return { id: videoId, deleted: true, removedFileCount: staged.length, cleanupWarnings };
+    return { id: videoId, deleted: true, dedupeHistoryRetained: true, removedFileCount: staged.length, cleanupWarnings };
   } catch (error) {
     if (!committed) {
       try { db.exec('ROLLBACK'); } catch { }

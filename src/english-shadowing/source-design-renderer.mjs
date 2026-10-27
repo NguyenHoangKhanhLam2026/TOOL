@@ -65,7 +65,9 @@ function paperMarkup(base, { seed, vignette, bottomShade = 0, dark = 0.3 }) {
 }
 
 function sourceFont(font) {
-  return font === 'display' ? "'Lilita One', Impact, sans-serif" : "'Tinos', Georgia, serif";
+  if (font === 'display') return "'Lilita One', Impact, sans-serif";
+  if (font === 'sans') return 'Arial, Helvetica, sans-serif';
+  return "'Tinos', Georgia, serif";
 }
 
 function fitThumbnailHeadline(words, style) {
@@ -164,7 +166,7 @@ function mixWithWhite(hex, opacity) {
   return `#${rgb.map((channel) => Math.round(255 - (255 - channel) * opacity).toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function buildSourceContentSvg({ script, tokens = [], activeTokenIds = [], style, brand = 'Easy English Shadowing', editorMode = false, demoHighlight = false }) {
+export function buildSourceContentSvg({ script, tokens = [], activeTokenIds = [], style, brand = 'Easy English Shadowing', editorMode = false, demoHighlight = false, centerText = false }) {
   const allTokens = Array.isArray(tokens) ? tokens : [];
   const paragraphs = splitSentences(script?.scriptText, allTokens);
   const title = String(script?.title ?? '').trim();
@@ -192,7 +194,8 @@ export function buildSourceContentSvg({ script, tokens = [], activeTokenIds = []
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
       const line = lines[lineIndex];
       const baseline = cursorY + layout.size * (0.9 + lineIndex * 1.45);
-      let x = roomLeft;
+      const lineWidth = estimateTextWidth(line.map((word) => word.text).join(' '), layout.size);
+      let x = centerText ? centerX - lineWidth / 2 : roomLeft;
       for (let wordIndex = 0; wordIndex < line.length; wordIndex += 1) {
         const word = line[wordIndex];
         const token = word.id ? word : allTokens[tokenCursor];

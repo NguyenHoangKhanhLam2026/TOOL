@@ -15,6 +15,7 @@ export function planEnglishShadowingPace({
   text,
   sourceAudioDurationSeconds,
   targetWordsPerMinute = ENGLISH_SHADOWING_PROFILE.reading.targetWordsPerMinute,
+  preserveSourcePace = false,
   fps = ENGLISH_SHADOWING_PROFILE.canvas.fps,
   minAtempo = 0.75,
   maxAtempo = 1.33
@@ -27,6 +28,26 @@ export function planEnglishShadowingPace({
   if (!Number.isFinite(duration) || duration <= 0) throw new Error('EnglishShadowing: thời lượng audio không hợp lệ.');
   if (!Number.isFinite(rate) || rate < 80 || rate > 220) throw new Error('EnglishShadowing: WPM mục tiêu ngoài giới hạn.');
   if (!Number.isFinite(frameRate) || frameRate < 1 || frameRate > 60) throw new Error('EnglishShadowing: frame rate không hợp lệ.');
+
+  if (preserveSourcePace) {
+    const achievedWordsPerMinute = wordCount * 60 / duration;
+    const targetFrames = Math.max(1, Math.ceil(duration * frameRate));
+    return Object.freeze({
+      wordCount,
+      targetWordsPerMinute: achievedWordsPerMinute,
+      sourceAudioDurationSeconds: duration,
+      frameRate,
+      targetFrames,
+      targetDurationSeconds: targetFrames / frameRate,
+      requestedAtempo: 1,
+      atempo: 1,
+      tempoWasClamped: false,
+      finalDurationSeconds: duration,
+      achievedWordsPerMinute,
+      wordTimeScale: 1,
+      paceMode: 'source'
+    });
+  }
 
   const targetDurationSeconds = wordCount * 60 / rate;
   const targetFrames = Math.max(1, Math.round(targetDurationSeconds * frameRate));

@@ -22,9 +22,7 @@
   color: #233c33;
   font: inherit;
 }
-.mot-phut-create-note,
 .mot-phut-create-status { grid-column: 1 / -1; margin: 0; color: #687a71; font-size: 12px; }
-.mot-phut-create-note .text-button { padding: 0; color: #286454; font-weight: 700; }
 .mot-phut-create-status:empty { display: none; }
 .mot-phut-create-status.error,
 .mot-phut-inline-settings .inline-status.error { color: #a2342d; }

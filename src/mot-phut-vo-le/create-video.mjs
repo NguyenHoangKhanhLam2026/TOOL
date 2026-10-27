@@ -14,6 +14,7 @@ import { normalizeMotPhutVoLeVisualDesign, createMotPhutVoLeDesignSnapshot } fro
 import { getMotPhutVoLeVisualDesign } from './visual-design-store.mjs';
 import { synthesizeMotPhutVoLeAudio } from './vie-tts.mjs';
 import { alignMotPhutVoLeAudio, saveMotPhutVoLeAlignmentManifest } from './alignment.mjs';
+import { createMotPhutVoLeSpeechPacedAudio } from './speech-pacing.mjs';
 import { createMotPhutVoLeThumbnail, renderMotPhutVoLeVideo } from './renderer.mjs';
 import { validateAudioDuration } from './timing.mjs';
 import { normalizeMotPhutVoLeDelivery } from './delivery.mjs';
@@ -22,22 +23,47 @@ import { reviewMotPhutVoLeFactClaims } from './fact-check.mjs';
 const OUTPUT_DIR = path.join(DATA, 'outputs', 'mot-phut-vo-le');
 const MODULE_DATA_DIR = path.join(DATA, 'mot-phut-vo-le');
 
-export async function createMotPhutVoLeDraft({ topic = '', category = '', settings: settingsInput = {}, onProgress = () => {}, generate } = {}) {
+export async function createMotPhutVoLeDraft({ topic = '', category = '', contentId = '', settings: settingsInput = {}, onProgress = () => {}, generate } = {}) {
   const settings = normalizeMotPhutVoLeSettings(settingsInput);
+  let resumedReservation = null;
+  if (contentId) {
+    const saved = getMotPhutVoLeContent(contentId);
+    if (!saved) throw Object.assign(new Error(`Saved MPVL draft not found: ${contentId}.`), { code: 'MOT_PHUT_VO_LE_CONTENT_NOT_FOUND' });
+    const idea = { category: saved.category, subcategory: saved.subcategory, topic: saved.topic, angle: saved.angle,
+      titleHint: saved.title, summary: saved.summary };
+    const design = createMotPhutVoLeDesignSnapshot(saved.visualDesign || settingsInput.design || getMotPhutVoLeVisualDesign());
+    if (String(saved.scriptText || '').trim()) {
+      onProgress({ phase: 'script-ready', contentId, topic: saved.topic, resumed: true,
+        wordCount: String(saved.scriptText).trim().split(/\s+/u).filter(Boolean).length });
+      return { ...saved, idea, settings, design };
+    }
+    resumedReservation = { id: contentId, idea };
+  }
   const { chatgptStatus } = await import('../ai/chatgpt-plan.mjs');
   if (!chatgptStatus().connected) throw Object.assign(new Error('Chưa kết nối ChatGPT Plan trong ứng dụng.'), { code: 'MOT_PHUT_VO_LE_CHATGPT_UNAVAILABLE' });
   let lastError;
   for (let attempt = 0; attempt < settings.maxTopicRetries; attempt += 1) {
-    onProgress({ phase: 'topic-discovery', attempt: attempt + 1, maxAttempts: settings.maxTopicRetries });
-    const history = getAllMotPhutVoLeHistoryForDeduplication();
-    const idea = await discoverFreshTopic({ history, categoryHint: category, manualTopic: topic, generate, retries: 1 });
-    let id;
-    try {
-      id = reserveMotPhutVoLeIdea(idea);
-    } catch (error) {
-      lastError = error;
-      if (error.code === 'MOT_PHUT_VO_LE_DUPLICATE_IDEA') continue;
-      throw error;
+    let idea, id;
+    if (resumedReservation) {
+      ({ id, idea } = resumedReservation);
+      resumedReservation = null;
+    } else {
+      onProgress({ phase: 'topic-discovery', attempt: attempt + 1, maxAttempts: settings.maxTopicRetries });
+      const history = getAllMotPhutVoLeHistoryForDeduplication();
+      try {
+        idea = await discoverFreshTopic({ history, categoryHint: category, manualTopic: topic, generate, retries: 1 });
+      } catch (error) {
+        lastError = error;
+        if (error.code === 'MOT_PHUT_VO_LE_DUPLICATE_IDEA') continue;
+        throw error;
+      }
+      try {
+        id = reserveMotPhutVoLeIdea(idea);
+      } catch (error) {
+        lastError = error;
+        if (error.code === 'MOT_PHUT_VO_LE_DUPLICATE_IDEA') continue;
+        throw error;
+      }
     }
 
     try {
@@ -67,9 +93,15 @@ export async function createMotPhutVoLeDraft({ topic = '', category = '', settin
   throw lastError || new Error('Không tìm được chủ đề mới sau số lần thử đã giới hạn.');
 }
 
-export async function createMotPhutVoLeVideo({ topic = '', category = '', settings: settingsInput = {}, design: designInput = null, onProgress = () => {}, generate } = {}) {
+export async function createMotPhutVoLeVideo({ topic = '', category = '', contentId = '', settings: settingsInput = {}, design: designInput = null, onProgress = () => {}, generate } = {}) {
   const baseSettings = normalizeMotPhutVoLeSettings(settingsInput);
-  const draft = await createMotPhutVoLeDraft({ topic, category, settings: baseSettings, generate, onProgress });
+  const existing = contentId ? getMotPhutVoLeContent(contentId) : null;
+  if (contentId && !existing) throw Object.assign(new Error(`Saved MPVL draft not found: ${contentId}.`), { code: 'MOT_PHUT_VO_LE_CONTENT_NOT_FOUND' });
+  if (existing?.status === 'complete' && existing.videoPath && fs.existsSync(existing.videoPath)) {
+    onProgress({ phase: 'complete', contentId, videoPath: existing.videoPath, resumed: true });
+    return existing;
+  }
+  const draft = await createMotPhutVoLeDraft({ topic, category, contentId, settings: baseSettings, generate, onProgress });
   const settings = draft.settings;
   const id = draft.id;
   const design = normalizeMotPhutVoLeVisualDesign(designInput || draft.design);
@@ -100,7 +132,7 @@ export async function createMotPhutVoLeVideo({ topic = '', category = '', settin
       const duplicate = findIdeaDuplicate(revised, prior, 0.88);
       if (duplicate.duplicate) throw Object.assign(new Error('Bản sửa để căn chỉnh bị phát hiện quá giống một kịch bản đã lưu.'), { code: 'MOT_PHUT_VO_LE_DUPLICATE_CONTENT' });
       const factCheck = reviewMotPhutVoLeFactClaims(revised);
-      content = saveMotPhutVoLeScript(id, revised, { validation: { schema: 'mot-phut-vo-le-v1', valid: true, alignmentRevision: 1, factCheck } });
+      content = saveMotPhutVoLeScript(id, revised, { validation: { schema: 'mot-phut-vo-le-v1', valid: true, alignmentRevision: 1, factCheck }, duplicateThreshold: 0.88 });
       onProgress({ phase: 'script-revised', contentId: id,
         wordCount: String(content.scriptText || '').trim().split(/\s+/u).filter(Boolean).length, reason: 'alignment' });
       updateMotPhutVoLeContent(id, { status: 'processing' });
@@ -110,6 +142,39 @@ export async function createMotPhutVoLeVideo({ topic = '', category = '', settin
       onProgress({ phase: 'audio-ready', contentId: id, durationSeconds: duration, reused: audio.reused === true });
       alignment = await alignMotPhutVoLeAudio({ audioPath: audio.audioPath, scriptText: content.scriptText, segmentId: id,
         onProgress: (detail) => onProgress({ contentId: id, ...detail }) });
+    }
+    // Sentence pacing is an additive MPVL-only pass for newly created reels.
+    // Resumed drafts and completed reels keep their original audio and timings.
+    if (!contentId && alignment.reliable) {
+      const pacedAudioPath = path.join(contentDir, `speech-paced-${Date.now()}.wav`);
+      try {
+        const pacing = createMotPhutVoLeSpeechPacedAudio({
+          audioPath: audio.audioPath, outputPath: pacedAudioPath, scriptText: content.scriptText, alignment
+        });
+        if (pacing.applied) {
+          const pacedAlignment = await alignMotPhutVoLeAudio({
+            audioPath: pacedAudioPath, scriptText: content.scriptText, segmentId: `${id}-paced-${Date.now()}`,
+            onProgress: (detail) => onProgress({ contentId: id, ...detail })
+          });
+          if (pacedAlignment.reliable) {
+            const pacedDuration = await readAudioDuration(pacedAudioPath);
+            validateAudioDuration(pacedDuration);
+            audio = { ...audio, audioPath: pacedAudioPath, pacing };
+            alignment = pacedAlignment;
+            duration = pacedDuration;
+            onProgress({ phase: 'speech-pacing', contentId: id, insertedPauseCount: pacing.insertedPauseCount,
+              insertedDurationSeconds: pacing.insertedDurationSeconds, durationSeconds: duration });
+          } else {
+            fs.rmSync(pacedAudioPath, { force: true });
+            onProgress({ phase: 'speech-pacing-skipped', contentId: id, reason: 'paced-alignment-unreliable' });
+          }
+        } else {
+          onProgress({ phase: 'speech-pacing-skipped', contentId: id, reason: pacing.reason });
+        }
+      } catch (error) {
+        fs.rmSync(pacedAudioPath, { force: true });
+        onProgress({ phase: 'speech-pacing-skipped', contentId: id, reason: error.message });
+      }
     }
     const durationCheck = validateAudioDuration(duration);
     const alignmentPath = path.join(contentDir, 'alignment.json');
@@ -140,11 +205,22 @@ export async function createMotPhutVoLeVideo({ topic = '', category = '', settin
   }
 }
 
-export async function createMotPhutVoLeVideos({ count = 1, ...options } = {}) {
+export async function createMotPhutVoLeVideos({ count = 1, resumeProgress = null, ...options } = {}) {
   const total = Math.max(1, Math.min(5, Number(count) || 1));
   const results = [];
+  const completed = new Set((Array.isArray(resumeProgress?.completedBatchIndices) ? resumeProgress.completedBatchIndices : []).map(Number));
+  const resumeIndex = Number(resumeProgress?.batchIndex) || 0;
   for (let index = 0; index < total; index += 1) {
-    results.push(await createMotPhutVoLeVideo({ ...options, onProgress: (detail) => options.onProgress?.({ batchIndex: index + 1, batchTotal: total, ...detail }) }));
+    const batchIndex = index + 1;
+    if (completed.has(batchIndex)) {
+      const completedId = resumeProgress?.completedBatchContentIds?.[batchIndex];
+      const saved = completedId ? getMotPhutVoLeContent(completedId) : null;
+      if (saved) results.push(saved);
+      continue;
+    }
+    const resumeId = batchIndex === resumeIndex ? String(resumeProgress?.resumeContentId || resumeProgress?.contentId || '') : '';
+    results.push(await createMotPhutVoLeVideo({ ...options, contentId: resumeId || '',
+      onProgress: (detail) => options.onProgress?.({ batchIndex, batchTotal: total, ...detail }) }));
   }
   return results;
 }
@@ -168,7 +244,7 @@ export async function rerenderMotPhutVoLeVideo(id, { design: designInput = null,
     const duplicate = findIdeaDuplicate(revised, prior, 0.88);
     if (duplicate.duplicate) throw Object.assign(new Error(`Kịch bản đã chỉnh sửa quá giống nội dung ${duplicate.matchId || 'đã lưu'}.`), { code: 'MOT_PHUT_VO_LE_DUPLICATE_CONTENT' });
     content = saveMotPhutVoLeScript(id, revised, { validation: { schema: 'mot-phut-vo-le-v1', valid: true,
-      userEdited: true, factCheck: reviewMotPhutVoLeFactClaims(revised) } });
+      userEdited: true, factCheck: reviewMotPhutVoLeFactClaims(revised) }, duplicateThreshold: 0.88 });
   }
 
   const design = normalizeMotPhutVoLeVisualDesign(designInput || content.visualDesign || getMotPhutVoLeVisualDesign());

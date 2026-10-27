@@ -1,0 +1,113 @@
+@font-face{font-family:"Lilita One";src:url("/fonts/lilita-one-latin-400-normal.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Tinos";src:url("/fonts/tinos-latin-400-normal.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Tinos";src:url("/fonts/tinos-latin-700-normal.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+.tydk-shadowing-visual-tools{margin-top:28px;padding:22px;border:1px solid #ded6ca;border-radius:16px;background:#faf8f3;text-align:left}
+.tydk-shadowing-visual-tools-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.tydk-shadowing-visual-tools-heading h2{margin:0;color:#173553;font-size:19px}
+.tydk-shadowing-visual-tools-heading p{margin:5px 0 0;color:#687477;font-size:12px}
+.tydk-shadowing-visual-enable{display:flex;align-items:center;gap:8px;max-width:280px;padding:10px 12px;border:1px solid #d6ddd7;border-radius:11px;background:#fff;color:#334a4c;font-size:11px;font-weight:700;line-height:1.4}
+.tydk-shadowing-visual-enable input{accent-color:#287d7b}
+.tydk-shadowing-visual-tabs,.tydk-shadowing-visual-render-tabs{display:flex;gap:4px;border-bottom:1px solid #dfe1dc}
+.tydk-shadowing-visual-tabs{margin:19px 0 14px}
+.tydk-shadowing-visual-tabs button,.tydk-shadowing-visual-render-tabs button{border:1px solid transparent;border-bottom:0;border-radius:3px 3px 0 0;padding:8px 13px;background:transparent;color:#718087;font:600 13px "Be Vietnam Pro",Segoe UI,sans-serif;cursor:pointer}
+.tydk-shadowing-visual-tabs button.active,.tydk-shadowing-visual-render-tabs button.active{border-color:#dfe1dc;background:#fff;color:#273744}
+.tydk-shadowing-visual-editor-grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:0;align-items:stretch;overflow:hidden;border:1px solid #e2e3dc;border-radius:10px;background:#fff}
+.tydk-shadowing-visual-preview-panel{display:flex;min-width:0;min-height:580px;height:min(780px,75vh);flex-direction:column;background:#f1f2ef}
+.tydk-shadowing-visual-preview-heading{display:flex;flex-direction:column;gap:3px;padding:13px 16px 8px;color:#35454b}
+.tydk-shadowing-visual-preview-heading strong{font-size:13px}
+.tydk-shadowing-visual-preview-heading small{font-size:11px;color:#7a8588}
+.tydk-shadowing-visual-render-tabs{flex:none;padding:0 16px;background:#f1f2ef}
+.tydk-shadowing-visual-canvas{position:relative;display:grid;flex:1;min-height:320px;place-items:center;overflow:hidden;padding:10px;background:#f1f2ef;touch-action:none}
+.tydk-shadowing-visual-canvas svg,.tydk-shadowing-visual-canvas img{position:absolute;inset:0;display:block;width:100%;height:100%;border-radius:2px;box-shadow:0 5px 16px #17232b22;user-select:none}
+.tydk-shadowing-visual-canvas svg{pointer-events:none}
+.tydk-shadowing-visual-canvas .tydk-shadowing-visual-rendered-image{object-fit:contain}
+.tydk-shadowing-visual-fit-note{flex:none;min-height:37px;margin:0;padding:9px 14px;border-top:1px solid #e4e5e1;background:#fff;color:#707b82;font-size:12px;line-height:1.45}
+.tydk-shadowing-visual-fit-note.warning{color:#a94435}
+.tydk-shadowing-visual-loading,.tydk-shadowing-visual-empty,.tydk-shadowing-visual-error{max-width:360px;margin:auto;padding:22px;text-align:center;color:#64737a;font-size:13px;line-height:1.5}
+.tydk-shadowing-visual-error{color:#a94435}
+.tydk-shadowing-visual-properties{display:flex;min-width:0;max-height:min(780px,75vh);flex-direction:column;overflow:hidden;border-left:1px solid #e2e3dc;background:#fff}
+.tydk-shadowing-visual-properties h3{flex:none;margin:0;padding:14px 16px 0;color:#35454b;font-size:14px}
+.tydk-shadowing-visual-samples{flex:none;max-height:36%;overflow-y:auto;padding:12px 16px 0}
+.tydk-shadowing-visual-sample-group{display:flex;flex-direction:column;gap:10px;padding-bottom:4px}
+.tydk-shadowing-visual-sample-group h4,.tydk-shadowing-visual-control-group h4{margin:0;color:#35454b;font-size:13px;font-weight:700}
+.tydk-shadowing-visual-source-field{display:flex;min-width:0;flex-direction:column;gap:5px;color:#52616a;font-size:12px}
+.tydk-shadowing-visual-source-checkbox{display:flex;align-items:center;gap:8px;color:#52616a;font-size:12px}
+.tydk-shadowing-visual-source-checkbox input{accent-color:#287d7b}
+.tydk-shadowing-visual-source-field>span:first-child{color:#52616a;font-size:12px}
+.tydk-shadowing-visual-source-field input[type=text],.tydk-shadowing-visual-source-field input[type=number],.tydk-shadowing-visual-source-field select,.tydk-shadowing-visual-source-field textarea{width:100%;min-width:0;min-height:34px;border:1px solid #cbd2d7;border-radius:3px;padding:6px 9px;background:#fff;color:#263244;font:13px "Be Vietnam Pro",Segoe UI,sans-serif}
+.tydk-shadowing-visual-source-field textarea{resize:vertical;line-height:1.45}
+.tydk-shadowing-visual-source-field input.invalid{border-color:#c43c37;background:#fff8f7}
+.tydk-shadowing-visual-source-hint{color:#858e93;font-size:11px}
+.tydk-shadowing-visual-source-note{grid-column:1/-1;margin:0;color:#718087;font-size:12px;line-height:1.45}
+.tydk-shadowing-visual-color-row,.tydk-shadowing-visual-number-row{display:flex;min-width:0;align-items:center;gap:8px}
+.tydk-shadowing-visual-color-row input[type=color]{width:48px;height:36px;flex:none;border:1px solid #cbd2d7;border-radius:3px;padding:3px;background:#fff;cursor:pointer}
+.tydk-shadowing-visual-color-row input[type=text]{font-family:Consolas,monospace}
+.tydk-shadowing-visual-number-row input[type=range]{min-width:0;flex:1;accent-color:#287d7b}
+.tydk-shadowing-visual-number-row input[type=number]{width:92px;flex:none}
+.tydk-shadowing-visual-controls{display:flex;min-height:0;flex:1;flex-direction:column;gap:0;overflow-y:auto;padding:0 16px}
+.tydk-shadowing-visual-layer-picker{display:flex;flex:none;flex-direction:column;gap:6px;padding:12px 0;border-bottom:1px solid #e6e6e2;color:#52616a;font-size:12px}
+.tydk-shadowing-visual-layer-picker label{font-weight:700}
+.tydk-shadowing-visual-layer-picker select{min-height:34px;border:1px solid #cbd2d7;border-radius:3px;padding:6px 9px;background:#fff;color:#263244;font:13px "Be Vietnam Pro",Segoe UI,sans-serif}
+.tydk-shadowing-visual-layer-picker small{color:#718087;font-size:11px;line-height:1.4}
+.tydk-shadowing-visual-control-group{display:flex;flex:none;flex-direction:column;gap:12px;padding:15px 0;border-top:1px solid #e6e6e2}
+.tydk-shadowing-visual-control-group:first-child{border-top:0}
+.tydk-shadowing-visual-controls-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tydk-shadowing-visual-geometry-grid{display:grid;grid-column:1/-1;grid-template-columns:1fr 1fr;gap:10px}
+.tydk-shadowing-visual-actions{display:flex;flex:none;justify-content:flex-end;flex-wrap:wrap;gap:7px;padding:12px 16px 0}
+.tydk-shadowing-visual-actions .button{font:600 11px "Be Vietnam Pro",Segoe UI,sans-serif}
+.tydk-shadowing-visual-actions #tydk-shadowing-visual-save{min-width:140px}
+.tydk-shadowing-visual-status{flex:none;min-height:37px;margin:0;padding:9px 16px;color:#64737a;font-size:11px;line-height:1.45}
+.tydk-shadowing-visual-status.error{color:#a94435}
+.tydk-shadowing-visual-footnote{margin:13px 0 0;color:#718087;font-size:11px;line-height:1.55}
+.tydk-shadowing-source-overlay{position:absolute;inset:0;z-index:2;touch-action:none}
+.tydk-shadowing-source-drag{position:absolute;box-sizing:border-box;touch-action:none;outline-offset:2px}
+.tydk-shadowing-source-drag:focus,.tydk-shadowing-source-drag.selected{z-index:5;outline:2px dashed #238b8b}
+.tydk-shadowing-source-drag:not(.selected):hover{outline:1px dashed #238b8b}
+.tydk-shadowing-source-brand{cursor:move}
+.tydk-shadowing-source-box{cursor:move}
+.tydk-shadowing-source-box.not-fit{outline-color:#ba3434}
+.tydk-shadowing-source-handle{position:absolute;z-index:3;width:10px;height:10px;border:1px solid #fff;border-radius:2px;background:#287d7b;touch-action:none}
+.tydk-shadowing-source-size-handle{position:absolute;z-index:4;bottom:4px;left:50%;transform:translateX(-50%);border:1px solid #fff;border-radius:14px;padding:2px 7px;background:#287d7b;color:#fff;font-size:11px;font-weight:700;line-height:1.1;cursor:ns-resize;touch-action:none}
+@media(max-width:900px){.tydk-shadowing-visual-editor-grid{grid-template-columns:minmax(0,1fr) 330px}.tydk-shadowing-visual-properties{max-height:70vh}.tydk-shadowing-visual-preview-panel{height:min(720px,70vh)}}
+@media(max-width:760px){.tydk-shadowing-visual-tools{padding:15px}.tydk-shadowing-visual-tools-heading{align-items:stretch;flex-direction:column}.tydk-shadowing-visual-enable{max-width:none}.tydk-shadowing-visual-editor-grid{grid-template-columns:1fr}.tydk-shadowing-visual-preview-panel{order:0;min-height:520px;height:65vh}.tydk-shadowing-visual-properties{order:1;max-height:none;border-top:1px solid #e2e3dc;border-left:0}.tydk-shadowing-visual-samples{max-height:none}.tydk-shadowing-visual-controls{max-height:60vh}}
+@media(max-width:480px){.tydk-shadowing-visual-controls-grid{grid-template-columns:1fr}.tydk-shadowing-visual-geometry-grid{grid-template-columns:1fr 1fr}.tydk-shadowing-visual-number-row input[type=number]{width:76px}.tydk-shadowing-visual-actions{justify-content:stretch}.tydk-shadowing-visual-actions .button{flex:1}}
+.tydk-shadowing-visual-heading-actions{display:flex;align-items:center;gap:10px}
+.tydk-shadowing-visual-heading-actions .button{white-space:nowrap}
+.tydk-shadowing-visual-source-modules{display:flex;flex-direction:column;gap:28px;margin-top:24px}
+.tydk-shadowing-visual-source-module{display:grid;grid-template-columns:114px minmax(160px,max-content);grid-template-rows:auto auto;align-items:center;gap:8px 0}
+.tydk-shadowing-visual-source-module-preview{grid-row:1/3;display:flex;flex-direction:column;gap:8px}
+.tydk-shadowing-visual-source-module-preview h3{margin:0;color:#394b58;font-size:14px;font-weight:600}
+.tydk-shadowing-visual-source-card{width:98px;height:174px;overflow:hidden;border-radius:8px;background:#e8e2d8;box-shadow:0 4px 12px #18232b22}
+.tydk-shadowing-visual-source-card svg{display:block;width:100%;height:100%;border-radius:8px}
+.tydk-shadowing-visual-source-module>.button{justify-self:start;margin-left:0}
+.tydk-shadowing-visual-source-module>.tydk-shadowing-visual-source-caption{grid-column:2;margin:2px 0 0;color:#687477;font-size:12px;line-height:1.45}
+.tydk-shadowing-visual-source-caption{max-width:520px}
+.tydk-shadowing-visual-content-details{border-top:1px solid #e2e3dc;padding-top:14px}
+.tydk-shadowing-visual-content-details>summary{display:flex;align-items:baseline;gap:12px;cursor:pointer;list-style-position:inside;color:#394b58}
+.tydk-shadowing-visual-content-details>summary strong{font-size:14px}
+.tydk-shadowing-visual-content-details>summary span{color:#687477;font-size:12px}
+.tydk-shadowing-visual-content-details[open]>.tydk-shadowing-visual-source-module{margin-top:16px}
+.tydk-shadowing-visual-dialog[hidden]{display:none}
+.tydk-shadowing-visual-dialog:not([hidden]){position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:16px;background:#1018209c}
+.tydk-shadowing-visual-dialog-panel{display:flex;width:min(1180px,calc(100vw - 32px));max-height:94vh;flex-direction:column;overflow:hidden;border:1px solid #d8dce0;border-radius:8px;background:#fff;box-shadow:0 20px 70px #0005}
+.tydk-shadowing-visual-dialog-head{display:flex;flex:none;align-items:flex-start;justify-content:space-between;gap:20px;padding:17px 20px 14px}
+.tydk-shadowing-visual-dialog-head h2{margin:0;color:#263244;font-size:19px;font-weight:700}
+.tydk-shadowing-visual-dialog-head p{margin:5px 0 0;color:#75818b;font-size:13px;line-height:1.45}
+.tydk-shadowing-visual-dialog-close{width:32px;height:32px;flex:none;border:0;border-radius:4px;background:transparent;color:#6c7780;font-size:27px;line-height:1;cursor:pointer}
+.tydk-shadowing-visual-dialog-close:hover{background:#f1f2f3;color:#263244}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-editor-grid{min-height:0;height:min(760px,calc(94vh - 92px));flex:1;grid-template-columns:minmax(0,1fr) 360px;overflow:hidden;border:0;border-top:1px solid #dfe1dc;border-radius:0}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-preview-panel{height:auto;min-height:0}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-canvas{min-height:0;padding:12px}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-properties{height:100%;max-height:none;min-height:0}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-samples{max-height:36%;padding-top:13px}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-actions-spacer{flex:1}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-actions .button{padding:8px 12px;font-size:12px}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-actions #tydk-shadowing-visual-save{min-width:138px}
+.tydk-shadowing-visual-dialog .tydk-shadowing-visual-status{margin-top:0}
+body.things-design-open{overflow:hidden}
+@media(max-width:760px){.tydk-shadowing-visual-heading-actions{align-items:stretch;flex-direction:column}.tydk-shadowing-visual-source-module{grid-template-columns:106px minmax(130px,max-content)}.tydk-shadowing-visual-dialog:not([hidden]){padding:0}.tydk-shadowing-visual-dialog-panel{width:100vw;max-height:100vh;height:100vh;border-radius:0}.tydk-shadowing-visual-dialog .tydk-shadowing-visual-editor-grid{height:auto;grid-template-columns:1fr;overflow-y:auto}.tydk-shadowing-visual-dialog .tydk-shadowing-visual-preview-panel{height:60vh;min-height:360px}.tydk-shadowing-visual-dialog .tydk-shadowing-visual-properties{height:auto;max-height:none;border-top:1px solid #dfe1dc;border-left:0}.tydk-shadowing-visual-dialog .tydk-shadowing-visual-actions{padding-bottom:12px}}
+
+body.things-editor-mode #workspace,body.things-editor-mode #shadowing-workspace,body.things-editor-mode .top-actions{display:none!important}body.things-editor-mode #things-visual-workspace{display:block}.things-visual-workspace[hidden]{display:none!important}body.things-editor-mode #shadowing-editor-button{display:none}
+
+.things-visual-workspace{min-height:calc(100vh - 76px);padding:28px;background:#f3eee5}.things-design-shell{max-width:1050px!important}.things-design-shell>p{max-width:680px!important}.things-editor-mode .things-design-shell{padding:28px}
+@media(max-width:720px){.things-visual-workspace{padding:12px}.things-editor-mode .things-design-shell{padding:18px}}

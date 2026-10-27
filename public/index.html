@@ -15,8 +15,10 @@
     <link rel="stylesheet" href="/highlight-settings.css" />
     <link rel="stylesheet" href="/studio-polish.css?v=20261019" />
     <link rel="stylesheet" href="/mot-phut-vo-le.css" />
+    <link rel="stylesheet" href="/things-you-didnt-know.css" />
     <script type="module" src="/app.js"></script>
     <script type="module" src="/mot-phut-vo-le.js"></script>
+    <script type="module" src="/things-you-didnt-know.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -76,8 +78,7 @@
                   <button class="button button-dark" id="generate-button"><span>✳</span> Tạo video mới <span class="button-arrow">↗</span></button>
                 </div>
                 <div class="mot-phut-create-fields" id="mot-phut-create-fields" hidden>
-                  <p class="mot-phut-create-note">Mỗi lần tạo, AI tự chọn một chủ đề mới và tạo một video theo cài đặt đã lưu; thời lượng theo độ dài lời thoại, ưu tiên giải thích trọn ý. <button class="text-button" type="button" data-go="settings">Cài đặt</button></p>
-                  <p class="mot-phut-create-status" id="mot-phut-create-status" role="status" aria-live="polite"></p>
+                  <p class="mot-phut-create-status sr-only" id="mot-phut-create-status" role="status" aria-live="polite"></p>
                 </div>
                 <p class="content-history-note" id="content-history-note" aria-live="polite"></p>
               </div>

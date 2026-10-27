@@ -27,9 +27,10 @@ export const ENGLISH_SHADOWING_DELIVERY_STYLES = Object.freeze({
 
 const KNOWN_STYLES = new Set(Object.keys(ENGLISH_SHADOWING_DELIVERY_STYLES));
 
-// Kokoro receives sentence-local speed values, so delivery intent has an
-// audible cadence effect while the renderer still normalizes the full lesson
-// to the fixed sample-1 clip pace.
+export const ENGLISH_SHADOWING_NARRATION_VERSION = 'spoken-flow-v2';
+
+// Existing scripts without a narration version keep their original segmented
+// synthesis and fixed-pace render path.
 const SENTENCE_RATES = Object.freeze({
   balanced: Object.freeze({ 'opening-question': 0.8, 'opening-hook': 0.8, explanation: 0.8, 'connected-list': 0.82, contrast: 0.78, 'punchy-emphasis': 0.78, 'closing-takeaway': 0.77 }),
   calm: Object.freeze({ 'opening-question': 0.78, 'opening-hook': 0.78, explanation: 0.8, 'connected-list': 0.82, contrast: 0.78, 'punchy-emphasis': 0.78, 'closing-takeaway': 0.77 }),
@@ -114,5 +115,31 @@ export function buildEnglishShadowingSentencePlan(sentences, style = 'balanced')
       pauseAfterSeconds: order < normalized.length - 1 ? sentencePause(text, selectedStyle, intent) : 0
     };
   });
+}
+
+export function buildEnglishShadowingNarrationSegment(text, style = 'balanced') {
+  const selectedStyle = resolveEnglishShadowingDeliveryStyle(style);
+  const delivery = ENGLISH_SHADOWING_DELIVERY_STYLES[selectedStyle];
+  const speechText = String(text || '').replace(/\s+/gu, ' ').trim();
+  return {
+    segmentId: 'shadowing-spoken-flow-v2',
+    order: 0,
+    language: 'en',
+    text: speechText,
+    speechText,
+    narrationVersion: ENGLISH_SHADOWING_NARRATION_VERSION,
+    paceMode: 'source',
+    deliveryStyle: selectedStyle,
+    tone: delivery.tone,
+    narrationDirection: delivery.direction,
+    nativeModelRate: delivery.modelRate,
+    rate: delivery.modelRate,
+    pauseAfterSeconds: 0
+  };
+}
+
+export function usesEnglishShadowingSpokenFlow(script) {
+  return Array.isArray(script?.speechSegments)
+    && script.speechSegments.some((segment) => segment?.narrationVersion === ENGLISH_SHADOWING_NARRATION_VERSION);
 }
 

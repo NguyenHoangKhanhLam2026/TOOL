@@ -8,10 +8,10 @@ import { buildHighlightIntervals } from '../../packages/audio-highlight/highligh
 import { renderBackgroundEffectMarkup } from '../../packages/video-engine/background-effects.mjs';
 import { ENGLISH_SHADOWING_PROFILE } from './profile.mjs';
 import { ENGLISH_SHADOWING_DEFAULT_SETTINGS } from './settings.mjs';
-import { normalizeEnglishShadowingVisualDesign } from './visual-design.mjs';
+import { ENGLISH_SHADOWING_VISUAL_DESIGN_DEFAULTS, normalizeEnglishShadowingVisualDesign } from './visual-design.mjs';
 import { buildSourceContentSvg, buildSourceThumbnailSvg } from './source-design-renderer.mjs';
 import { planEnglishShadowingPace, scaleEnglishShadowingWordTimings } from './timing.mjs';
-import { getEnglishShadowingDeliveryProfile, resolveEnglishShadowingDeliveryStyle } from './delivery.mjs';
+import { ENGLISH_SHADOWING_NARRATION_VERSION, getEnglishShadowingDeliveryProfile, resolveEnglishShadowingDeliveryStyle, usesEnglishShadowingSpokenFlow } from './delivery.mjs';
 import {
   FIRST_ENGLISH_SHADOWING_BACKGROUND_THEME_ID,
   getEnglishShadowingBackgroundTheme
@@ -112,12 +112,13 @@ function chooseLessonTextLayout(tokens, options = {}) {
   const maxHeight = options.maxHeight || 930;
   const requestedFontSize = Number(options.fontSize);
   let fontSize = requestedFontSize || (tokens.length > 76 ? 52 : tokens.length > 64 ? 56 : tokens.length > 54 ? 58 : 60);
+  const lineHeightRatio = Number(options.lineHeightRatio) || 1.34;
   const minimumFontSize = requestedFontSize ? 38 : 43;
   let lines = [];
   let lineHeight = 0;
   while (fontSize >= minimumFontSize) {
     lines = wrapTokens(tokens, maxWidth, fontSize, 7);
-    lineHeight = Math.round(fontSize * 1.34);
+    lineHeight = Math.round(fontSize * lineHeightRatio);
     const height = lines.length * lineHeight;
     if (height <= maxHeight) break;
     fontSize -= 1;
@@ -129,6 +130,49 @@ function chooseLessonTextLayout(tokens, options = {}) {
     centerX: Number(options.centerX) || 540,
     centerY: Number(options.centerY) || 1000
   };
+}
+
+function spokenFlowFontSize(wordCount) {
+  return wordCount > 74 ? 54 : wordCount > 64 ? 56 : 58;
+}
+
+function resolveSpokenFlowVisualDesign(value, script) {
+  const design = normalizeEnglishShadowingVisualDesign(value);
+  if (!design.enabled || !usesEnglishShadowingSpokenFlow(script)) return design;
+  const content = { ...design.content };
+  const defaults = ENGLISH_SHADOWING_VISUAL_DESIGN_DEFAULTS.content;
+  const wordCount = String(script?.scriptText || '').match(/\S+/gu)?.length || 0;
+  const bodyFontSize = spokenFlowFontSize(wordCount);
+  let automaticVerticalPosition = false;
+  const useIfDefault = (key, defaultValue, spokenFlowValue) => {
+    if (content[key] === defaultValue) content[key] = spokenFlowValue;
+  };
+  if (design.schemaVersion >= 3) {
+    useIfDefault('contentLeftPct', defaults.contentLeftPct, 6);
+    useIfDefault('contentWidthPct', defaults.contentWidthPct, 88);
+    useIfDefault('contentTopPct', defaults.contentTopPct, 12);
+    useIfDefault('contentHeightPct', defaults.contentHeightPct, 66);
+    useIfDefault('bodyMaxPx', defaults.bodyMaxPx, bodyFontSize);
+    useIfDefault('bodyFont', defaults.bodyFont, 'sans');
+  } else if (design.schemaVersion >= 2) {
+    automaticVerticalPosition = content.textY === defaults.textY;
+    useIfDefault('textY', defaults.textY, 960);
+    useIfDefault('textFontSize', defaults.textFontSize, bodyFontSize);
+    useIfDefault('textMaxWidth', defaults.textMaxWidth, 940);
+    useIfDefault('textMaxHeight', defaults.textMaxHeight, 1160);
+  }
+  return { ...design, content, automaticVerticalPosition };
+}
+
+function spokenFlowLayoutOptions(tokens) {
+  const fontSize = spokenFlowFontSize(tokens.length);
+  return { centerX: 540, centerY: 960, fontSize, maxWidth: 940, maxHeight: 1160, lineHeightRatio: 1.44 };
+}
+
+function positionSpokenFlowBody(layout, firstBaseline = 520) {
+  if (!layout?.lines?.length || !Number.isFinite(layout.lineHeight)) return layout;
+  layout.centerY = Math.round(firstBaseline + ((layout.lines.length - 1) * layout.lineHeight) / 2);
+  return layout;
 }
 
 function fontFamily(font) {
@@ -278,7 +322,8 @@ function buildLessonFrameSvg({ script, tokens, activeTokenIds = [], highlightSty
       activeTokenIds,
       style: visualDesign.content,
       brand: 'Easy English Shadowing',
-      editorMode
+      editorMode,
+      centerText: usesEnglishShadowingSpokenFlow(script)
     });
   }
   const palette = resolveRenderPalette(backgroundThemeId);
@@ -401,17 +446,22 @@ function buildLessonFrameSvg({ script, tokens, activeTokenIds = [], highlightSty
 }
 
 export async function buildEnglishShadowingVisualPreviewSvg(profile = ENGLISH_SHADOWING_DEFAULT_SETTINGS, backgroundThemeId = FIRST_ENGLISH_SHADOWING_BACKGROUND_THEME_ID, requestedVisualDesign = null, editorMode = false, sample = {}) {
-  const visualDesign = normalizeEnglishShadowingVisualDesign(requestedVisualDesign);
+  const visualDesign = resolveSpokenFlowVisualDesign(requestedVisualDesign, { speechSegments: [{ narrationVersion: ENGLISH_SHADOWING_NARRATION_VERSION }] });
   const defaultScriptText = 'A clear read-back can prevent mix-ups during a busy call. When someone lists several steps, write each one down. Repeat the order in your own words before hanging up. You might ask, “Do I send the form first, or call the office?” Confirm names, dates, and deadlines while the other person is still there. A quick check gives everyone a shared plan and can save another phone call later.';
   const scriptText = String(sample?.scriptText || defaultScriptText).trim().slice(0, 1600) || defaultScriptText;
   const title = String(sample?.title || 'Quick Check, Clear Plan').trim().slice(0, 120) || 'Quick Check, Clear Plan';
+  const previewScript = {
+    title,
+    scriptText,
+    speechSegments: [{ narrationVersion: ENGLISH_SHADOWING_NARRATION_VERSION }]
+  };
   const tokens = [...scriptText.matchAll(/\S+/gu)].map((match, index) => ({
     id: `shadowing-preview:word:${index + 1}`,
     text: match[0]
   }));
   if (visualDesign.enabled && visualDesign.schemaVersion >= 3) {
     return buildSourceContentSvg({
-      script: { title, scriptText },
+      script: previewScript,
       tokens,
       activeTokenIds: editorMode
         ? profile.highlightMode === 'phrase'
@@ -421,16 +471,19 @@ export async function buildEnglishShadowingVisualPreviewSvg(profile = ENGLISH_SH
       style: visualDesign.content,
       brand: String(sample?.brand || 'Easy English Shadowing'),
       editorMode,
-      demoHighlight: editorMode
+      demoHighlight: editorMode,
+      centerText: true
     });
   }
   const contentDesign = visualDesign.enabled && visualDesign.schemaVersion >= 2 ? visualDesign.content : null;
-  const layout = chooseLessonTextLayout(tokens, visualDesign.enabled ? {
+  let layout = chooseLessonTextLayout(tokens, visualDesign.enabled ? {
     centerX: visualDesign.content.textX,
     centerY: visualDesign.content.textY,
     fontSize: visualDesign.content.textFontSize,
-    ...(contentDesign ? { maxWidth: contentDesign.textMaxWidth, maxHeight: contentDesign.textMaxHeight } : {})
-  } : {});
+    ...(contentDesign ? { maxWidth: contentDesign.textMaxWidth, maxHeight: contentDesign.textMaxHeight } : {}),
+    lineHeightRatio: 1.44
+  } : spokenFlowLayoutOptions(tokens));
+  if (!visualDesign.enabled || visualDesign.automaticVerticalPosition) layout = positionSpokenFlowBody(layout);
   const highlightWordBoxes = await measureShadowingWordBoxes(tokens, layout.fontSize, layout);
   const previewActiveTokens = profile.highlightEnabled === false
     ? []
@@ -438,7 +491,7 @@ export async function buildEnglishShadowingVisualPreviewSvg(profile = ENGLISH_SH
       ? (sample?.scriptText ? tokens.slice(1, 4) : tokens.slice(24, 27)).map((token) => token.id)
       : [sample?.scriptText ? tokens[1]?.id : tokens[24]?.id].filter(Boolean);
   return buildLessonFrameSvg({
-    script: { title, scriptText },
+    script: previewScript,
     tokens,
     activeTokenIds: previewActiveTokens,
     highlightStyle: profile.highlightStyle,
@@ -598,7 +651,8 @@ function makeFrameSegments(intervals, frameCount) {
 
 /** Render the isolated EnglishShadowing visual and narration composition. */
 export async function renderEnglishShadowingVideo({ script, audioPath, tokens, wordTimings, profile, videoId, backgroundThemeId = null, outputFileName = '', onProgress = () => {} }) {
-  const visualDesign = normalizeEnglishShadowingVisualDesign(profile?.visualDesign);
+  const spokenFlow = usesEnglishShadowingSpokenFlow(script);
+  const visualDesign = resolveSpokenFlowVisualDesign(profile?.visualDesign, script);
   const activeVisualDesign = visualDesign.enabled && !visualDesign.thumbnailOnly ? visualDesign : null;
   const activeThumbnailDesign = visualDesign.enabled ? visualDesign : null;
   const highlightStyle = profile.highlightStyle === 'tool' ? 'tool' : 'text';
@@ -615,7 +669,8 @@ export async function renderEnglishShadowingVideo({ script, audioPath, tokens, w
   const pace = planEnglishShadowingPace({
     text: script.scriptText,
     sourceAudioDurationSeconds: sentenceAudioDuration,
-    targetWordsPerMinute: delivery.targetWordsPerMinute
+    targetWordsPerMinute: delivery.targetWordsPerMinute,
+    preserveSourcePace: usesEnglishShadowingSpokenFlow(script)
   });
   const scaledTimings = scaleEnglishShadowingWordTimings(wordTimings, pace);
   const intervals = profile.highlightEnabled === false
@@ -626,12 +681,16 @@ export async function renderEnglishShadowingVideo({ script, audioPath, tokens, w
   const allTokens = Array.isArray(tokens) ? tokens : [];
   if (!allTokens.length) throw new Error('EnglishShadowing: Kokoro chưa trả về token để hiển thị.');
   const v2ContentDesign = activeVisualDesign?.schemaVersion === 2 ? activeVisualDesign.content : null;
-  const lessonLayout = chooseLessonTextLayout(allTokens, activeVisualDesign ? {
+  let lessonLayout = chooseLessonTextLayout(allTokens, activeVisualDesign ? {
     centerX: activeVisualDesign.content.textX,
     centerY: activeVisualDesign.content.textY,
     fontSize: activeVisualDesign.content.textFontSize,
-    ...(v2ContentDesign ? { maxWidth: v2ContentDesign.textMaxWidth, maxHeight: v2ContentDesign.textMaxHeight } : {})
-  } : {});
+    ...(v2ContentDesign ? { maxWidth: v2ContentDesign.textMaxWidth, maxHeight: v2ContentDesign.textMaxHeight } : {}),
+    ...(spokenFlow ? { lineHeightRatio: 1.44 } : {})
+  } : spokenFlow ? spokenFlowLayoutOptions(allTokens) : {});
+  if (spokenFlow && (!activeVisualDesign || visualDesign.automaticVerticalPosition)) {
+    lessonLayout = positionSpokenFlowBody(lessonLayout);
+  }
   const fontSize = lessonLayout.fontSize;
   const highlightWordBoxes = activeVisualDesign?.schemaVersion >= 3 || profile.highlightEnabled === false || highlightStyle !== 'tool'
     ? []
@@ -766,9 +825,10 @@ export async function renderEnglishShadowingVideo({ script, audioPath, tokens, w
   const videoPath = path.join(outputDir, safeFileName);
   const atempo = Number(pace.atempo.toFixed(5));
   const introDelayMs = Math.round(introFrameCount * 1000 / FPS);
+  const paceFilter = pace.paceMode === 'source' ? 'anull' : `atempo=${atempo}`;
   const audioFilter = introFrameCount > 0
-    ? `atempo=${atempo},adelay=${introDelayMs}:all=1`
-    : `atempo=${atempo}`;
+    ? `${paceFilter},adelay=${introDelayMs}:all=1`
+    : paceFilter;
   await run(FFMPEG_BIN, [
     '-y', '-hide_banner', '-loglevel', 'error',
     '-f', 'concat', '-safe', '0', '-i', concatPath,

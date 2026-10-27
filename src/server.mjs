@@ -408,6 +408,10 @@ async function handleApi(req, res, url) {
     const { handleMotPhutVoLeApi } = await import('./mot-phut-vo-le/http.mjs');
     return handleMotPhutVoLeApi(req, res, url);
   }
+  if (url.pathname.startsWith('/api/things-you-didnt-know/')) {
+    const { handleThingsYouDidntKnowApi } = await import('./things-you-didnt-know/http.mjs');
+    return handleThingsYouDidntKnowApi(req, res, url);
+  }
   const route = `${req.method} ${url.pathname}`;
   if (route === 'GET /api/visual-template') {
     const requestedLanguage = url.searchParams.get('lang');

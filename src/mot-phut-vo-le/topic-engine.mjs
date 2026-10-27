@@ -1,7 +1,10 @@
 import { normalizeTitle, hashContent } from './content-validator.mjs';
 import { generateTopicCandidates } from './prompt.mjs';
 
-const STOP_WORDS = new Set(['và', 'là', 'của', 'có', 'khi', 'một', 'những', 'các', 'vì', 'sao', 'thế', 'nào', 'được', 'trong', 'với', 'cho', 'đến', 'này', 'đó', 'theo', 'hay', 'về']);
+// normalizeForComparison removes Vietnamese diacritics, so the stop-word list
+// must use the same normalized spelling or these words remain in the score.
+const STOP_WORDS = new Set(['va', 'la', 'cua', 'co', 'khi', 'mot', 'nhung', 'cac', 'vi', 'sao', 'the', 'nao', 'duoc', 'trong', 'voi', 'cho', 'den', 'nay', 'do', 'theo', 'hay', 've']);
+const SCRIPT_SENTENCE_DUPLICATE_THRESHOLD = 0.82;
 
 export function normalizeForComparison(value) {
   return normalizeTitle(value).normalize('NFD').replace(/[\u0300-\u036f]/gu, '')
@@ -44,12 +47,39 @@ export function compareIdeaSimilarity(candidate, previous) {
   return Number((0.30 * topic + 0.34 * angle + 0.21 * summary + 0.15 * title).toFixed(4));
 }
 
+function scriptSentences(value) {
+  return String(value || '').normalize('NFC').split(/(?<=[.!?。！？])\s+|[\r\n]+/u).map((sentence) => sentence.trim()).filter(Boolean);
+}
+
+function findRepeatedScriptSentence(candidateText, previousText) {
+  const candidateSentences = scriptSentences(candidateText);
+  const previousSentences = scriptSentences(previousText);
+  for (const candidateSentence of candidateSentences) {
+    if (tokenSet(candidateSentence).size < 5) continue;
+    for (const previousSentence of previousSentences) {
+      if (tokenSet(previousSentence).size < 5) continue;
+      const score = Math.max(jaccardSimilarity(candidateSentence, previousSentence), trigramSimilarity(candidateSentence, previousSentence));
+      if (score >= SCRIPT_SENTENCE_DUPLICATE_THRESHOLD) return score;
+    }
+  }
+  return 0;
+}
+
 export function findIdeaDuplicate(candidate, history = [], threshold = 0.78) {
   const normalizedTitle = normalizeTitle(candidate.titleHint || candidate.title || '');
   const candidateHash = candidate.contentHash || (candidate.scriptText ? hashContent(candidate.scriptText) : null);
+  const candidateIdeaKey = normalizeForComparison(`${candidate.topic || ''} ${candidate.angle || ''}`);
   for (const previous of history) {
+    // candidateKey is a stored SHA-256 digest; compare normalized source fields
+    // here so active and archived records share the same exact-idea check.
+    const previousIdeaKey = normalizeForComparison(`${previous.topic || ''} ${previous.angle || ''}`);
+    if (candidateIdeaKey && previousIdeaKey && candidateIdeaKey === previousIdeaKey) return { duplicate: true, score: 1, reason: 'idea-key', matchId: previous.id || null };
     if (normalizedTitle && normalizedTitle === normalizeTitle(previous.title)) return { duplicate: true, score: 1, reason: 'title', matchId: previous.id || null };
     if (candidateHash && candidateHash === previous.contentHash) return { duplicate: true, score: 1, reason: 'content-hash', matchId: previous.id || null };
+    const repeatedSentence = findRepeatedScriptSentence(candidate.scriptText, previous.scriptText);
+    if (repeatedSentence >= SCRIPT_SENTENCE_DUPLICATE_THRESHOLD) {
+      return { duplicate: true, score: repeatedSentence, reason: 'script-sentence', matchId: previous.id || null };
+    }
     const score = compareIdeaSimilarity(candidate, previous);
     if (score >= threshold) return { duplicate: true, score, reason: 'text-similarity', matchId: previous.id || null };
   }
@@ -86,7 +116,9 @@ export async function discoverFreshTopic({ history = [], categoryHint = '', manu
     }
     lastReason = 'Tất cả ứng viên quá giống nội dung trong lịch sử.';
   }
-  throw new Error(`${lastReason} Hãy mở rộng lĩnh vực hoặc nhập một chủ đề/góc khai thác khác.`);
+  throw Object.assign(new Error(`${lastReason} Hãy mở rộng lĩnh vực hoặc nhập một chủ đề/góc khai thác khác.`), {
+    code: 'MOT_PHUT_VO_LE_DUPLICATE_IDEA'
+  });
 }
 
 export function normalizeTopicCandidate(value) {

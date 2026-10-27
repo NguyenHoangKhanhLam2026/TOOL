@@ -2,16 +2,24 @@ import {
   countMotPhutVoLeScriptWords, MOT_PHUT_VO_LE_SCRIPT_WORD_MAX, MOT_PHUT_VO_LE_SCRIPT_WORD_MIN,
   parseJsonObject, validateMotPhutVoLeContent
 } from './content-validator.mjs';
+import { MOT_PHUT_VO_LE_TOPIC_EXPANSION_GUIDE } from './topic-catalog.mjs';
 
-export const MOT_PHUT_VO_LE_TOPIC_PROMPT_VERSION = 'mot-phut-vo-le-topic-v3';
-export const MOT_PHUT_VO_LE_SCRIPT_PROMPT_VERSION = 'mot-phut-vo-le-script-v6';
+export const MOT_PHUT_VO_LE_TOPIC_PROMPT_VERSION = 'mot-phut-vo-le-topic-v4';
+export const MOT_PHUT_VO_LE_SCRIPT_PROMPT_VERSION = 'mot-phut-vo-le-script-v7';
 
 export function buildTopicDiscoveryPrompt({ recentHistory = [], categoryHint = '', manualTopic = '', count = 8 } = {}) {
   const recent = recentHistory.slice(0, 160).map((item) => ({
     category: item.category, subcategory: item.subcategory, topic: item.topic, angle: item.angle,
     title: item.title, summary: item.summary
   }));
+  const topicGuide = MOT_PHUT_VO_LE_TOPIC_EXPANSION_GUIDE.map((area) =>
+    `${area.number}. ${area.name}: ${area.directions}${area.openEnded ? ' (mục mở, không phải nhóm cố định)' : ''}`
+  ).join('\n');
   return [
+    'Khung lĩnh vực dưới đây chỉ là gợi ý nội bộ để mở rộng độ phủ, không phải danh mục đóng hoặc giới hạn lựa chọn. Chủ động tạo lĩnh vực 41, 42, 43... khi có kiến thức phù hợp ngoài khung; không đưa số thứ tự vào nội dung đầu ra.',
+    topicGuide,
+    'Mục 40 chỉ nhắc rằng danh mục được mở rộng; không dùng nguyên cụm "Chủ đề mới" làm tên lĩnh vực. Hãy đặt tên cụ thể cho lĩnh vực mới được phát hiện.',
+    'Trong mỗi lô, ưu tiên nhiều lĩnh vực và cơ chế khác nhau. Phát triển chủ đề mới từ kiến thức cụ thể; không chỉ đổi vài chữ hoặc đổi tên lĩnh vực cho một nội dung cũ.',
     'Bạn là biên tập viên của Một Phút Vỡ Lẽ, một kênh Reels kiến thức tổng hợp bằng tiếng Việt.',
     'Hãy đề xuất các ý tưởng mới từ không gian chủ đề mở. Không chọn lĩnh vực từ một danh sách cố định; được phép tạo lĩnh vực, nhánh và nhóm chủ đề chưa từng có.',
     `Mỗi ý tưởng chỉ có một câu hỏi hoặc vấn đề trung tâm, đủ hẹp để giải thích trọn vẹn và chính xác trong ${MOT_PHUT_VO_LE_SCRIPT_WORD_MIN}–${MOT_PHUT_VO_LE_SCRIPT_WORD_MAX} từ tiếng Việt. Ưu tiên một cơ chế hoặc nguyên nhân chính; tránh ý tưởng đòi hỏi nhiều bước, nhiều ngoại lệ hoặc nhiều luận điểm. Nếu rộng, hãy đề xuất một góc hẹp hơn.`,
@@ -35,6 +43,7 @@ export function buildScriptPrompt(candidate, { alignmentCorrection = '', headlin
     'Không dùng khuôn mở đầu lặp lại, không giật tít sai, không nhồi kiến thức, không bắt buộc bài học đạo lý, không bịa nguồn/số liệu/lời trích dẫn. Không trình bày giả thuyết như kết luận.',
     'Với sức khỏe, tài chính, luật, lịch sử hoặc khoa học, chỉ dùng kiến thức phổ thông có độ chắc chắn cao; nếu không đủ chắc chắn, diễn đạt giới hạn hoặc chọn góc an toàn. Không tuyên bố đã kiểm chứng nếu không có nguồn.',
     'Viết khoảng 3–6 câu ngắn, mạch lạc, độ dài tự nhiên để đọc rõ; không áp dụng quy tắc đếm từ tiếng Anh và không thêm câu đệm để kéo dài.',
+    'Viết cho giọng đọc tiếng Việt tự nhiên: đặt dấu phẩy ở chỗ chuyển ý hoặc cần lấy hơi ngắn; kết thúc mỗi ý trọn vẹn bằng dấu chấm, hỏi hoặc chấm than phù hợp. Tránh nối nhiều mệnh đề bằng dấu phẩy, tránh câu quá dài khiến giọng đọc chạy liền một hơi. Không chèn xuống dòng, ký hiệu chỉ đạo giọng đọc hoặc dấu câu dày đặc. Giữ nguyên giới hạn hiện có: scriptText phải đủ 55–80 từ theo cách đếm của MPVL và 80–2400 ký tự.',
     alignmentCorrection ? `Điều chỉnh để lời đọc dễ căn chỉnh: ${alignmentCorrection}` : '',
     headlineCorrection ? `Sửa riêng Headline: ${headlineCorrection}` : '',
     wordCountCorrection ? `Điều chỉnh độ dài kịch bản: ${wordCountCorrection}` : '',

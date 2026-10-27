@@ -12,7 +12,7 @@ import { englishShadowingTtsSettings, normalizeEnglishShadowingSettings } from '
 import { normalizeEnglishShadowingVisualDesign } from './visual-design.mjs';
 import { getEnglishShadowingVisualDesign } from './visual-design-store.mjs';
 import { renderEnglishShadowingVideo, getEnglishShadowingMediaDuration } from './renderer.mjs';
-import { buildEnglishShadowingSentencePlan, getEnglishShadowingDeliveryProfile, resolveEnglishShadowingDeliveryStyle } from './delivery.mjs';
+import { buildEnglishShadowingNarrationSegment, buildEnglishShadowingSentencePlan, getEnglishShadowingDeliveryProfile, resolveEnglishShadowingDeliveryStyle, usesEnglishShadowingSpokenFlow } from './delivery.mjs';
 import { generateWithChatGPT } from '../ai/chatgpt-plan.mjs';
 import { KOKORO_VOICES, synthesizeKokoroSegments } from '../tts/kokoro-tts.mjs';
 import { withLocalTtsModel } from '../tts/local-model-manager.mjs';
@@ -119,10 +119,14 @@ function readTimingManifest(videoId) {
 
 async function synthesizeLesson(script, videoId, profile) {
   const sentences = splitIntoSentences(script.scriptText);
+  const spokenFlow = usesEnglishShadowingSpokenFlow(script);
+  if (spokenFlow && (sentences.length < 4 || sentences.length > 7)) throw new Error('EnglishShadowing v2: the narration must contain 4 to 7 sentences.');
   if (sentences.length < 2 || sentences.length > 8) throw new Error('EnglishShadowing: AI phải tạo bài gồm 2 đến 8 câu để giữ nhịp nghỉ như video mẫu.');
   const styleId = resolveEnglishShadowingDeliveryStyle(script.deliveryStyle, script);
   const delivery = getEnglishShadowingDeliveryProfile(styleId, script);
-  const segments = buildEnglishShadowingSentencePlan(sentences, styleId);
+  const segments = spokenFlow
+    ? [buildEnglishShadowingNarrationSegment(script.scriptText, styleId)]
+    : buildEnglishShadowingSentencePlan(sentences, styleId);
   // The shared Kokoro cache key includes speechText and the job speed but not
   // each segment's rate. Add rate-specific trailing whitespace only to the
   // TTS request; Kokoro normalizes whitespace before phonemizing, so the audio
@@ -150,8 +154,8 @@ async function synthesizeLesson(script, videoId, profile) {
       ? Number(file.pauseAfterSeconds || delivery.sentencePauseSeconds)
       : 0);
   });
-  const combinedAudioPath = await joinSentenceAudio(audio, videoId);
-  return { audioPath: combinedAudioPath, tokens: allTokens, wordTimings: allWordTimings, segmentCount: audio.length, deliveryStyle: styleId };
+  const combinedAudioPath = spokenFlow ? audio[0]?.path : await joinSentenceAudio(audio, videoId);
+  return { audioPath: combinedAudioPath, tokens: allTokens, wordTimings: allWordTimings, segmentCount: audio.length, sentenceCount: sentences.length, deliveryStyle: styleId };
 }
 
 export async function createEnglishShadowingVideoJob(job) {
@@ -188,8 +192,9 @@ export async function createEnglishShadowingVideoJob(job) {
       const candidate = parseEnglishShadowingCandidate(await generateWithChatGPT(buildEnglishShadowingPrompt({ recentTitles })));
       const scriptText = candidate.scriptText;
       const sentences = splitIntoSentences(scriptText);
+      if (sentences.length < 4 || sentences.length > 7) throw new Error('EnglishShadowing v2: the narration must contain 4 to 7 sentences.');
       if (sentences.length < 2 || sentences.length > 8) throw new Error('EnglishShadowing: AI phải tạo bài gồm 2 đến 8 câu để giữ nhịp nghỉ như video mẫu.');
-      const sentencePlan = buildEnglishShadowingSentencePlan(sentences, candidate.deliveryStyle);
+      const narrationSegment = buildEnglishShadowingNarrationSegment(scriptText, candidate.deliveryStyle);
       const contentHash = crypto.createHash('sha256')
         .update(`${candidate.title}\n${candidate.topic}\n${scriptText}\n${candidate.caption}\n${candidate.hashtags.join(' ')}\n${candidate.deliveryStyle}`)
         .digest('hex');
@@ -205,7 +210,7 @@ export async function createEnglishShadowingVideoJob(job) {
         deliveryStyle: candidate.deliveryStyle,
         contentHash,
         createdAt: new Date().toISOString(),
-        speechSegments: sentencePlan
+        speechSegments: [narrationSegment]
       };
       insertEnglishShadowingScript(script);
       updateJobPayload(job.id, { scriptId: script.id, englishShadowingSettings: profile, englishShadowingVisualDesign: profile.visualDesign });
@@ -263,7 +268,7 @@ export async function createEnglishShadowingVideoJob(job) {
       }
     }
     log('INFO', 'ENGLISH_SHADOWING_READY', `EnglishShadowing đã render xong (${result.durationSeconds.toFixed(1)} giây, ${result.pace.achievedWordsPerMinute.toFixed(1)} từ/phút).`, job.id);
-    return { scriptId: script.id, videoId, ...result, sentenceCount: speech.segmentCount };
+    return { scriptId: script.id, videoId, ...result, sentenceCount: speech.sentenceCount ?? speech.segmentCount };
   } catch (error) {
     if (videoId && job.payload.backgroundEffectOnly && previousVideoPath && fs.existsSync(previousVideoPath)) {
       updateVideo(videoId, { status: 'ready', last_error: null });

@@ -414,7 +414,7 @@ async function handleModuleLibraryAction(event) {
     const video = moduleState.videos.find((item) => item.id === id);
     if (!row || !id) return;
     const title = video?.title || video?.topic || row.querySelector('h3')?.textContent || 'video MPVL này';
-    const confirmed = window.confirm(`Xóa vĩnh viễn “${title}” khỏi thư viện MPVL và máy tính? Tool sẽ xóa kịch bản, lịch MPVL, video, thumbnail, audio và dữ liệu căn chỉnh liên quan. Bài đã đăng trên Facebook sẽ không bị gỡ khỏi Facebook. Tiếp tục?`);
+    const confirmed = window.confirm(`Xóa “${title}” khỏi thư viện MPVL và xóa video, thumbnail, audio, lịch cùng dữ liệu căn chỉnh trên máy? Kịch bản sẽ được giữ trong lịch sử chống trùng để không tạo lại nội dung này; bài đã đăng trên Facebook không bị gỡ. Tiếp tục?`);
     if (!confirmed) return;
     const actionStatus = row.querySelector('[data-mot-phut-delete-status]');
     if (actionStatus) {
@@ -430,7 +430,7 @@ async function handleModuleLibraryAction(event) {
       const warningCount = Array.isArray(result.cleanupWarnings) ? result.cleanupWarnings.length : 0;
       setStatus(warningCount
         ? `Đã xóa khỏi thư viện; còn ${warningCount} mục tệp chưa dọn được do máy đang khóa tệp.`
-        : 'Đã xóa nội dung MPVL và các tệp liên quan khỏi máy.', warningCount > 0, '#mot-phut-create-status');
+        : 'Đã xóa video và các tệp liên quan; lịch sử chống trùng vẫn được giữ.', warningCount > 0, '#mot-phut-create-status');
     } catch (error) {
       if (actionStatus) {
         actionStatus.textContent = error.message || 'Không xóa được video MPVL.';
