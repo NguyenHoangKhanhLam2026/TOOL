@@ -141,6 +141,31 @@ function plainTitleWord(value) {
   return String(value || '').toLocaleLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
 }
 
+const ENGLISH_THUMBNAIL_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'being', 'but', 'by', 'for', 'from', 'had', 'has', 'have',
+  'he', 'her', 'hers', 'him', 'his', 'how', 'i', 'if', 'in', 'into', 'is', 'it', 'its', 'me', 'my', 'of', 'on', 'or',
+  'our', 'ours', 'she', 'so', 'than', 'that', 'the', 'their', 'theirs', 'them', 'then', 'there', 'these', 'they',
+  'this', 'those', 'to', 'up', 'us', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'who', 'why', 'will', 'with',
+  'you', 'your', 'yours', 'about', 'after', 'before', 'can', 'did', 'do', 'does', 'out'
+]);
+
+function thumbnailHighlightTerms(value) {
+  const values = Array.isArray(value) ? value : [value];
+  return values.flatMap((item) => String(item ?? '').split(/[\s,;]+/u))
+    .map(plainTitleWord).filter(Boolean);
+}
+
+function automaticThumbnailHighlights(headline) {
+  const words = thumbnailHighlightTerms(headline);
+  const selected = words.filter((word) => word.length > 2 && !ENGLISH_THUMBNAIL_STOP_WORDS.has(word));
+  return (selected.length ? selected : words).slice(0, 2);
+}
+
+function resolveThumbnailHighlights(headline, ...sources) {
+  const explicit = [...new Set(sources.flatMap(thumbnailHighlightTerms))];
+  return explicit.length ? explicit : automaticThumbnailHighlights(headline);
+}
+
 async function measureShadowingWordBoxes(tokens, fontSize, layout = chooseLessonTextLayout(tokens)) {
   const cacheKey = JSON.stringify({
     lines: layout.lines.map((line) => line.map(({ id, text }) => [id, text])),
@@ -437,12 +462,16 @@ export function buildEnglishShadowingThumbnailSvg(script, requestedVisualDesign 
   const visualDesign = normalizeEnglishShadowingVisualDesign({ ...suppliedDesign, enabled: true });
   const design = visualDesign.thumbnail;
   const title = String(script?.thumbnailTitle || script?.title || 'Quick Check, Clear Plan').trim().slice(0, 100);
+  const sourceHeadline = headline ?? title;
+  const selectedHighlights = resolveThumbnailHighlights(
+    sourceHeadline, design.highlightWords, highlight, script?.thumbnailHighlightWords, script?.thumbnail?.highlight, script?.highlight
+  );
   if (visualDesign.schemaVersion >= 3) {
     return buildSourceThumbnailSvg(script, design, {
       editorMode,
       brand,
-      headline: headline ?? title,
-      highlight: highlight ?? script?.thumbnailHighlightWords ?? script?.thumbnail?.highlight ?? script?.highlight ?? []
+      headline: sourceHeadline,
+      highlight: selectedHighlights
     });
   }
   if (visualDesign.schemaVersion < 2) {
@@ -473,10 +502,7 @@ export function buildEnglishShadowingThumbnailSvg(script, requestedVisualDesign 
     lines = wrapTokens(words, design.titleMaxWidth, renderedSize, 5);
   }
   const lineHeight = Math.round(renderedSize * 1.18);
-  const highlightWords = new Set(
-    `${design.highlightWords || ''} ${Array.isArray(script?.thumbnailHighlightWords) ? script.thumbnailHighlightWords.join(' ') : ''}`
-      .split(/[\s,;]+/u).map(plainTitleWord).filter(Boolean)
-  );
+  const highlightWords = new Set(selectedHighlights.map(plainTitleWord));
   const titleMarkup = lines.slice(0, 5).map((line, index) =>
     `<tspan x="${design.titleX}" y="${design.titleY + index * lineHeight}">${line.map((token, tokenIndex) => {
       const fill = highlightWords.has(plainTitleWord(token.text)) ? design.highlightColor : design.titleColor;
@@ -506,7 +532,7 @@ export function buildEnglishShadowingThumbnailSvg(script, requestedVisualDesign 
 
 export async function buildEnglishShadowingVisualDesignPreviewSvg({ mode = 'content', profile = ENGLISH_SHADOWING_DEFAULT_SETTINGS, visualDesign: requestedVisualDesign = null, sample = {} } = {}) {
   const visualDesign = normalizeEnglishShadowingVisualDesign({ ...requestedVisualDesign, enabled: true });
-  const editorMode = sample?.render !== true;
+  const editorMode = sample?.render !== true && sample?.cardPreview !== true;
   if (mode === 'thumbnail') {
     if (visualDesign.schemaVersion >= 3) {
       return buildEnglishShadowingThumbnailSvg(
@@ -516,6 +542,15 @@ export async function buildEnglishShadowingVisualDesignPreviewSvg({ mode = 'cont
       );
     }
     return buildEnglishShadowingThumbnailSvg({ thumbnailTitle: sample?.thumbnailTitle, title: 'Quick Check, Clear Plan' }, visualDesign, { editorMode: true });
+  }
+  if (visualDesign.thumbnailOnly && sample?.cardPreview === true) {
+    const toolContentDesign = normalizeEnglishShadowingVisualDesign({ ...visualDesign, enabled: false });
+    return buildEnglishShadowingVisualPreviewSvg(profile, FIRST_ENGLISH_SHADOWING_BACKGROUND_THEME_ID, toolContentDesign, false, {
+      ...sample,
+      title: sample?.title || 'Quick Check, Clear Plan',
+      scriptText: sample?.scriptText || 'A short line that sets the scene for the whole story. A second line, long enough to show how the text wraps and shrinks to fit.',
+      brand: sample?.brand || 'Things'
+    }).then((svg) => svg.replace('<svg ', '<svg data-shadowing-preview="content" '));
   }
   return buildEnglishShadowingVisualPreviewSvg(profile, FIRST_ENGLISH_SHADOWING_BACKGROUND_THEME_ID, visualDesign, editorMode, {
     ...sample,
@@ -564,7 +599,8 @@ function makeFrameSegments(intervals, frameCount) {
 /** Render the isolated EnglishShadowing visual and narration composition. */
 export async function renderEnglishShadowingVideo({ script, audioPath, tokens, wordTimings, profile, videoId, backgroundThemeId = null, outputFileName = '', onProgress = () => {} }) {
   const visualDesign = normalizeEnglishShadowingVisualDesign(profile?.visualDesign);
-  const activeVisualDesign = visualDesign.enabled ? visualDesign : null;
+  const activeVisualDesign = visualDesign.enabled && !visualDesign.thumbnailOnly ? visualDesign : null;
+  const activeThumbnailDesign = visualDesign.enabled ? visualDesign : null;
   const highlightStyle = profile.highlightStyle === 'tool' ? 'tool' : 'text';
   const safeId = String(videoId || '').replace(/[^\w-]/gu, '');
   if (!safeId) throw new Error('EnglishShadowing: mã video không hợp lệ.');
@@ -602,18 +638,18 @@ export async function renderEnglishShadowingVideo({ script, audioPath, tokens, w
     : await measureShadowingWordBoxes(allTokens, fontSize, lessonLayout);
   const frameCache = new Map();
   const concatEntries = [];
-  const thumbnailName = activeVisualDesign ? `thumbnail-${safeId}-${Date.now()}.png` : null;
-  const thumbnailWorkPath = activeVisualDesign ? path.join(workDir, 'thumbnail-intro.png') : null;
-  const thumbnailPath = activeVisualDesign ? path.join(outputDir, thumbnailName) : null;
-  const introSeconds = activeVisualDesign?.schemaVersion >= 3
-    ? activeVisualDesign.thumbnail.introSeconds
-    : activeVisualDesign?.thumbnail.introInVideo
-      ? activeVisualDesign.thumbnail.introSeconds
+  const thumbnailName = activeThumbnailDesign ? `thumbnail-${safeId}-${Date.now()}.png` : null;
+  const thumbnailWorkPath = activeThumbnailDesign ? path.join(workDir, 'thumbnail-intro.png') : null;
+  const thumbnailPath = activeThumbnailDesign ? path.join(outputDir, thumbnailName) : null;
+  const introSeconds = activeThumbnailDesign?.schemaVersion >= 3
+    ? activeThumbnailDesign.thumbnail.introSeconds
+    : activeThumbnailDesign?.thumbnail.introInVideo
+      ? activeThumbnailDesign.thumbnail.introSeconds
       : 0;
   const introFrameCount = introSeconds > 0 ? Math.max(1, Math.round(introSeconds * FPS)) : 0;
   const progressFrameTotal = frameCount + introFrameCount;
   if (thumbnailWorkPath) {
-    const thumbnailSvg = buildEnglishShadowingThumbnailSvg(script, activeVisualDesign);
+    const thumbnailSvg = buildEnglishShadowingThumbnailSvg(script, activeThumbnailDesign);
     const thumbnailPng = await renderSourceDesignSvg(thumbnailSvg);
     await fs.promises.writeFile(thumbnailWorkPath, thumbnailPng);
   }
@@ -741,7 +777,7 @@ export async function renderEnglishShadowingVideo({ script, audioPath, tokens, w
     '-af', audioFilter, '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', videoPath
   ]);
   const durationSeconds = await getEnglishShadowingMediaDuration(videoPath);
-  if (activeVisualDesign) {
+  if (activeThumbnailDesign) {
     fs.copyFileSync(thumbnailWorkPath, thumbnailPath);
   } else {
     // Keep the existing default Shadowing behavior for profiles without the

@@ -14,7 +14,9 @@
     <link rel="stylesheet" href="/navigation-links.css" />
     <link rel="stylesheet" href="/highlight-settings.css" />
     <link rel="stylesheet" href="/studio-polish.css?v=20261019" />
+    <link rel="stylesheet" href="/mot-phut-vo-le.css" />
     <script type="module" src="/app.js"></script>
+    <script type="module" src="/mot-phut-vo-le.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -68,10 +70,14 @@
                 <h2>Biến một chủ đề<br />thành <span>video học nhanh.</span></h2>
                 <p>Chọn ngôn ngữ, tạo nội dung học thực tế và chuẩn bị video dọc để đăng lên Facebook.</p>
                 <div class="hero-controls">
-                  <label class="select-wrap" id="content-language-wrap"><span class="sr-only">Chọn ngôn ngữ nội dung</span><select id="content-language"><option value="en">Nội dung: Tiếng Việt + Tiếng Anh</option><option value="ja">Nội dung: Tiếng Việt + Tiếng Nhật</option><option value="zh">Nội dung: Tiếng Việt + Tiếng Trung</option><option value="ko">Nội dung: Tiếng Việt + Tiếng Hàn</option><option value="english-shadowing">EnglishShadowing</option></select><span class="select-chevron">⌄</span></label>
-                  <label class="select-wrap"><span class="sr-only">Chọn chủ đề</span><select id="topic-select"><option value="">AI t&#7921; ch&#7885;n ch&#7911; &#273;&#7873;</option></select><span class="select-chevron">⌄</span></label>
+                  <label class="select-wrap" id="content-language-wrap"><span class="sr-only">Chọn nội dung</span><select id="content-language"><option value="en">Nội dung: Tiếng Việt + Tiếng Anh</option><option value="ja">Nội dung: Tiếng Việt + Tiếng Nhật</option><option value="zh">Nội dung: Tiếng Việt + Tiếng Trung</option><option value="ko">Nội dung: Tiếng Việt + Tiếng Hàn</option><option value="english-shadowing">EnglishShadowing</option><option value="mot-phut-vo-le">Một Phút Vỡ Lẽ · Tiếng Việt</option></select><span class="select-chevron">⌄</span></label>
+                  <label class="select-wrap" id="topic-select-wrap"><span class="sr-only">Chọn chủ đề</span><select id="topic-select"><option value="">AI t&#7921; ch&#7885;n ch&#7911; &#273;&#7873;</option></select><span class="select-chevron">⌄</span></label>
                   <button class="button button-outline" id="add-topic">+ Thêm chủ đề</button>
                   <button class="button button-dark" id="generate-button"><span>✳</span> Tạo video mới <span class="button-arrow">↗</span></button>
+                </div>
+                <div class="mot-phut-create-fields" id="mot-phut-create-fields" hidden>
+                  <p class="mot-phut-create-note">Mỗi lần tạo, AI tự chọn một chủ đề mới và tạo một video theo cài đặt đã lưu; thời lượng theo độ dài lời thoại, ưu tiên giải thích trọn ý. <button class="text-button" type="button" data-go="settings">Cài đặt</button></p>
+                  <p class="mot-phut-create-status" id="mot-phut-create-status" role="status" aria-live="polite"></p>
                 </div>
                 <p class="content-history-note" id="content-history-note" aria-live="polite"></p>
               </div>
@@ -103,7 +109,7 @@
 
           <section class="view" id="view-library">
             <div class="page-title-row"><div><div class="eyebrow">TUS VIDEO CỦA BẠN</div><h1>Thư viện video</h1><p class="lead">Video Facebook đã nhận lịch được tách khỏi danh sách Tất cả; xem lại ở tab Đã lên lịch hoặc mục Lịch đăng.</p></div><button class="button button-dark" data-generate><span>✳</span> Tạo video mới</button></div>
-            <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><label class="content-language-filter">Ngôn ngữ<select id="content-language-filter"><option value="all">Tất cả</option><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option><option value="ko">Tiếng Hàn</option><option value="english-shadowing">EnglishShadowing</option></select></label><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
+            <div class="library-toolbar"><div class="filter-tabs"><button class="filter-tab active" data-filter="all">Tất cả</button><button class="filter-tab" data-filter="ready">Sẵn sàng</button><button class="filter-tab" data-filter="scheduled">Đã lên lịch</button><button class="filter-tab" data-filter="published">Đã đăng</button><button class="filter-tab" data-filter="failed">Cần xử lý</button></div><label class="content-language-filter">Nội dung<select id="content-language-filter"><option value="all">Tất cả</option><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option><option value="ko">Tiếng Hàn</option><option value="english-shadowing">EnglishShadowing</option><option value="mot-phut-vo-le">Một Phút Vỡ Lẽ</option></select></label><span class="toolbar-count" id="video-count">0 VIDEO</span></div>
             <div class="library-list" id="library-list"></div>
           </section>
 
@@ -121,14 +127,27 @@
               </article>
 
               <article class="panel settings-panel"><div class="panel-heading"><div><span class="panel-icon icon-yellow">◉</span><div><h2>Facebook Page</h2><p class="panel-caption">Token chỉ lưu trên máy này và không hiển thị lại. Kiểm tra Page xác nhận quyền đọc thông tin; Meta kiểm tra quyền đăng riêng khi xuất bản.</p></div></div><span id="facebook-status-pill" class="state-pill neutral">Mock</span></div>
-                <label>Chế độ kết nối<select id="facebook-adapter"><option value="mock">Mock — thử nghiệm an toàn</option><option value="meta">Meta Graph API — đăng thật</option></select></label>
-                <label>Facebook Page ID<input id="page-id" inputmode="numeric" placeholder="Ví dụ: 123456789012345" /></label>
-                <label>Page Access Token<input id="page-token" type="password" autocomplete="new-password" placeholder="Chỉ cần nhập khi thêm hoặc thay token" /></label>
-                <div class="button-row"><button class="button button-outline button-small" id="save-facebook">Lưu thông tin</button><button class="button button-quiet button-small" id="test-facebook">Kiểm tra Page</button><label class="facebook-language-select"><span class="sr-only">Ngôn ngữ nội dung</span><select id="facebook-quick-route-language" aria-label="Ngôn ngữ nội dung"><option value="zh">Tiếng Trung</option><option value="en">Tiếng Anh</option><option value="ja">Tiếng Nhật</option><option value="english-shadowing">EnglishShadowing</option></select></label></div>
-                <p id="facebook-result" class="inline-status"></p><button id="clear-facebook" class="danger-link" hidden>Xóa token đã lưu</button>
+                <label id="facebook-adapter-control">Chế độ kết nối<select id="facebook-adapter"><option value="mock">Mock — thử nghiệm an toàn</option><option value="meta">Meta Graph API — đăng thật</option></select></label>
+                <label class="facebook-language-select">Nội dung<select id="facebook-quick-route-language" aria-label="Nội dung"><option value="zh">Tiếng Trung</option><option value="en">Tiếng Anh</option><option value="ja">Tiếng Nhật</option><option value="english-shadowing">EnglishShadowing</option><option value="mot-phut-vo-le">Một Phút Vỡ Lẽ · Tiếng Việt</option></select></label>
+                <div id="standard-facebook-settings">
+                  <label>Facebook Page ID<input id="page-id" inputmode="numeric" placeholder="Ví dụ: 123456789012345" /></label>
+                  <label>Page Access Token<input id="page-token" type="password" autocomplete="new-password" placeholder="Chỉ cần nhập khi thêm hoặc thay token" /></label>
+                  <div class="button-row"><button class="button button-outline button-small" id="save-facebook">Lưu thông tin</button><button class="button button-quiet button-small" id="test-facebook">Kiểm tra Page</button></div>
+                  <button id="clear-facebook" class="danger-link" hidden>Xóa token đã lưu</button>
+                  <p id="facebook-result" class="inline-status"></p>
+                </div>
+                <div id="mot-phut-facebook-page-settings" hidden>
+                  <div class="mot-phut-facebook-status"><span id="mot-phut-page-status" class="state-pill neutral">Chưa cấu hình Page MPVL</span><span class="muted-copy">Page ID và token được lưu riêng cho Một Phút Vỡ Lẽ.</span></div>
+                  <div class="mot-phut-facebook-fields">
+                    <label>Facebook Page ID<input id="mot-phut-facebook-page-id" inputmode="numeric" autocomplete="off" placeholder="Nhập Page ID MPVL" /></label>
+                    <label>Page Access Token<input id="mot-phut-facebook-page-token" type="password" autocomplete="new-password" placeholder="Chỉ cần nhập khi thêm hoặc thay token" /></label>
+                  </div>
+                  <div class="button-row mot-phut-facebook-actions"><button class="button button-outline button-small" id="mot-phut-save-facebook-page" type="button">Lưu thông tin</button><button class="button button-quiet button-small" id="mot-phut-verify-page" type="button">Kiểm tra Page</button></div>
+                  <p class="inline-status" id="mot-phut-facebook-status" role="status" aria-live="polite"></p>
+                </div>
               </article>
 
-              <article class="panel settings-panel span-two" id="voice-video-panel"><div class="panel-heading"><div><span class="panel-icon icon-mint">♫</span><div><h2>Giọng đọc & video</h2><p class="panel-caption">Chọn model tại đây. Chọn model Nhật hoặc Trung sẽ tự chuyển sang cặp nội dung tương ứng.</p></div></div></div>
+              <article class="panel settings-panel span-two" id="voice-video-panel"><div class="panel-heading"><div><span class="panel-icon icon-mint">♫</span><div><h2>Giọng đọc & video</h2><p class="panel-caption">Chọn model tại đây. Chọn model Nhật hoặc Trung sẽ tự chuyển sang cặp nội dung tương ứng. Mục Một Phút Vỡ Lẽ mở cài đặt VieNeu riêng.</p></div></div></div>
                 <div class="tts-provider-select">
                   <span class="tts-provider-label" id="tts-provider-label">Nhà cung cấp giọng đọc</span>
                   <div class="tts-provider-combobox" id="tts-provider-combobox">
@@ -199,13 +218,30 @@
                   <div class="button-row vieneu-preview-actions"><button class="button button-outline button-small" id="preview-ko" type="button">▶ Nghe thử tiếng Hàn</button></div>
                   <p class="vieneu-note" id="supertonic-ko-status" aria-live="polite">Supertonic 3 · 10 giọng tiếng Hàn, chạy cục bộ trên CPU.</p>
                 </div>
+                <section class="mot-phut-inline-settings" id="mot-phut-inline-settings" hidden aria-label="Cài đặt giọng đọc Một Phút Vỡ Lẽ">
+                  <div class="mot-phut-service-status-row"><span id="mot-phut-service-status" class="state-pill neutral">Đang kiểm tra</span></div>
+                  <div class="mot-phut-settings-grid">
+                    <label>Giọng đọc tiếng Việt · VieNeu<select id="mot-phut-setting-voice"></select></label>
+                    <label>Tốc độ đọc <output id="mot-phut-setting-speed-label">1.00×</output><input id="mot-phut-setting-speed" type="range" min="0.75" max="1.25" step="0.05" value="1" /></label>
+                  </div>
+                  <p class="mot-phut-duration-note">Không áp đặt thời lượng cố định. Kịch bản được giữ gọn trong khoảng 55–80 từ và đủ ý để giải thích trọn chủ đề.</p>
+                  <div class="mot-phut-settings-actions"><button class="button button-outline button-small" id="mot-phut-preview-voice" type="button">▶ Nghe thử giọng tiếng Việt</button><button class="button button-quiet button-small" id="mot-phut-reset-settings" type="button">Khôi phục mặc định</button><a class="button button-outline button-small" href="/visual-editor?scope=mot-phut-vo-le">Mở thiết kế Thumbnail & Nội dung ↗</a></div>
+                  <audio id="mot-phut-preview-audio" controls hidden></audio>
+                  <p class="inline-status" id="mot-phut-settings-status" role="status" aria-live="polite"></p>
+                </section>
                 <div class="tool-checks" id="tool-checks"></div>
               </article>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng nền video</h2><p class="panel-caption">Chọn hiệu ứng mặc định cho video mới theo từng ngôn ngữ nội dung.</p></div></div></div>
-                <div class="background-effect-controls">
-                  <label>Ngôn ngữ nội dung<select id="background-effect-language"><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option><option value="english-shadowing">EasyEnglishShadowing</option></select></label>
-                  <label>Hiệu ứng<select id="background-effect"><option value="bubbles">Đang tải danh sách hiệu ứng…</option></select></label>
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng nền video</h2><p class="panel-caption">Chọn hiệu ứng mặc định cho video mới theo từng ngôn ngữ nội dung. Một Phút Vỡ Lẽ có hồ sơ hiệu ứng riêng.</p></div></div></div>
+                <div class="background-effect-controls" id="background-effect-standard-controls">
+                  <label>Ngôn ngữ nội dung<select id="background-effect-language"><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option><option value="english-shadowing">EasyEnglishShadowing</option><option value="mot-phut-vo-le">Một Phút Vỡ Lẽ · Tiếng Việt</option></select></label>
+                  <label id="standard-background-effect-control">Hiệu ứng<select id="background-effect"><option value="bubbles">Đang tải danh sách hiệu ứng…</option></select></label>
+                  <label id="mot-phut-background-effect-control" hidden>Hiệu ứng<select id="mot-phut-setting-background-effect"></select></label>
+                </div>
+                <div class="mot-phut-inline-effects" id="mot-phut-background-settings" hidden aria-hidden="true">
+                  <label>Mật độ<output id="mot-phut-setting-effect-density-label">28</output><input id="mot-phut-setting-effect-density" type="range" min="10" max="60" step="1" value="28" /></label>
+                  <label>Tốc độ<output id="mot-phut-setting-effect-speed-label">58</output><input id="mot-phut-setting-effect-speed" type="range" min="25" max="140" step="1" value="58" /></label>
+                  <label>Độ rõ<output id="mot-phut-setting-effect-opacity-label">32</output><input id="mot-phut-setting-effect-opacity" type="range" min="10" max="70" step="1" value="32" /></label>
                 </div>
                 <p class="panel-caption background-effect-note">EN, ZH và JA lưu theo hồ sơ hiện có. EasyEnglishShadowing có hồ sơ hiệu ứng riêng; chọn nội dung EasyEnglishShadowing, chỉnh hiệu ứng rồi dùng nút “Lưu cài đặt” ở cuối trang.</p>
               </article>
@@ -214,9 +250,9 @@
                 <iframe id="background-effect-preview-frame" src="/bubble-effect-preview.html" title="Xem thử hiệu ứng nền video" loading="lazy"></iframe>
               </section>
 
-              <article class="panel settings-panel span-two" id="highlight-settings-panel"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Chọn nội dung để chỉnh Highlight. Cài đặt EnglishShadowing được lưu tách biệt khỏi EN, ZH và JA.</p></div></div></div>
-                <div class="background-effect-controls">
-                  <label>Nội dung<select id="voice-highlight-content-profile"><option value="standard">Tiếng Anh · Tiếng Trung</option><option value="japanese">Tiếng Nhật</option><option value="english-shadowing">EasyEnglishShadowing</option></select></label>
+              <article class="panel settings-panel span-two" id="highlight-settings-panel"><div class="panel-heading"><div><span class="panel-icon icon-peach">✦</span><div><h2>Hiệu ứng Highlight</h2><p class="panel-caption">Chọn nội dung để chỉnh Highlight. Cài đặt EnglishShadowing được lưu tách biệt khỏi EN, ZH và JA. MPVL dùng hiệu ứng của tool.</p></div></div></div>
+                <div class="background-effect-controls" id="voice-highlight-content-selector">
+                  <label>Nội dung<select id="voice-highlight-content-profile"><option value="standard">Tiếng Anh · Tiếng Trung</option><option value="japanese">Tiếng Nhật</option><option value="english-shadowing">EasyEnglishShadowing</option><option value="mot-phut-vo-le">Một Phút Vỡ Lẽ · Tiếng Việt</option></select></label>
                 </div>
                 <div class="highlight-settings-grid" id="standard-highlight-controls">
                   <label class="switch-row highlight-enable"><input type="checkbox" id="highlight-enabled" checked /><span class="switch"></span><span><strong>Bật highlight đồng bộ</strong><small>Áp dụng tự động cho video mới.</small></span></label>
@@ -247,11 +283,36 @@
                 </div>
                 <p class="panel-caption">Chọn đổi màu chữ theo mẫu Shadowing hoặc nền màu bo góc theo kiểu Highlight của tool. Cả hai đồng bộ với giọng đọc và được lưu riêng cho Shadowing.</p>
                 </div>
+                <div class="highlight-settings-grid mot-phut-inline-highlight" id="mot-phut-inline-highlight" hidden>
+                  <label class="switch-row highlight-enable"><input type="checkbox" id="mot-phut-setting-highlight-enabled" checked /><span class="switch"></span><span><strong>Bật highlight đồng bộ</strong><small>Áp dụng riêng cho video Một Phút Vỡ Lẽ.</small></span></label>
+                  <label>Kiểu highlight<select id="mot-phut-setting-highlight"><option value="syllable">Từng từ</option><option value="phrase">Từng cụm từ</option></select></label>
+                  <label>Màu highlight<input id="mot-phut-setting-highlight-color" type="color" value="#FF8066" /></label>
+                  <label>Padding (px)<input id="mot-phut-setting-highlight-padding" type="number" min="0" max="24" step="1" value="6" /></label>
+                  <label>Bo góc (px)<input id="mot-phut-setting-highlight-radius" type="number" min="0" max="32" step="1" value="8" /></label>
+                  <label>Chuyển giữa từ<select id="mot-phut-setting-highlight-transition" disabled><option value="instant">Tức thời, theo mốc giọng đọc</option></select></label>
+                  <label>Ngôn ngữ nghe thử<select id="mot-phut-highlight-preview-language" disabled><option value="vi">Tiếng Việt</option></select></label>
+                  <label class="highlight-preview-source">Câu nghe thử<textarea id="mot-phut-highlight-preview-source">Xin chào, hôm nay mình cùng khám phá một điều thú vị nhé.</textarea></label>
+                  <div class="highlight-preview-actions"><button class="button button-outline button-small" id="mot-phut-highlight-preview-play" type="button">▶ Nghe thử Highlight</button><span class="muted-copy" id="mot-phut-highlight-preview-status" aria-live="polite">Mẫu thử dùng giọng VieNeu đang chọn.</span></div>
+                  <div class="highlight-preview-text" id="mot-phut-highlight-preview-words" aria-label="Văn bản xem trước highlight MPVL"></div>
+                </div>
               </article>
 
-              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">◷</span><div><h2>Lịch và Full Auto</h2><p class="panel-caption">Máy tính phải bật và worker đang chạy tại giờ đăng.</p></div></div><span class="state-pill neutral" id="auto-state">Đang tắt</span></div>
-                <div class="schedule-settings-row"><label>Khoảng cách tự động<span class="schedule-window">Ngẫu nhiên 5–8 giờ</span></label><label>Bài mỗi ngày<input id="posts-per-day" type="number" min="1" max="4" value="3" /></label><label>Dự phòng trước (ngày)<input id="prepare-days" type="number" min="1" max="30" value="7" /></label><label>Giới hạn kịch bản/ngày<input id="max-scripts" type="number" min="1" max="30" value="10" /></label><label>Múi giờ<input value="Asia/Ho_Chi_Minh" disabled /></label></div>
-                <div class="auto-options"><label class="switch-row"><input type="checkbox" id="auto-generation" /><span class="switch"></span><span><strong>Tự tạo video</strong><small>Worker tự bổ sung kho video khi gần hết.</small></span></label><label class="switch-row"><input type="checkbox" id="auto-publish" /><span class="switch"></span><span><strong>Tự đăng theo lịch</strong><small>Tự chọn video cũ nhất và giờ chưa trùng; Meta cần Page đã xác minh.</small></span></label></div>
+              <article class="panel settings-panel span-two"><div class="panel-heading"><div><span class="panel-icon icon-peach">◷</span><div><h2>Lịch và Full Auto</h2><p class="panel-caption">Máy tính phải bật và worker đang chạy tại giờ đăng.</p></div></div><span class="state-pill neutral" id="auto-state">Đang tắt</span><span class="state-pill neutral" id="mot-phut-auto-state" hidden>Đang tắt</span></div>
+                <label class="schedule-content-profile">Nội dung<select id="schedule-content-profile"><option value="standard">Tiếng Anh · Tiếng Trung · Tiếng Nhật · EnglishShadowing</option><option value="mot-phut-vo-le">Một Phút Vỡ Lẽ · Tiếng Việt</option></select></label>
+                <div id="standard-schedule-settings">
+                  <div class="schedule-settings-row"><label>Khoảng cách tự động<span class="schedule-window">Ngẫu nhiên 5–8 giờ</span></label><label>Bài mỗi ngày<input id="posts-per-day" type="number" min="1" max="4" value="3" /></label><label>Dự phòng trước (ngày)<input id="prepare-days" type="number" min="1" max="30" value="7" /></label><label>Giới hạn kịch bản/ngày<input id="max-scripts" type="number" min="1" max="30" value="10" /></label><label>Múi giờ<input value="Asia/Ho_Chi_Minh" disabled /></label></div>
+                  <div class="auto-options" id="standard-auto-options"><label class="switch-row"><input type="checkbox" id="auto-generation" /><span class="switch"></span><span><strong>Tự tạo video</strong><small>Worker tự bổ sung kho video khi gần hết.</small></span></label><label class="switch-row"><input type="checkbox" id="auto-publish" /><span class="switch"></span><span><strong>Tự đăng theo lịch</strong><small>Tự chọn video cũ nhất và giờ chưa trùng; Meta cần Page đã xác minh.</small></span></label></div>
+                </div>
+                <div class="mot-phut-inline-schedule" id="mot-phut-schedule-settings" hidden>
+                  <div class="schedule-settings-row mot-phut-schedule-row"><label>Khoảng cách tự động<span class="schedule-window">Ngẫu nhiên 5–8 giờ</span></label><label>Bài mỗi ngày<input id="mot-phut-posts-per-day" type="number" min="1" max="4" value="3" /></label><label>Dự phòng trước (ngày)<input id="mot-phut-prepare-days" type="number" min="1" max="30" value="7" /></label><label>Giới hạn kịch bản/ngày<input id="mot-phut-max-scripts" type="number" min="1" max="30" value="10" /></label><label>Múi giờ<input value="Asia/Ho_Chi_Minh" disabled /></label></div>
+                  <div class="auto-options mot-phut-auto-options">
+                    <label class="switch-row"><input type="checkbox" id="mot-phut-auto-generation" /><span class="switch"></span><span><strong>Tự tạo video</strong><small>Bổ sung video MPVL khi lịch còn ít.</small></span></label>
+                    <label class="switch-row"><input type="checkbox" id="mot-phut-auto-schedule" /><span class="switch"></span><span><strong>Tự xếp lịch</strong><small>Đưa video MPVL sẵn sàng vào Lịch đăng.</small></span></label>
+                    <label class="switch-row"><input type="checkbox" id="mot-phut-auto-publish" /><span class="switch"></span><span><strong>Tự đăng theo lịch</strong><small>Dùng Page MPVL đã lưu và xác minh.</small></span></label>
+                  </div>
+                  <p class="panel-caption mot-phut-schedule-note">Các giới hạn, lịch và Page MPVL được lưu riêng cho nội dung tiếng Việt.</p>
+                  <p class="inline-status" id="mot-phut-schedule-status" role="status" aria-live="polite"></p>
+                </div>
                 <div class="settings-footer"><span class="muted-copy">Đăng thật đang tắt cho đến khi bạn bật rõ ràng.</span><button class="button button-dark" id="save-settings">Lưu cài đặt</button></div>
               </article>
             </div>

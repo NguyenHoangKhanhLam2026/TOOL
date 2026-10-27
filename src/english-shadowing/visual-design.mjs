@@ -8,6 +8,7 @@ export const ENGLISH_SHADOWING_VISUAL_DESIGN_KEY = 'englishShadowingVisualDesign
 export const ENGLISH_SHADOWING_VISUAL_DESIGN_DEFAULTS = Object.freeze({
   schemaVersion: 3,
   enabled: false,
+  thumbnailOnly: true,
   thumbnail: Object.freeze({
     introInVideo: true,
     introSeconds: 0.5,
@@ -133,6 +134,7 @@ export function normalizeEnglishShadowingVisualDesign(value = {}) {
   return {
     schemaVersion,
     enabled: input.enabled === true,
+    thumbnailOnly: typeof input.thumbnailOnly === 'boolean' ? input.thumbnailOnly : input.enabled !== true,
     thumbnail: {
       // Source tool style (v3).
       introInVideo: typeof thumbnailInput.introInVideo === 'boolean'

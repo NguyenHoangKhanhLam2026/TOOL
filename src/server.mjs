@@ -404,6 +404,10 @@ function attachVideoProgress(videos) {
 
 async function handleApi(req, res, url) {
   if (req.method !== 'GET' && !sameOrigin(req)) return json(res, 403, { error: 'Yêu cầu không cùng nguồn.' });
+  if (url.pathname.startsWith('/api/mot-phut-vo-le/')) {
+    const { handleMotPhutVoLeApi } = await import('./mot-phut-vo-le/http.mjs');
+    return handleMotPhutVoLeApi(req, res, url);
+  }
   const route = `${req.method} ${url.pathname}`;
   if (route === 'GET /api/visual-template') {
     const requestedLanguage = url.searchParams.get('lang');
@@ -529,7 +533,7 @@ async function handleApi(req, res, url) {
   if (route === 'POST /api/english-shadowing/visual-design') {
     const body = await readJson(req, 50_000);
     if (!body || typeof body !== 'object' || Array.isArray(body)
-      || Object.keys(body).some((key) => !['schemaVersion', 'enabled', 'thumbnail', 'content'].includes(key))) {
+      || Object.keys(body).some((key) => !['schemaVersion', 'enabled', 'thumbnailOnly', 'thumbnail', 'content'].includes(key))) {
       return json(res, 400, { error: 'Cấu hình thiết kế Shadowing không hợp lệ.' });
     }
     return json(res, 200, { saved: true, visualDesign: saveEnglishShadowingVisualDesign(body) });

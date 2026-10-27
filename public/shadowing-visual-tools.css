@@ -80,6 +80,11 @@
 .shadowing-visual-source-module>.button{justify-self:start;margin-left:0}
 .shadowing-visual-source-module>.shadowing-visual-source-caption{grid-column:2;margin:2px 0 0;color:#687477;font-size:12px;line-height:1.45}
 .shadowing-visual-source-caption{max-width:520px}
+.shadowing-visual-content-details{border-top:1px solid #e2e3dc;padding-top:14px}
+.shadowing-visual-content-details>summary{display:flex;align-items:baseline;gap:12px;cursor:pointer;list-style-position:inside;color:#394b58}
+.shadowing-visual-content-details>summary strong{font-size:14px}
+.shadowing-visual-content-details>summary span{color:#687477;font-size:12px}
+.shadowing-visual-content-details[open]>.shadowing-visual-source-module{margin-top:16px}
 .shadowing-visual-dialog[hidden]{display:none}
 .shadowing-visual-dialog:not([hidden]){position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:16px;background:#1018209c}
 .shadowing-visual-dialog-panel{display:flex;width:min(1180px,calc(100vw - 32px));max-height:94vh;flex-direction:column;overflow:hidden;border:1px solid #d8dce0;border-radius:8px;background:#fff;box-shadow:0 20px 70px #0005}

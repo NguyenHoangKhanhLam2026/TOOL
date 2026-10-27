@@ -1,8 +1,9 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const labels = { overview: 'Tổng quan', library: 'Thư viện video', schedule: 'Lịch đăng', settings: 'Kết nối & cài đặt', logs: 'Nhật ký hoạt động' };
+const MOT_PHUT_CONTENT = 'mot-phut-vo-le';
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
-const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], logs: [], jobs: [], filter: 'all', languageFilter: 'all', overview: null, settings: null, system: null, facebookPages: { profiles: [], routes: {} }, backgroundEffects: [], backgroundEffectEditor: null, backgroundEffectLanguage: 'en', backgroundEffectProfiles: { en: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, zh: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, ja: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 } }, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0, contentLanguageSavePromise: Promise.resolve(), contentLanguageRevision: 0, createLanguageSelectionTouched: false, englishShadowingSettings: null, englishShadowingSettingsDirty: false, englishShadowingSettingsRevision: 0, ttsProviderView: 'standard', voiceHighlightContentProfile: 'standard', cosyVoiceUploadedProfileId: '', cosyVoiceActiveProfileId: '', facebookPageLanguageDirty: false, facebookPageCredentialDirty: false, facebookSelectedLanguage: 'en', facebookPageLoadRevision: 0, facebookActiveProfile: null };
+const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], motPhutSchedules: [], motPhutVideos: [], logs: [], jobs: [], filter: 'all', languageFilter: 'all', overview: null, settings: null, system: null, facebookPages: { profiles: [], routes: {} }, backgroundEffects: [], backgroundEffectEditor: null, backgroundEffectLanguage: 'en', backgroundEffectProfiles: { en: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, zh: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, ja: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 } }, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0, contentLanguageSavePromise: Promise.resolve(), contentLanguageRevision: 0, createLanguageSelectionTouched: false, englishShadowingSettings: null, englishShadowingSettingsDirty: false, englishShadowingSettingsRevision: 0, ttsProviderView: 'standard', voiceHighlightContentProfile: 'standard', cosyVoiceUploadedProfileId: '', cosyVoiceActiveProfileId: '', facebookPageLanguageDirty: false, facebookPageCredentialDirty: false, facebookSelectedLanguage: 'en', facebookPageLoadRevision: 0, facebookActiveProfile: null };
 let previewAudio = null;
 let scheduleCalendarMonth = '';
 let scheduleSelectedDay = '';
@@ -203,10 +204,11 @@ function applyBackgroundEffectProfile(language) {
 }
 
 function applyVoiceHighlightContentProfile(profile) {
-  const selected = ['english-shadowing', 'japanese'].includes(profile) ? profile : 'standard';
+  const selected = ['english-shadowing', 'japanese', MOT_PHUT_CONTENT].includes(profile) ? profile : 'standard';
   state.voiceHighlightContentProfile = selected;
   const selector = $('#voice-highlight-content-profile');
   if (selector) selector.value = selected;
+  window.motPhutVoLe?.setSettingsProfile?.('highlight', selected === MOT_PHUT_CONTENT);
   const standardControls = $('#standard-highlight-controls');
   const japaneseControls = $('#japanese-highlight-controls');
   const shadowingControls = $('#english-shadowing-highlight-controls');
@@ -298,21 +300,33 @@ function renderOverview() {
   ];
   $('#status-grid').innerHTML = rows.map(([name, ok, detail]) => `<div class="status-card">${ready(ok)}<div class="status-copy"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(detail)}</small></div></div>`).join('');
   const videos = data.videos || [];
-  $('#recent-videos').innerHTML = videos.length ? videos.slice(0, 3).map((video) => videoCard(video, true)).join('') : data.counts.videos
+  const recentVideos = videos.slice(0, 3).map((video) => videoCard(video, true));
+  const latestMotPhutVideo = (state.motPhutVideos || [])
+    .filter((video) => video.status === 'complete' && video.videoPath)
+    .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0))[0];
+  if (latestMotPhutVideo) {
+    const motPhutCard = window.motPhutVoLe?.renderRecentCard?.(latestMotPhutVideo);
+    if (motPhutCard) recentVideos.push(motPhutCard);
+  }
+  $('#recent-videos').innerHTML = recentVideos.length ? recentVideos.join('') : data.counts.videos
     ? `<div class="empty-state" style="grid-column:1/-1"><strong>Video đã được chuyển sang lịch đăng</strong>Theo dõi các bài đang chờ Facebook đăng trong mục Lịch đăng.</div>`
     : `<div class="empty-state" style="grid-column:1/-1"><strong>Thư viện đang chờ video đầu tiên</strong>Khi AI, model giọng đọc và FFmpeg sẵn sàng, tạo video từ chủ đề phía trên.</div>`;
   state.system = data.system;
   state.settings = data.settings;
   const savedLanguage = ['en', 'ja', 'zh'].includes(data.settings.contentLanguage) ? data.settings.contentLanguage : 'en';
-  if (!state.createLanguageSelectionTouched && document.activeElement !== $('#content-language')) $('#content-language').value = savedLanguage;
-  const visibleLanguage = state.createLanguageSelectionTouched ? $('#content-language').value : savedLanguage;
-  const topicMode = visibleLanguage === 'ja' ? 'ja' : 'topics';
-  if ($('#topic-select').dataset.languageMode !== topicMode) {
-    $('#content-language').value = visibleLanguage;
-    renderTopics();
+  const savedContentMode = localStorage.getItem('mot-phut-vo-le-content-mode') === 'true' ? MOT_PHUT_CONTENT : savedLanguage;
+  if (!state.createLanguageSelectionTouched && document.activeElement !== $('#content-language')) $('#content-language').value = savedContentMode;
+  const visibleLanguage = state.createLanguageSelectionTouched ? $('#content-language').value : savedContentMode;
+  if (visibleLanguage !== MOT_PHUT_CONTENT) {
+    const topicMode = visibleLanguage === 'ja' ? 'ja' : 'topics';
+    if ($('#topic-select').dataset.languageMode !== topicMode) {
+      $('#content-language').value = visibleLanguage;
+      renderTopics();
+    }
   }
   const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
   if (heroCopy) heroCopy.textContent = contentLanguageDescription(visibleLanguage);
+  window.dispatchEvent(new CustomEvent('mot-phut-mode-change', { detail: { active: visibleLanguage === MOT_PHUT_CONTENT } }));
   renderToolChecks(data.system.tools);
   $$('.mini-action,[data-publish-id],[data-schedule-id],[data-approve-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
 }
@@ -367,6 +381,7 @@ function renderLibrary() {
     : state.filter === 'all' ? 'Tạo video đầu tiên từ bảng Tổng quan.' : 'Video sẽ xuất hiện tại đây sau khi trạng thái thay đổi.';
   $('#library-list').innerHTML = matches.length ? matches.map((video) => videoCard(video)).join('') : `<div class="empty-state"><strong>Chưa có video trong mục này</strong>${emptyCopy}</div>`;
   $$('.library-row [data-script-id],.library-row [data-background-effect-video-id],.library-row [data-retry-video-id],.library-row [data-approve-id],.library-row [data-schedule-id],.library-row [data-publish-id],.library-row [data-delete-video-id]').forEach((button) => button.addEventListener('click', handleVideoAction));
+  window.dispatchEvent(new Event('library:rendered'));
 }
 
 function facebookScheduleLanguage(language) {
@@ -375,7 +390,8 @@ function facebookScheduleLanguage(language) {
     en: { name: 'Tiếng Anh', code: 'EN', short: 'EN' },
     zh: { name: 'Tiếng Trung', code: 'ZH', short: 'ZH' },
     ja: { name: 'Tiếng Nhật', code: 'JA', short: 'JA' },
-    'english-shadowing': { name: 'EnglishShadowing', code: 'SH', short: 'SH' }
+    'english-shadowing': { name: 'EnglishShadowing', code: 'SH', short: 'SH' },
+    'mot-phut-vo-le': { name: 'Một Phút Vỡ Lẽ', code: 'MPVL', short: 'MP' }
   };
   return known[key] || {
     name: key.replace(/[-_]+/g, ' '),
@@ -453,6 +469,12 @@ function renderScheduleLanguageOverview() {
   const tomorrowKey = shiftScheduleDay(todayKey, 1);
   const allSchedules = [
     ...state.schedules,
+    ...state.motPhutSchedules.filter((item) => item.status !== 'cancelled').map((item) => ({
+      id: item.id, content_language: 'mot-phut-vo-le', topic: item.topic, title: item.title,
+      scheduled_at: item.scheduledAt, status: item.status === 'failed' ? 'failed' : item.status,
+      facebook_schedule_state: item.facebookScheduleState, facebook_error: item.facebookError,
+      isPublished: item.status === 'published'
+    })),
     ...state.publishedSchedules.map((item) => ({ ...item, isPublished: true }))
   ];
   if (!scheduleCalendarMonth) {
@@ -470,7 +492,7 @@ function renderScheduleLanguageOverview() {
   const leadingCells = (firstWeekday + 6) % 7;
   const monthLabel = new Intl.DateTimeFormat('vi-VN', { month: 'long', year: 'numeric', timeZone: 'UTC' })
     .format(new Date(Date.UTC(year, month - 1, 15)));
-  const knownLanguages = ['en', 'zh', 'ja', 'english-shadowing'];
+  const knownLanguages = ['en', 'zh', 'ja', 'english-shadowing', 'mot-phut-vo-le'];
   const monthLanguages = allSchedules
     .filter((item) => scheduleLocalDayKey(item.scheduled_at, timeZone).startsWith(`${scheduleCalendarMonth}-`))
     .map((item) => String(item.content_language || 'en').toLowerCase());
@@ -571,7 +593,8 @@ function renderSchedules() {
   }
   const schedules = state.schedules;
   const available = state.videos.filter((v) => v.status === 'ready');
-  $('#schedule-video').innerHTML = `<option value="">Chọn video</option>${available.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.topic)}</option>`).join('')}`;
+  const moduleAvailable = state.motPhutVideos.filter((video) => video.status === 'complete' && !state.motPhutSchedules.some((item) => item.contentId === video.id && item.status !== 'cancelled'));
+  $('#schedule-video').innerHTML = `<option value="">Chọn video</option>${available.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.topic)}</option>`).join('')}${moduleAvailable.length ? `<optgroup label="Một Phút Vỡ Lẽ · tiếng Việt">${moduleAvailable.map((video) => `<option value="${escapeHtml(video.id)}">${escapeHtml(video.title || video.topic)}</option>`).join('')}</optgroup>` : ''}`;
   const visible = schedules.filter((item) => item.status !== 'published');
   renderScheduleLanguageOverview();
   $('#schedule-list').innerHTML = visible.length ? visible.map((item) => {
@@ -599,6 +622,21 @@ function renderSchedules() {
       : `Nội dung Facebook ${language.name} (${language.code}) · ${stateLabel}`;
     return `<article class="schedule-row${failed ? ' failed' : ''}"><span class="schedule-date">${dateText(item.scheduled_at, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.topic)}</strong><small>${escapeHtml(item.title)} · ${languageStateLabel}</small>${error}</div><div class="schedule-time-actions"><span class="schedule-time">${dateText(item.scheduled_at, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span>${scheduleActions}</div></article>`;
   }).join('') : `<div class="empty-state"><strong>Chưa có lịch đăng</strong>Bật “Tự đăng theo lịch” trong cài đặt để xếp video sẵn sàng tự động.</div>`;
+  const moduleVisible = state.motPhutSchedules.filter((item) => item.status !== 'cancelled');
+  if (moduleVisible.length) {
+    $('#schedule-list').querySelector('.empty-state')?.remove();
+    const moduleRows = moduleVisible.map((item) => {
+      const error = item.facebookError ? `<small class="${['failed', 'uncertain'].includes(item.facebookScheduleState) ? 'error' : ''}">${escapeHtml(item.facebookError)}</small>` : '';
+      const remoteState = item.facebookScheduleState === 'published' ? 'Facebook MPVL đã đăng' : item.facebookScheduleState === 'scheduled' ? 'Facebook đã nhận lịch MPVL'
+        : item.facebookScheduleState === 'uncertain' ? 'Chưa xác minh được lịch Facebook MPVL'
+          : item.facebookScheduleState === 'failed' ? 'Gửi lịch MPVL lên Facebook thất bại'
+            : item.facebookScheduleState === 'queued' || ['uploading', 'finishing'].includes(item.facebookScheduleState) ? 'Đang gửi lịch MPVL lên Facebook'
+              : Date.parse(item.scheduledAt) <= Date.now() ? 'Đến giờ · lịch MPVL đang lưu trong tool' : 'Đã lên lịch MPVL trong tool';
+      const canDelete = !['publishing', 'published'].includes(item.status);
+      return `<article class="schedule-row mot-phut-schedule-row${['failed', 'uncertain'].includes(item.facebookScheduleState) ? ' failed' : ''}"><span class="schedule-date">${dateText(item.scheduledAt, { month: 'short', day: 'numeric' })}</span><div class="schedule-copy"><strong>${escapeHtml(item.title || item.topic || 'Một Phút Vỡ Lẽ')}</strong><small>MPVL · Tiếng Việt · ${remoteState}</small>${error}</div><div class="schedule-time-actions"><span class="schedule-time">${dateText(item.scheduledAt, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}</span>${canDelete ? `<button class="mini-action danger-action" data-mot-phut-delete-schedule-id="${escapeHtml(item.id)}">Xóa lịch</button>` : ''}</div></article>`;
+    }).join('');
+    $('#schedule-list').insertAdjacentHTML('beforeend', moduleRows);
+  }
   $$('[data-retry-schedule-id]').forEach((button) => button.addEventListener('click', retryScheduledPost));
   $$('[data-delete-schedule-id]').forEach((button) => button.addEventListener('click', deleteScheduledPost));
   $('#published-list').innerHTML = state.publishedSchedules.length ? state.publishedSchedules.map((item) => {
@@ -626,11 +664,17 @@ async function loadVideos() {
 }
 
 async function loadSchedules() {
-  const [scheduleData, videoData] = await Promise.all([api('/api/schedules'), api('/api/videos')]);
+  const [scheduleData, videoData, motPhutData] = await Promise.all([
+    api('/api/schedules'), api('/api/videos'),
+    Promise.all([api('/api/mot-phut-vo-le/schedules'), api('/api/mot-phut-vo-le/videos')]).catch(() => [{ schedules: [] }, { videos: [] }])
+  ]);
   state.schedules = scheduleData.schedules;
   state.publishedSchedules = scheduleData.published || [];
   state.videos = videoData.videos;
+  state.motPhutSchedules = motPhutData[0].schedules || [];
+  state.motPhutVideos = motPhutData[1].videos || [];
   renderSchedules();
+  window.dispatchEvent(new CustomEvent('mot-phut-schedule-state', { detail: { schedules: state.motPhutSchedules } }));
 }
 
 async function loadLogs() { state.logs = (await api('/api/logs')).logs; renderLogs(); }
@@ -646,10 +690,12 @@ function selectSavedVoice(select, voice) {
 function updateTtsProviderPanels() {
   const provider = $('#tts-provider').value;
   const shadowingSelected = state.ttsProviderView === 'english-shadowing';
-  $('#vieneu-tts-settings').hidden = shadowingSelected || !['vieneu', 'supertonic3-ko'].includes(provider);
-  $('#sbv2-tts-settings').hidden = shadowingSelected || provider !== 'vieneu-sbv2';
-  $('#cosyvoice-tts-settings').hidden = shadowingSelected || provider !== 'vieneu-cosyvoice3';
-  $('#supertonic-ko-tts-settings').hidden = shadowingSelected || provider !== 'supertonic3-ko';
+  const motPhutSelected = state.ttsProviderView === MOT_PHUT_CONTENT;
+  const specialProfileSelected = shadowingSelected || motPhutSelected;
+  $('#vieneu-tts-settings').hidden = specialProfileSelected || !['vieneu', 'supertonic3-ko'].includes(provider);
+  $('#sbv2-tts-settings').hidden = specialProfileSelected || provider !== 'vieneu-sbv2';
+  $('#cosyvoice-tts-settings').hidden = specialProfileSelected || provider !== 'vieneu-cosyvoice3';
+  $('#supertonic-ko-tts-settings').hidden = specialProfileSelected || provider !== 'supertonic3-ko';
   $('.english-shadowing-voice-settings').hidden = !shadowingSelected;
   renderTtsProviderMenu();
 }
@@ -657,20 +703,31 @@ function updateTtsProviderPanels() {
 function renderTtsProviderMenu() {
   const select = $('#tts-provider');
   const shadowingSelected = state.ttsProviderView === 'english-shadowing';
+  const motPhutSelected = state.ttsProviderView === MOT_PHUT_CONTENT;
   const selected = select.selectedOptions[0] || select.options[0];
   const shadowingLabel = 'Local AI TTS · Shadowing + Kokoro tiếng Anh';
-  $('#tts-provider-value').textContent = shadowingSelected ? shadowingLabel : selected?.textContent || 'Chọn model giọng đọc';
+  const motPhutLabel = 'Local AI TTS · VieNeu tiếng Việt · Một Phút Vỡ Lẽ';
+  $('#tts-provider-value').textContent = shadowingSelected ? shadowingLabel : motPhutSelected ? motPhutLabel : selected?.textContent || 'Chọn model giọng đọc';
   const options = [
     ...Array.from(select.options, (option) => ({ value: option.value, label: option.value === 'supertonic3-ko' ? 'Local AI TTS · VieNeu tiếng Việt + Supertonic 3 tiếng Hàn' : option.textContent })),
-    { value: 'english-shadowing', label: shadowingLabel }
+    { value: 'english-shadowing', label: shadowingLabel },
+    { value: MOT_PHUT_CONTENT, label: motPhutLabel }
   ];
   $('#tts-provider-options').innerHTML = options.map((option) => {
-    const isSelected = option.value === (shadowingSelected ? 'english-shadowing' : select.value);
+    const selectedValue = shadowingSelected ? 'english-shadowing' : motPhutSelected ? MOT_PHUT_CONTENT : select.value;
+    const isSelected = option.value === selectedValue;
     return `<button class="tts-provider-option" type="button" role="option" data-tts-provider="${escapeHtml(option.value)}" aria-selected="${isSelected}"><span>${escapeHtml(option.label)}</span>${isSelected ? '<span class="tts-provider-option-check" aria-hidden="true">✓</span>' : ''}</button>`;
   }).join('');
 }
 
 function selectTtsProviderView(provider) {
+  if (provider === MOT_PHUT_CONTENT) {
+    state.ttsProviderView = MOT_PHUT_CONTENT;
+    window.motPhutVoLe?.setSettingsProfile?.('voice', true);
+    updateTtsProviderPanels();
+    return;
+  }
+  window.motPhutVoLe?.setSettingsProfile?.('voice', false);
   if (provider === 'english-shadowing') {
     state.ttsProviderView = 'english-shadowing';
     updateTtsProviderPanels();
@@ -747,6 +804,7 @@ function syncTtsProviderForContentLanguage(language, settings = state.settings |
 }
 
 function contentLanguageDescription(language) {
+  if (language === MOT_PHUT_CONTENT) return 'Kể một kiến thức thú vị bằng tiếng Việt, với giọng đọc và thiết kế riêng.';
   if (language === 'english-shadowing') return 'EnglishShadowing dùng giọng Kokoro và preset dựng riêng theo bốn video mẫu. Caption, highlight và Page cũng được tách riêng.';
   if (language === 'ja') return 'AI tự chọn chủ đề tiếng Nhật mới, chỉ đối chiếu lịch sử JA và luân phiên 5 bố cục. Caption, hashtag và ảnh nền Nhật được tách riêng.';
   if (language === 'zh') return 'Ba câu giao tiếp thực tế. Giọng đọc tiếng Việt và tiếng Trung CosyVoice 3.0.';
@@ -756,6 +814,15 @@ function contentLanguageDescription(language) {
 async function changeContentLanguage() {
   const language = $('#content-language').value;
   state.createLanguageSelectionTouched = true;
+  if (language === MOT_PHUT_CONTENT) {
+    localStorage.setItem('mot-phut-vo-le-content-mode', 'true');
+    const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
+    if (heroCopy) heroCopy.textContent = contentLanguageDescription(language);
+    window.dispatchEvent(new CustomEvent('mot-phut-mode-change', { detail: { active: true } }));
+    return true;
+  }
+  localStorage.removeItem('mot-phut-vo-le-content-mode');
+  window.dispatchEvent(new CustomEvent('mot-phut-mode-change', { detail: { active: false } }));
   renderTopics();
   if (language === 'english-shadowing') {
     const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
@@ -1080,6 +1147,15 @@ function markSettingsDirty(event) {
 
 function syncBackgroundEffectPreview() {
   const frame = $('#background-effect-preview-frame');
+  if (window.motPhutVoLe?.isBackgroundEffectProfileActive?.()) {
+    if (!frame?.contentWindow) return;
+    frame.contentWindow.postMessage({ type: 'background-effect-preview:set-effect',
+      effectId: $('#mot-phut-setting-background-effect').value || 'bubbles',
+      density: Number($('#mot-phut-setting-effect-density').value || 28),
+      speed: Number($('#mot-phut-setting-effect-speed').value || 58),
+      opacity: Number($('#mot-phut-setting-effect-opacity').value || 32), language: 'vi' }, location.origin);
+    return;
+  }
   const effectId = $('#background-effect').value;
   if (!frame?.contentWindow || !effectId) return;
   const contentLanguage = state.backgroundEffectLanguage === 'english-shadowing' ? 'en' : state.backgroundEffectLanguage || 'en';
@@ -1120,7 +1196,11 @@ async function loadSettings() {
   if (!state.settingsDirty) {
     state.backgroundEffectProfiles = normalizeBackgroundEffectProfilesForUi(settings);
     const selectedEffectLanguage = state.backgroundEffectLanguage || $('#background-effect-language').value || 'en';
-    applyBackgroundEffectProfile(selectedEffectLanguage);
+    if (selectedEffectLanguage === MOT_PHUT_CONTENT) window.motPhutVoLe?.setSettingsProfile?.('background', true);
+    else {
+      window.motPhutVoLe?.setSettingsProfile?.('background', false);
+      applyBackgroundEffectProfile(selectedEffectLanguage);
+    }
     applyVoiceHighlightContentProfile(state.voiceHighlightContentProfile);
   }
   syncBackgroundEffectPreview();
@@ -1140,16 +1220,18 @@ async function loadSettings() {
   }
   const facebookLanguageSelect = $('#facebook-quick-route-language');
   if (!state.facebookPageLanguageDirty) facebookLanguageSelect.value = ['en', 'zh', 'ja', 'english-shadowing'].includes(settings.facebookPageSelectedLanguage) ? settings.facebookPageSelectedLanguage : 'en';
-  if (!state.facebookPageCredentialDirty) updateFacebookPageForm(settings, facebookPages, facebookLanguageSelect.value);
+  if (!state.facebookPageCredentialDirty && facebookLanguageSelect.value !== MOT_PHUT_CONTENT) updateFacebookPageForm(settings, facebookPages, facebookLanguageSelect.value);
+  window.motPhutVoLe?.syncFacebookSettingsProfile?.();
   // The eight-second live refresh also calls this function. Keep in-progress
   // edits in the DOM until the user saves them; the server response is only a
   // baseline and must not overwrite a selection or text field mid-edit.
   if (state.settingsDirty) return;
-  if (!state.createLanguageSelectionTouched) $('#content-language').value = settings.contentLanguage || 'en';
+  if (!state.createLanguageSelectionTouched) $('#content-language').value = localStorage.getItem('mot-phut-vo-le-content-mode') === 'true' ? MOT_PHUT_CONTENT : settings.contentLanguage || 'en';
   const visibleLanguage = $('#content-language').value;
-  if (visibleLanguage !== 'english-shadowing') syncTtsProviderForContentLanguage(visibleLanguage, settings);
+  if (visibleLanguage !== 'english-shadowing' && visibleLanguage !== MOT_PHUT_CONTENT) syncTtsProviderForContentLanguage(visibleLanguage, settings);
   const heroCopy = $('#content-language').closest('.hero-copy')?.querySelector(':scope > p');
   if (heroCopy) heroCopy.textContent = contentLanguageDescription(visibleLanguage);
+  window.dispatchEvent(new CustomEvent('mot-phut-mode-change', { detail: { active: visibleLanguage === MOT_PHUT_CONTENT } }));
   selectSavedVoice($('#vieneu-vi-voice'), settings.vieneuViVoice || 'Hải Đăng');
   selectSavedVoice($('#sbv2-vi-voice'), settings.vieneuJaViVoice || settings.vieneuViVoice || 'Hải Đăng');
   selectSavedVoice($('#cosyvoice-vi-voice'), settings.vieneuZhViVoice || settings.vieneuViVoice || 'Hải Đăng');
@@ -1265,6 +1347,14 @@ async function generateVideo() {
   let jobQueued = false;
   try {
     const contentLanguage = $('#content-language').value;
+    if (contentLanguage === MOT_PHUT_CONTENT) {
+      const modulePayload = window.motPhutVoLe?.createPayload?.();
+      if (!modulePayload) throw new Error('Bảng tạo Một Phút Vỡ Lẽ chưa sẵn sàng. Tải lại trang rồi thử lại.');
+      const moduleJob = await api('/api/mot-phut-vo-le/jobs', { method: 'POST', body: JSON.stringify(modulePayload) });
+      toast('Đã thêm Một Phút Vỡ Lẽ vào hàng đợi', false, `Job ${moduleJob.job.id} · dùng cấu hình riêng của nhánh nội dung này.`);
+      window.dispatchEvent(new CustomEvent('mot-phut-job-created', { detail: { job: moduleJob.job } }));
+      return;
+    }
     let payload;
     if (contentLanguage === 'english-shadowing') {
       payload = { contentLanguage };
@@ -1489,6 +1579,15 @@ async function retryScheduledPost(event) {
 
 async function saveSettings() {
   const button = $('#save-settings'); button.disabled = true;
+  const motPhutSettingsPending = window.motPhutVoLe?.hasPendingSettings?.() === true;
+  if (motPhutSettingsPending && !state.settingsDirty && !state.englishShadowingSettingsDirty) {
+    try {
+      await window.motPhutVoLe.saveSettings({ throwOnError: true });
+      toast('Đã lưu cài đặt Một Phút Vỡ Lẽ', false, 'Cấu hình giọng tiếng Việt và nội dung được lưu riêng.');
+    } catch (error) { toast('Không lưu được cài đặt Một Phút Vỡ Lẽ', true, error.message); }
+    finally { button.disabled = false; }
+    return;
+  }
   const revisionAtSave = state.settingsRevision;
   storeCurrentBackgroundEffectProfile();
   const englishShadowingRevisionAtSave = state.englishShadowingSettingsRevision;
@@ -1510,9 +1609,12 @@ async function saveSettings() {
     ? selectedContentLanguage
     : (['en', 'ja', 'zh'].includes(state.settings?.contentLanguage) ? state.settings.contentLanguage : 'en');
   const selectedTtsProvider = $('#tts-provider').value;
-  const ttsProvider = selectedTtsProvider === 'supertonic3-ko'
-    ? (contentLanguage === 'ja' ? (state.settings?.japaneseTtsProvider || 'vieneu-sbv2') : contentLanguage === 'zh' ? (state.settings?.chineseTtsProvider || 'vieneu-cosyvoice3') : (state.settings?.ttsProvider || 'vieneu'))
-    : selectedTtsProvider;
+  const separateContentModeSelected = !['en', 'ja', 'zh'].includes(selectedContentLanguage);
+  const ttsProvider = separateContentModeSelected
+    ? providerForContentLanguage(contentLanguage, state.settings || {})
+    : selectedTtsProvider === 'supertonic3-ko'
+      ? (contentLanguage === 'ja' ? (state.settings?.japaneseTtsProvider || 'vieneu-sbv2') : contentLanguage === 'zh' ? (state.settings?.chineseTtsProvider || 'vieneu-cosyvoice3') : (state.settings?.ttsProvider || 'vieneu'))
+      : selectedTtsProvider;
   const ttsProviderKey = contentLanguage === 'ja' ? 'japaneseTtsProvider' : contentLanguage === 'zh' ? 'chineseTtsProvider' : 'ttsProvider';
   const vietnameseVoiceInput = contentLanguage === 'zh' ? '#cosyvoice-vi-voice' : contentLanguage === 'ja' ? '#sbv2-vi-voice' : '#vieneu-vi-voice';
   const vietnameseVoiceKey = contentLanguage === 'zh' ? 'vieneuZhViVoice' : contentLanguage === 'ja' ? 'vieneuJaViVoice' : 'vieneuViVoice';
@@ -1624,6 +1726,10 @@ async function saveSettings() {
     const shadowingEditedWhileSaving = state.englishShadowingSettingsRevision !== englishShadowingRevisionAtSave;
     const editedWhileSaving = standardSettingsEditedWhileSaving || shadowingEditedWhileSaving;
     state.settingsDirty = standardSettingsEditedWhileSaving;
+    if (motPhutSettingsPending) {
+      try { await window.motPhutVoLe.saveSettings({ throwOnError: true }); }
+      catch (error) { toast('Cài đặt chung đã lưu nhưng cài đặt Một Phút Vỡ Lẽ chưa lưu', true, error.message); }
+    }
     toast(editedWhileSaving ? 'Đã lưu bản cài đặt trước đó' : 'Đã lưu cài đặt', false, editedWhileSaving ? 'Bạn vừa thay đổi thêm cài đặt; hãy lưu lần nữa để lưu các thay đổi mới.' : '');
     await loadOverview();
     if (!editedWhileSaving) await loadSettings();
@@ -1792,10 +1898,34 @@ async function addTopic() {
 async function createSchedule(event) {
   event.preventDefault();
   try {
-    const result = await api(`/api/videos/${encodeURIComponent($('#schedule-video').value)}/schedule`, { method: 'POST', body: JSON.stringify({ scheduledAt: $('#schedule-time').value }) });
-    toast(result.facebookScheduleState === 'queued' ? 'Đã xếp lịch gửi lên Facebook' : 'Đã lưu lịch đăng', false, dateText(result.scheduledAt));
+    const videoId = $('#schedule-video').value;
+    const scheduledAt = $('#schedule-time').value;
+    const isMotPhut = state.motPhutVideos.some((video) => video.id === videoId);
+    const result = isMotPhut
+      ? await api(`/api/mot-phut-vo-le/videos/${encodeURIComponent(videoId)}/schedule`, { method: 'POST', body: JSON.stringify({ scheduledAt }) })
+      : await api(`/api/videos/${encodeURIComponent(videoId)}/schedule`, { method: 'POST', body: JSON.stringify({ scheduledAt }) });
+    const savedAt = isMotPhut ? result.schedule?.scheduledAt : result.scheduledAt;
+    toast(isMotPhut ? 'Đã thêm lịch Một Phút Vỡ Lẽ' : result.facebookScheduleState === 'queued' ? 'Đã xếp lịch gửi lên Facebook' : 'Đã lưu lịch đăng', false, dateText(savedAt));
     $('#schedule-form').reset(); await loadSchedules(); await loadOverview();
   } catch (error) { toast('Không lưu được lịch', true, error.message); }
+}
+
+async function deleteMotPhutScheduledPost(event) {
+  const button = event.target.closest('[data-mot-phut-delete-schedule-id]');
+  if (!button) return;
+  const schedule = state.motPhutSchedules.find((item) => item.id === button.dataset.motPhutDeleteScheduleId);
+  if (!schedule) return;
+  const remoteMayExist = ['scheduled', 'uncertain', 'uploading', 'finishing'].includes(schedule.facebookScheduleState);
+  const prompt = remoteMayExist
+    ? 'Xóa lịch MPVL khỏi tool? Lịch đã gửi lên Facebook có thể vẫn còn trong Planner.'
+    : 'Xóa lịch MPVL khỏi tool? Video sẽ được giữ nguyên.';
+  if (!window.confirm(prompt)) return;
+  button.disabled = true;
+  try {
+    await api(`/api/mot-phut-vo-le/schedules/${encodeURIComponent(schedule.id)}`, { method: 'DELETE' });
+    toast('Đã xóa lịch MPVL', false, remoteMayExist ? 'Hãy kiểm tra Facebook Planner nếu lịch đã được gửi.' : 'Video và file vẫn được giữ.');
+    await loadSchedules();
+  } catch (error) { toast('Không xóa được lịch MPVL', true, error.message); button.disabled = false; }
 }
 
 async function deletePublishedSchedule(event) {
@@ -1965,6 +2095,12 @@ function setupEvents() {
   $('#highlight-transition').addEventListener('change', updateHighlightPreviewStyle);
   $('#background-effect-language').addEventListener('change', (event) => {
     storeCurrentBackgroundEffectProfile(state.backgroundEffectLanguage || 'en');
+    if (event.currentTarget.value === MOT_PHUT_CONTENT) {
+      state.backgroundEffectLanguage = MOT_PHUT_CONTENT;
+      window.motPhutVoLe?.setSettingsProfile?.('background', true);
+      return;
+    }
+    window.motPhutVoLe?.setSettingsProfile?.('background', false);
     applyBackgroundEffectProfile(event.currentTarget.value);
     if (event.currentTarget.value === 'english-shadowing') applyVoiceHighlightContentProfile('english-shadowing');
     else if (state.voiceHighlightContentProfile === 'english-shadowing') applyVoiceHighlightContentProfile('standard');
@@ -2002,6 +2138,23 @@ function setupEvents() {
     const isGlobalPreview = event.source === backgroundEffectPreview.contentWindow;
     const isVideoPreview = Boolean(editorFrame && event.source === editorFrame.contentWindow);
     if (!isGlobalPreview && !isVideoPreview) return;
+    if (isGlobalPreview && window.motPhutVoLe?.isBackgroundEffectProfileActive?.()) {
+      const moduleChanges = {
+        'background-effect-preview:change-density': ['#mot-phut-setting-effect-density', '#mot-phut-setting-effect-density-label', 10, 60],
+        'background-effect-preview:change-speed': ['#mot-phut-setting-effect-speed', '#mot-phut-setting-effect-speed-label', 25, 140],
+        'background-effect-preview:change-opacity': ['#mot-phut-setting-effect-opacity', '#mot-phut-setting-effect-opacity-label', 10, 70]
+      };
+      const moduleChange = moduleChanges[event.data?.type];
+      if (!moduleChange) return;
+      const [inputSelector, outputSelector, min, max] = moduleChange;
+      const key = event.data.type.endsWith('density') ? 'density' : event.data.type.endsWith('speed') ? 'speed' : 'opacity';
+      const value = Number(event.data[key]);
+      if (!Number.isInteger(value) || value < min || value > max) return;
+      $(inputSelector).value = String(value);
+      $(outputSelector).textContent = String(value);
+      $(inputSelector).dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
     const changes = {
       'background-effect-preview:change-density': ['backgroundEffectDensity', 10, 60],
       'background-effect-preview:change-speed': ['backgroundEffectSpeed', 25, 140],
@@ -2064,12 +2217,31 @@ function setupEvents() {
     state.facebookSelectedLanguage = select.value;
     $('#page-id').value = '';
     $('#page-token').value = '';
+    if (select.value === MOT_PHUT_CONTENT) {
+      window.motPhutVoLe?.syncFacebookSettingsProfile?.();
+      $('#facebook-result').textContent = '';
+      return;
+    }
     $('#facebook-result').textContent = `Đang chọn cấu hình Page ${select.value.toUpperCase()}; ID và token chỉ được lưu khi bấm Lưu thông tin.`;
     await refreshFacebookPageForm(select.value);
   });
   $('#add-topic').addEventListener('click', addTopic);
   $('#schedule-form').addEventListener('submit', createSchedule);
   $('#view-schedule').addEventListener('click', deletePublishedSchedule);
+  $('#view-schedule').addEventListener('click', deleteMotPhutScheduledPost);
+  window.addEventListener('mot-phut-videos-ready', (event) => {
+    state.motPhutVideos = event.detail?.videos || [];
+    state.motPhutSchedules = event.detail?.schedules || [];
+    if (state.overview) renderOverview();
+    if (state.view === 'schedule') renderSchedules();
+  });
+  window.addEventListener('mot-phut-open-schedule', async (event) => {
+    setView('schedule');
+    await loadSchedules();
+    $('#schedule-video').value = event.detail?.videoId || '';
+    $('#schedule-time').focus();
+  });
+  window.addEventListener('mot-phut-background-effect-change', syncBackgroundEffectPreview);
   $('#chatgpt-disconnect').addEventListener('click', async () => { try { const result = await api('/api/chatgpt/disconnect', { method: 'POST', body: '{}' }); toast('Đã xóa thông tin kết nối local', false, result.revocationConfirmed ? 'OpenAI xác nhận thu hồi phiên.' : 'Chưa xác nhận thu hồi phía OpenAI; bạn có thể ngắt ứng dụng trong ChatGPT Settings.'); await loadSettings(); } catch (error) { toast('Không ngắt được kết nối', true, error.message); } });
   $('#clear-facebook').addEventListener('click', async () => { try { const contentLanguage = $('#facebook-quick-route-language').value; await api('/api/facebook/clear-token', { method: 'POST', body: JSON.stringify({ contentLanguage }) }); toast('Đã xóa Page Access Token', false, `Chỉ token Page ${contentLanguage.toUpperCase()} được xóa.`); state.facebookPageCredentialDirty = false; await loadSettings(); } catch (error) { toast('Không xóa được token', true, error.message); } });
   $('#facebook-adapter').addEventListener('change', () => {

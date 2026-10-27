@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/visual-editor.css" />
   <link rel="stylesheet" href="/visual-editor-overrides.css" />
   <link rel="stylesheet" href="/shadowing-visual-tools.css" />
+  <link rel="stylesheet" href="/mot-phut-visual-editor.css" />
   <style>
     .visual-language-switch select { border: 1px solid #d9e0db; border-radius: 9px; padding: 10px 13px; background: #fff; color: #315f54; font: inherit; cursor: pointer; }
     .visual-language-switch button.active { background: #315f54; color: #fff; font-weight: 700; }
@@ -22,6 +23,7 @@
   </style>
   <script type="module" src="/visual-editor.js"></script>
   <script type="module" src="/shadowing-visual-tools.js"></script>
+  <script type="module" src="/mot-phut-visual-editor.js"></script>
 </head>
 <body>
   <header class="topbar"><a id="editor-back-link" class="wordmark" href="/">← Studio</a><div><strong id="editor-title">Visual Editor</strong><span id="template-language-label">Branded Dialogue V2 · 1080 × 1920</span></div><div class="visual-language-switch" role="group" aria-label="Ngôn ngữ template"><select id="editor-language-select" aria-label="Chọn ngôn ngữ"><option value="en">Tiếng Anh</option><option value="zh">Tiếng Trung</option><option value="ja">Tiếng Nhật</option></select><button type="button" id="shadowing-editor-button">Shadowing</button></div><div class="top-actions"><span id="connection" class="connection">Đang kết nối…</span><button id="undo" class="button light">↶ Hoàn tác</button><button id="reset" class="button light">Đặt lại</button><button id="save" class="button primary">Lưu template</button></div></header>
@@ -71,14 +73,15 @@
   </main>
   <main class="shadowing-workspace" id="shadowing-workspace" hidden>
     <section class="shadowing-editor-card">
+      <label class="mot-phut-profile-select">Hồ sơ trong Shadowing<select id="shadowing-content-profile"><option value="english-shadowing">EnglishShadowing</option><option value="mot-phut-vo-le">Một Phút Vỡ Lẽ · Tiếng Việt</option></select></label>
       <h1 id="shadowing-title">Preset dựng video EnglishShadowing</h1>
       <p id="shadowing-description">Shadowing dùng preset riêng: nền giấy ấm, tiêu đề navy và burgundy, toàn bộ đoạn tiếng Anh luôn hiển thị, từ đang đọc được tô nổi bật. Đây là khu vực riêng; các layer EN/ZH bên cạnh không được dùng cho video Shadowing.</p>
       <img id="shadowing-preview-image" class="shadowing-editor-preview" src="/api/english-shadowing/visual-preview.svg" alt="Xem trước preset hình ảnh EnglishShadowing" />
-      <p class="shadowing-editor-note" id="shadowing-editor-status" role="status">Preset hiện tại vẫn là quy trình mặc định. Mở thiết kế Thumbnail hoặc Nội dung để chỉnh trực tiếp trên ảnh và xem kết quả render.</p>
+      <p class="shadowing-editor-note" id="shadowing-editor-status" role="status">Hiện thiết kế tùy chỉnh chỉ áp dụng cho Thumbnail EnglishShadowing. Nội dung giữ nguyên theo cấu hình của tool; bạn có thể mở mục Nội dung để chỉnh sau.</p>
       <section class="shadowing-visual-tools" id="shadowing-visual-tools" aria-labelledby="shadowing-visual-tools-heading">
         <div class="shadowing-visual-tools-heading">
-          <div><h2 id="shadowing-visual-tools-heading">Thiết kế Thumbnail và Nội dung</h2><p>Bố cục và thuộc tính theo trình thiết kế gốc; cấu hình được lưu riêng cho Shadowing.</p></div>
-          <div class="shadowing-visual-heading-actions"><label class="shadowing-visual-enable"><input type="checkbox" id="shadowing-visual-enabled" /> Dùng thiết kế này cho video Shadowing mới</label><button type="button" class="button primary" id="shadowing-visual-save-settings">Lưu thiết lập</button></div>
+          <div><h2 id="shadowing-visual-tools-heading">Thiết kế Thumbnail</h2><p id="shadowing-visual-tools-description">Hiện chỉ áp dụng thiết kế Thumbnail cho video EnglishShadowing. Nội dung tiếp tục dùng cấu hình có sẵn của tool; bạn có thể mở mục Thiết kế Nội dung để chỉnh sau.</p></div>
+          <div class="shadowing-visual-heading-actions"><label class="shadowing-visual-enable"><input type="checkbox" id="shadowing-visual-enabled" /> <span id="shadowing-visual-enabled-label">Dùng riêng thiết kế Thumbnail này cho video Shadowing mới</span></label><button type="button" class="button primary" id="shadowing-visual-save-settings">Lưu thiết lập</button></div>
         </div>
         <div class="shadowing-visual-source-modules">
           <section class="shadowing-visual-source-module" aria-labelledby="shadowing-visual-thumbnail-heading">
@@ -86,13 +89,16 @@
             <button type="button" class="button light" id="shadowing-visual-open-thumbnail">Thiết kế thumbnail</button>
             <p class="shadowing-visual-source-caption">Ảnh bìa ở đầu mỗi video. Kéo thả để thiết kế và xem ảnh render thử trước khi áp dụng.</p>
           </section>
-          <section class="shadowing-visual-source-module" aria-labelledby="shadowing-visual-content-heading">
-            <div class="shadowing-visual-source-module-preview"><h3 id="shadowing-visual-content-heading">Nội dung</h3><div class="shadowing-visual-source-card" id="shadowing-visual-content-card" aria-label="Nội dung mẫu"></div></div>
-            <button type="button" class="button light" id="shadowing-visual-open-content">Thiết kế nội dung</button>
-            <p class="shadowing-visual-source-caption">Thẻ ảnh nội dung trong video. Kéo thả để thiết kế và xem ảnh render thử trước khi áp dụng.</p>
-          </section>
+          <details class="shadowing-visual-content-details">
+            <summary><strong>Thiết kế Nội dung</strong><span>Đang giữ thiết lập sẵn theo tool. Mở rộng khi bạn muốn chỉnh sau.</span></summary>
+            <section class="shadowing-visual-source-module" aria-labelledby="shadowing-visual-content-heading">
+              <div class="shadowing-visual-source-module-preview"><h3 id="shadowing-visual-content-heading">Nội dung</h3><div class="shadowing-visual-source-card" id="shadowing-visual-content-card" aria-label="Nội dung mẫu"></div></div>
+              <button type="button" class="button light" id="shadowing-visual-open-content">Thiết kế nội dung</button>
+              <p class="shadowing-visual-source-caption">Nội dung video vẫn dùng thiết lập hiện tại của tool cho đến khi bạn mở mục này và lưu thiết kế.</p>
+            </section>
+          </details>
         </div>
-        <p class="shadowing-visual-source-caption" id="shadowing-visual-source-caption" role="status">Thiết kế được lưu riêng cho Shadowing. Mở từng mục để chỉnh sửa.</p>
+        <p class="shadowing-visual-source-caption" id="shadowing-visual-source-caption" role="status">Thiết kế Thumbnail được lưu riêng cho Shadowing. Nội dung hiện dùng cấu hình có sẵn của tool.</p>
         <div class="shadowing-visual-dialog" id="shadowing-visual-dialog" hidden>
           <section class="shadowing-visual-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="shadowing-visual-dialog-title">
             <header class="shadowing-visual-dialog-head"><div><h2 id="shadowing-visual-dialog-title">Thiết kế thumbnail</h2><p id="shadowing-visual-dialog-help">Kéo tên Page và vùng headline trên ảnh. Bấm “Render thử” để xem ảnh do server vẽ.</p></div><button type="button" class="shadowing-visual-dialog-close" id="shadowing-visual-close" aria-label="Đóng">×</button></header>
@@ -114,14 +120,69 @@
                   <button type="button" class="button light" id="shadowing-visual-render">Render thử</button>
                   <span class="shadowing-visual-actions-spacer"></span>
                   <button type="button" class="button light" id="shadowing-visual-cancel">Huỷ</button>
-                  <button type="button" class="button primary" id="shadowing-visual-save">Dùng thiết kế này</button>
+                  <button type="button" class="button primary" id="shadowing-visual-save">Lưu và dùng thiết kế này</button>
                 </div>
                 <p id="shadowing-visual-status" class="shadowing-visual-status" role="status">Đang tải thiết kế…</p>
               </section>
             </div>
           </section>
         </div>
-        <p class="shadowing-visual-footnote">Ảnh mẫu chỉ dùng trong cửa sổ thiết kế. “Render thử” xem ảnh do bộ dựng Shadowing tạo; chỉnh sửa chỉ áp dụng sau khi bấm “Dùng thiết kế này”. Video đang có không bị thay đổi.</p>
+        <p class="shadowing-visual-footnote">Ảnh mẫu Thumbnail chỉ dùng để xem trước. “Render thử” dùng bộ dựng Shadowing. Khi lưu từ mục Thumbnail, video mới chỉ nhận thiết kế Thumbnail; nội dung và video đã tạo không bị thay đổi.</p>
+      </section>
+      <section class="mot-phut-visual-profile" id="mot-phut-visual-profile" hidden aria-labelledby="mot-phut-visual-title">
+        <header class="mot-phut-visual-heading">
+          <div><h1 id="mot-phut-visual-title">Thiết kế Một Phút Vỡ Lẽ</h1><p>Preset riêng cho video tiếng Việt. Thiết kế Thumbnail và Nội dung được lưu riêng; Highlight vẫn dùng hiệu ứng của tool.</p></div>
+          <label class="mot-phut-visual-preset">Preset<select id="mot-phut-visual-preset"><option value="vintage-paper">Vintage Paper</option><option value="dark-knowledge">Dark Knowledge</option></select></label>
+        </header>
+        <section class="mot-phut-visual-tools" aria-labelledby="mot-phut-visual-tools-heading">
+          <div class="mot-phut-visual-tools-heading">
+            <div><h2 id="mot-phut-visual-tools-heading">Thiết kế Thumbnail và Nội dung</h2><p>Bố cục và thuộc tính theo trình thiết kế gốc; cấu hình được lưu riêng cho Một Phút Vỡ Lẽ.</p></div>
+            <div class="mot-phut-visual-heading-actions"><label class="mot-phut-visual-enable"><input type="checkbox" id="mot-phut-visual-enabled" /> Dùng thiết kế này cho video Một Phút Vỡ Lẽ mới</label><button class="button primary" id="mot-phut-visual-save-settings" type="button">Lưu thiết lập</button></div>
+          </div>
+          <div class="mot-phut-visual-source-modules">
+            <section class="mot-phut-visual-source-module" aria-labelledby="mot-phut-visual-thumbnail-heading">
+              <div class="mot-phut-visual-source-module-preview"><h3 id="mot-phut-visual-thumbnail-heading">Thumbnail</h3><div class="mot-phut-visual-source-card" id="mot-phut-visual-thumbnail-card" role="img" aria-label="Thumbnail mẫu Một Phút Vỡ Lẽ"></div></div>
+              <button type="button" class="button light" data-mot-phut-edit="thumbnail">Thiết kế thumbnail</button>
+              <p class="mot-phut-visual-source-caption">Ảnh bìa ở đầu mỗi video. Mở thiết kế thumbnail để chỉnh và xem ảnh render thử trước khi áp dụng.</p>
+            </section>
+            <section class="mot-phut-visual-source-module" aria-labelledby="mot-phut-visual-content-heading">
+              <div class="mot-phut-visual-source-module-preview"><h3 id="mot-phut-visual-content-heading">Nội dung</h3><div class="mot-phut-visual-source-card" id="mot-phut-visual-content-card" role="img" aria-label="Nội dung mẫu Một Phút Vỡ Lẽ"></div></div>
+              <button type="button" class="button light" data-mot-phut-edit="content">Thiết kế nội dung</button>
+              <p class="mot-phut-visual-source-caption">Thẻ nội dung tiếng Việt trong video. Hiệu ứng highlight vẫn dùng thiết lập của tool.</p>
+            </section>
+          </div>
+          <p class="mot-phut-visual-status" id="mot-phut-visual-status" role="status" aria-live="polite">Thiết kế được lưu riêng cho Một Phút Vỡ Lẽ. Mở từng mục để chỉnh sửa.</p>
+          <p class="mot-phut-visual-footnote">Ảnh mẫu chỉ dùng trong cửa sổ thiết kế. “Render thử” xem ảnh do bộ dựng MPVL tạo; chỉnh sửa chỉ áp dụng sau khi bấm “Dùng thiết kế này”. Video đang có không bị thay đổi.</p>
+        </section>
+        <div class="mot-phut-visual-dialog" id="mot-phut-visual-dialog" hidden>
+          <section class="mot-phut-visual-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="mot-phut-visual-dialog-title">
+            <header class="mot-phut-visual-dialog-head"><div><h2 id="mot-phut-visual-dialog-title">Thiết kế thumbnail</h2><p id="mot-phut-visual-dialog-help">Kéo tên thương hiệu và vùng headline trên ảnh. Bấm “Render thử” để xem ảnh do renderer MPVL vẽ.</p></div><button class="mot-phut-visual-close" id="mot-phut-visual-close" type="button" aria-label="Đóng">×</button></header>
+            <div class="mot-phut-visual-editor-grid">
+              <section class="mot-phut-visual-preview-panel">
+                <div class="mot-phut-visual-render-tabs" role="tablist" aria-label="Chế độ xem">
+                  <button type="button" class="active" id="mot-phut-visual-tab-design" role="tab" aria-selected="true">Thiết kế</button>
+                  <button type="button" id="mot-phut-visual-tab-render" role="tab" aria-selected="false">Kết quả render</button>
+                </div>
+                <div class="mot-phut-visual-canvas" id="mot-phut-visual-canvas" aria-label="Bản xem trước thiết kế Một Phút Vỡ Lẽ"></div>
+                <p id="mot-phut-visual-fit-note" class="mot-phut-visual-fit-note" role="status"></p>
+              </section>
+              <section class="mot-phut-visual-properties">
+                <div id="mot-phut-visual-samples" class="mot-phut-visual-samples"></div>
+                <div id="mot-phut-visual-layer-list" class="mot-phut-visual-layer-list" hidden></div>
+                <h3 id="mot-phut-visual-controls-heading">Thiết kế thumbnail</h3>
+                <div id="mot-phut-visual-controls-root" class="mot-phut-visual-controls"></div>
+                <div class="mot-phut-visual-actions">
+                  <button type="button" class="button light" id="mot-phut-visual-default">Về mặc định</button>
+                  <button type="button" class="button light" id="mot-phut-visual-render">Render thử</button>
+                  <span class="mot-phut-visual-actions-spacer"></span>
+                  <button type="button" class="button light" id="mot-phut-visual-cancel">Hủy</button>
+                  <button type="button" class="button primary" id="mot-phut-visual-save">Lưu và dùng thiết kế này</button>
+                </div>
+                <p id="mot-phut-visual-dialog-status" class="mot-phut-visual-dialog-status" role="status" aria-live="polite"></p>
+              </section>
+            </div>
+          </section>
+        </div>
       </section>
     </section>
   </main>

@@ -1,0 +1,1 @@
+{"provider":"vieneu-v3-turbo-onnx-fp32","source":null,"wordBoundaries":[],"warning":"VieNeu-TTS không trả WordBoundary; sẽ dùng forced alignment local nếu đã cài stable-ts."}

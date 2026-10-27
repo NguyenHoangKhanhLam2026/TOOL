@@ -1,0 +1,168 @@
+@font-face{font-family:"MPVL Display";src:url("/fonts/render/BeVietnamPro-Black-Vietnamese.ttf") format("truetype");font-weight:900;font-style:normal;font-display:swap}
+@font-face{font-family:"MPVL Tinos";src:url("/fonts/render/Tinos-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
+.mot-phut-profile-select {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px);
+  gap: 6px;
+  margin: 0 0 18px;
+  color: #42554d;
+  font-size: 13px;
+  font-weight: 700;
+}
+.mot-phut-profile-select select,
+.mot-phut-visual-preset select {
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid #d8e1da;
+  border-radius: 9px;
+  background: #fff;
+  color: #233c33;
+  font: inherit;
+}
+body.mot-phut-visual-profile-active #shadowing-title,
+body.mot-phut-visual-profile-active #shadowing-description,
+body.mot-phut-visual-profile-active #shadowing-preview-image,
+body.mot-phut-visual-profile-active #shadowing-editor-status,
+body.mot-phut-visual-profile-active #shadowing-visual-tools,
+body.mot-phut-visual-profile-active .shadowing-visual-footnote { display: none !important; }
+.mot-phut-visual-profile[hidden] { display: none; }
+.mot-phut-visual-heading { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; padding: 0 2px 18px; }
+.mot-phut-visual-heading h1 { margin: 0 0 6px; color: #193d34; font-size: 24px; }
+.mot-phut-visual-heading p { margin: 0; color: #687873; font-size: 13px; }
+.mot-phut-visual-preset { display: grid; min-width: 220px; gap: 5px; color: #42554d; font-size: 12px; font-weight: 700; }
+.mot-phut-visual-tools { margin-top: 0; padding: 22px; border: 1px solid #ded6ca; border-radius: 16px; background: #faf8f3; text-align: left; }
+.mot-phut-visual-tools-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.mot-phut-visual-tools-heading h2 { margin: 0; color: #173553; font-size: 19px; }
+.mot-phut-visual-tools-heading p { margin: 5px 0 0; color: #687477; font-size: 12px; }
+.mot-phut-visual-heading-actions { display: flex; align-items: center; gap: 10px; }
+.mot-phut-visual-heading-actions .button { white-space: nowrap; }
+.mot-phut-visual-enable { display: flex; min-height: 42px; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid #d8e1da; border-radius: 9px; background: #fff; color: #42554d; font-size: 12px; font-weight: 650; }
+.mot-phut-visual-enable input { accent-color: #276453; }
+.mot-phut-visual-source-modules { display: flex; flex-direction: column; gap: 28px; margin-top: 24px; }
+.mot-phut-visual-source-module { display: grid; grid-template-columns: 114px minmax(160px, max-content); grid-template-rows: auto auto; align-items: center; gap: 8px 0; padding: 0; }
+.mot-phut-visual-source-module-preview { grid-row: 1 / 3; display: flex; flex-direction: column; gap: 8px; }
+.mot-phut-visual-source-module h3 { margin: 0; color: #394b58; font-size: 14px; font-weight: 600; }
+.mot-phut-visual-source-module .mot-phut-visual-source-card { display: block; width: 98px; height: 174px; aspect-ratio: 9 / 16; object-fit: contain; overflow: hidden; border-radius: 8px; background: #e8e2d8; box-shadow: 0 4px 12px #18232b22; }
+.mot-phut-visual-source-module .mot-phut-visual-source-card > svg { display: block; width: 100%; height: 100%; }
+.mot-phut-visual-source-module > .button { justify-self: start; margin-left: 0; }
+.mot-phut-visual-source-caption { grid-column: 2; max-width: 520px; margin: 2px 0 0; color: #687477; font-size: 12px; line-height: 1.45; }
+.mot-phut-visual-status { min-height: 1.3em; margin: 16px 0 0; color: #64736e; font-size: 12px; }
+.mot-phut-visual-footnote { margin: 13px 0 0; color: #718087; font-size: 11px; line-height: 1.55; }
+.mot-phut-visual-dialog[hidden] { display: none; }
+.mot-phut-visual-dialog { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: #14231ed9; }
+.mot-phut-visual-dialog-panel { display: flex; width: min(1180px, 100%); max-height: min(900px, 94vh); flex-direction: column; overflow: hidden; border-radius: 16px; background: #fffdf9; box-shadow: 0 24px 80px #0005; }
+.mot-phut-visual-dialog-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px; border-bottom: 1px solid #e8e3da; }
+.mot-phut-visual-dialog-panel h2 { margin: 0 0 5px; color: #193d34; font-size: 19px; }
+.mot-phut-visual-dialog-panel header p { margin: 0; color: #687873; font-size: 12px; }
+.mot-phut-visual-close { width: 36px; height: 36px; border: 1px solid #d8e1da; border-radius: 9px; background: #fff; color: #30463f; font-size: 23px; cursor: pointer; }
+.mot-phut-visual-editor-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(350px, .9fr); min-height: 0; overflow: auto; }
+.mot-phut-visual-preview { display: grid; place-items: center; min-height: 560px; padding: 24px; background: #f2eee6; }
+.mot-phut-visual-preview img { display: block; width: min(100%, 350px); max-height: 70vh; object-fit: contain; border-radius: 10px; box-shadow: 0 12px 32px #2433442a; }
+.mot-phut-visual-controls { padding: 20px; overflow: auto; }
+.mot-phut-visual-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.mot-phut-visual-field { display: grid; align-content: start; gap: 6px; color: #42554d; font-size: 12px; font-weight: 650; }
+.mot-phut-visual-field input:not([type="color"]), .mot-phut-visual-field select { min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid #d8e1da; border-radius: 8px; background: #fff; color: #233c33; font: inherit; }
+.mot-phut-visual-field input[type="color"] { width: 100%; height: 38px; padding: 3px; border: 1px solid #d8e1da; border-radius: 8px; background: #fff; }
+.mot-phut-visual-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; }
+.mot-phut-visual-actions > span { flex: 1; }
+#mot-phut-visual-dialog-status { min-height: 1.3em; margin: 10px 0 0; color: #64736e; font-size: 12px; }
+#mot-phut-visual-dialog-status.error { color: #a2342d; }
+.mot-phut-visual-dialog:not([hidden]) { z-index: 1200; padding: 16px; }
+.mot-phut-visual-dialog-panel { width: min(1180px, calc(100vw - 32px)); max-height: 94vh; border: 1px solid #d8dce0; border-radius: 10px; }
+.mot-phut-visual-dialog-head { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 17px 20px 14px; border-bottom: 1px solid #dfe1dc; }
+.mot-phut-visual-dialog-head h2 { margin: 0; color: #263244; font-size: 19px; }
+.mot-phut-visual-dialog-head p { margin: 5px 0 0; color: #75818b; font-size: 13px; line-height: 1.45; }
+.mot-phut-visual-editor-grid { height: min(760px, calc(94vh - 84px)); flex: 1; grid-template-columns: minmax(0, 1fr) 360px; overflow: hidden; border: 0; border-top: 1px solid #dfe1dc; border-radius: 0; }
+.mot-phut-visual-preview-panel { display: flex; min-width: 0; min-height: 0; height: auto; align-items: center; flex-direction: column; background: #f1f2ef; }
+.mot-phut-visual-render-tabs { display: flex; flex: none; gap: 4px; padding: 0 16px; border-bottom: 1px solid #dfe1dc; background: #f1f2ef; }
+.mot-phut-visual-render-tabs button { border: 1px solid transparent; border-bottom: 0; border-radius: 3px 3px 0 0; padding: 8px 13px; background: transparent; color: #718087; font: 600 13px "Be Vietnam Pro", Segoe UI, sans-serif; cursor: pointer; }
+.mot-phut-visual-render-tabs button.active { border-color: #dfe1dc; background: #fff; color: #273744; }
+.mot-phut-visual-canvas { position: relative; display: flex; flex: none; min-width: 0; min-height: 0; aspect-ratio: 9 / 16; align-items: center; justify-content: center; align-self: center; overflow: hidden; padding: 0; background: #f1f2ef; touch-action: none; }
+.mot-phut-visual-canvas svg,.mot-phut-visual-canvas img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border-radius: 2px; box-shadow: 0 5px 16px #17232b22; user-select: none; }
+.mot-phut-visual-canvas img { object-fit: contain; }
+.mot-phut-visual-fit-note { flex: none; min-height: 37px; margin: 0; padding: 9px 14px; border-top: 1px solid #e4e5e1; background: #fff; color: #707b82; font-size: 12px; line-height: 1.45; }
+.mot-phut-visual-fit-note.warning { color: #a94435; }
+.mot-phut-visual-properties { display: flex; min-width: 0; max-height: none; flex-direction: column; overflow: hidden; border-left: 1px solid #e2e3dc; background: #fff; }
+.mot-phut-visual-properties h3 { flex: none; margin: 0; padding: 14px 16px 0; color: #35454b; font-size: 14px; }
+.mot-phut-visual-samples { flex: none; max-height: 36%; overflow-y: auto; padding: 12px 16px 0; }
+.mot-phut-visual-sample-group { display: flex; flex-direction: column; gap: 10px; padding-bottom: 4px; }
+.mot-phut-visual-sample-group h4,.mot-phut-visual-control-group h4 { margin: 0; color: #35454b; font-size: 13px; font-weight: 700; }
+.mot-phut-visual-layer-list { flex: none; padding: 12px 16px 10px; border-bottom: 1px solid #e6e6e2; }
+.mot-phut-visual-layer-list[hidden] { display: none; }
+.mot-phut-visual-layer-list h4 { margin: 0 0 8px; color: #35454b; font-size: 13px; }
+.mot-phut-visual-layer-row { display: flex; align-items: center; gap: 7px; min-height: 34px; }
+.mot-phut-visual-layer-select { flex: 1; overflow: hidden; border: 1px solid transparent; border-radius: 6px; padding: 6px 8px; background: transparent; color: #394b58; text-align: left; text-overflow: ellipsis; white-space: nowrap; font: 12px "Be Vietnam Pro", Segoe UI, sans-serif; cursor: pointer; }
+.mot-phut-visual-layer-select:hover,.mot-phut-visual-layer-select.active { border-color: #9bc8c0; background: #eef6f2; }
+.mot-phut-visual-layer-select:disabled { color: #9aa2a5; cursor: default; text-decoration: line-through; }
+.mot-phut-visual-layer-action { flex: none; border: 1px solid #d8e1da; border-radius: 6px; padding: 5px 8px; background: #fff; color: #40534b; font: 11px "Be Vietnam Pro", Segoe UI, sans-serif; cursor: pointer; }
+.mot-phut-visual-layer-action:hover { border-color: #bbcec4; background: #f6faf7; }
+.mot-phut-visual-source-field { display: flex; min-width: 0; flex-direction: column; gap: 5px; color: #52616a; font-size: 12px; }
+.mot-phut-visual-source-field>span:first-child { color: #52616a; font-size: 12px; }
+.mot-phut-visual-source-field input[type=text],.mot-phut-visual-source-field input[type=number],.mot-phut-visual-source-field select,.mot-phut-visual-source-field textarea { width: 100%; min-width: 0; min-height: 34px; border: 1px solid #cbd2d7; border-radius: 3px; padding: 6px 9px; background: #fff; color: #263244; font: 13px "Be Vietnam Pro", Segoe UI, sans-serif; }
+.mot-phut-visual-source-field textarea { resize: vertical; line-height: 1.45; }
+.mot-phut-visual-source-hint { color: #858e93; font-size: 11px; }
+.mot-phut-visual-source-note { grid-column: 1/-1; margin: 0; color: #718087; font-size: 12px; line-height: 1.45; }
+.mot-phut-visual-color-row,.mot-phut-visual-number-row { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.mot-phut-visual-color-row input[type=color] { width: 48px; height: 36px; flex: none; border: 1px solid #cbd2d7; border-radius: 3px; padding: 3px; background: #fff; cursor: pointer; }
+.mot-phut-visual-color-row input[type=text] { font-family: Consolas,monospace; }
+.mot-phut-visual-number-row input[type=range] { min-width: 0; flex: 1; accent-color: #287d7b; }
+.mot-phut-visual-number-row input[type=number] { width: 78px; flex: none; }
+.mot-phut-visual-controls { min-height: 0; flex: 1; gap: 0; overflow-y: auto; padding: 0 16px; }
+.mot-phut-visual-control-group { display: flex; flex: none; flex-direction: column; gap: 12px; padding: 15px 0; border-top: 1px solid #e6e6e2; }
+.mot-phut-visual-control-group:first-child { border-top: 0; }
+.mot-phut-visual-controls-grid,.mot-phut-visual-geometry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mot-phut-visual-geometry-grid { grid-column: 1/-1; gap: 10px; }
+.mot-phut-visual-actions { display: flex; flex: none; justify-content: flex-end; flex-wrap: wrap; gap: 7px; margin: 0; padding: 12px 16px 0; }
+.mot-phut-visual-actions .button { font: 600 11px "Be Vietnam Pro", Segoe UI, sans-serif; }
+.mot-phut-visual-actions-spacer { flex: 1; }
+.mot-phut-visual-dialog-status { flex: none; min-height: 37px; margin: 0; padding: 9px 16px; color: #64737a; font-size: 11px; line-height: 1.45; }
+.mot-phut-visual-dialog-status.error { color: #a94435; }
+.mot-phut-source-overlay { position: absolute; inset: 0; z-index: 2; touch-action: none; }
+.mot-phut-source-drag { position: absolute; box-sizing: border-box; touch-action: none; outline-offset: 2px; }
+.mot-phut-source-drag:focus,.mot-phut-source-drag.selected { outline: 2px dashed #238b8b; }
+.mot-phut-source-drag:not(.selected):hover { outline: 1px dashed #238b8b; }
+.mot-phut-source-brand,.mot-phut-source-box { cursor: move; }
+.mot-phut-source-box.not-fit { outline-color: #ba3434; }
+.mot-phut-source-handle { position: absolute; z-index: 3; width: 10px; height: 10px; border: 1px solid #fff; border-radius: 2px; background: #287d7b; touch-action: none; }
+.mot-phut-source-size-handle { position: absolute; z-index: 4; bottom: 4px; left: 50%; transform: translateX(-50%); border: 1px solid #fff; border-radius: 14px; padding: 2px 7px; background: #287d7b; color: #fff; font-size: 11px; font-weight: 700; line-height: 1.1; cursor: ns-resize; touch-action: none; }
+.mot-phut-source-center-line { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #287d7b; pointer-events: none; }
+.mot-phut-source-center-line[hidden] { display: none; }
+body.mot-phut-visual-dialog-open { overflow: hidden; }
+@media (max-width: 760px) {
+  .mot-phut-visual-dialog:not([hidden]) { padding: 0; }
+  .mot-phut-visual-dialog-panel { width: 100vw; max-height: 100vh; height: 100vh; border-radius: 0; }
+  .mot-phut-visual-editor-grid { height: auto; grid-template-columns: 1fr; overflow-y: auto; }
+  .mot-phut-visual-preview-panel { min-height: 0; height: 60vh; }
+  .mot-phut-visual-properties { height: auto; max-height: none; border-top: 1px solid #dfe1dc; border-left: 0; }
+  .mot-phut-visual-samples { max-height: none; }
+  .mot-phut-visual-controls { max-height: 60vh; }
+}
+@media (max-width: 480px) {
+  .mot-phut-visual-controls-grid { grid-template-columns: 1fr; }
+  .mot-phut-visual-geometry-grid { grid-template-columns: 1fr 1fr; }
+  .mot-phut-visual-number-row input[type=number] { width: 76px; }
+  .mot-phut-visual-actions { justify-content: stretch; padding-bottom: 12px; }
+  .mot-phut-visual-actions .button { flex: 1; }
+}
+@media (max-width: 760px) {
+  .mot-phut-visual-heading { align-items: stretch; flex-direction: column; }
+  .mot-phut-visual-preset { min-width: 0; }
+  .mot-phut-visual-tools-heading { align-items: stretch; flex-direction: column; }
+  .mot-phut-visual-heading-actions { align-items: stretch; flex-direction: column; }
+  .mot-phut-visual-source-module { grid-template-columns: 106px minmax(130px, max-content); }
+  .mot-phut-visual-source-module .mot-phut-visual-source-card { width: 98px; }
+  .mot-phut-visual-source-caption { grid-column: 2; }
+  .mot-phut-visual-editor-grid { grid-template-columns: 1fr; }
+  .mot-phut-visual-preview { min-height: 300px; }
+  .mot-phut-visual-preview img { max-height: 42vh; }
+}
+@media (max-width: 480px) {
+  .mot-phut-visual-tools { padding: 15px; }
+  .mot-phut-visual-dialog { padding: 8px; }
+  .mot-phut-visual-dialog-panel { max-height: 98vh; }
+  .mot-phut-visual-dialog-panel > header { padding: 14px; }
+  .mot-phut-visual-controls { padding: 14px; }
+  .mot-phut-visual-field-grid { grid-template-columns: 1fr; }
+  .mot-phut-visual-source-module { grid-template-columns: 100px minmax(0, 1fr); gap: 8px 0; }
+  .mot-phut-visual-source-module .mot-phut-visual-source-card { width: 90px; height: 160px; }
+}

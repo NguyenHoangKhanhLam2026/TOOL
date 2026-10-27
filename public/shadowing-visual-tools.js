@@ -95,20 +95,54 @@ let previewTab = 'design';
 let previewTimer = null;
 let resizeObserver = null;
 let dirty = false;
+let saving = false;
 let selected = 'headline';
 let showSnapLine = false;
 let fitResult = { fits: true, size: 0 };
 let lastRender = null;
 let drag = null;
 let svgInstance = 0;
-const sample = {
+let contentDesignEnabled = false;
+const THUMBNAIL_SAMPLE_STORAGE_KEY = 'english-shadowing.visual-thumbnail-sample.v1';
+const THUMBNAIL_SAMPLE_DEFAULTS = {
   thumbnailBrand: 'Things',
   thumbnailTitle: 'Why gers filled the capital',
-  thumbnailHighlight: 'gers capital',
+  thumbnailHighlight: 'gers capital'
+};
+function readThumbnailSample() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(THUMBNAIL_SAMPLE_STORAGE_KEY) || 'null');
+    if (!stored || typeof stored !== 'object') return { ...THUMBNAIL_SAMPLE_DEFAULTS };
+    return Object.fromEntries(Object.entries(THUMBNAIL_SAMPLE_DEFAULTS).map(([key, fallback]) => [
+      key,
+      typeof stored[key] === 'string'
+        ? stored[key].slice(0, key === 'thumbnailTitle' ? 120 : key === 'thumbnailBrand' ? 60 : 200)
+        : fallback
+    ]));
+  } catch { return { ...THUMBNAIL_SAMPLE_DEFAULTS }; }
+}
+const sample = {
+  ...readThumbnailSample(),
   contentBrand: 'Things',
   contentTitle: 'Why gers filled the capital',
   contentParagraphs: 'A short line that sets the scene for the whole story.\nA second line, long enough to show how the text wraps and shrinks to fit.'
 };
+let savedThumbnailSample = {
+  thumbnailBrand: sample.thumbnailBrand,
+  thumbnailTitle: sample.thumbnailTitle,
+  thumbnailHighlight: sample.thumbnailHighlight
+};
+
+function persistThumbnailSample() {
+  savedThumbnailSample = {
+    thumbnailBrand: sample.thumbnailBrand,
+    thumbnailTitle: sample.thumbnailTitle,
+    thumbnailHighlight: sample.thumbnailHighlight
+  };
+  try { localStorage.setItem(THUMBNAIL_SAMPLE_STORAGE_KEY, JSON.stringify(savedThumbnailSample)); } catch { /* Keep the design usable if browser storage is unavailable. */ }
+}
+
+function restoreThumbnailSample() { Object.assign(sample, savedThumbnailSample); }
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const currentSettings = () => design?.[activeMode];
@@ -230,6 +264,45 @@ function renderControls() {
     input.addEventListener('change', handleControlChange);
   }
   $('#shadowing-visual-enabled').checked = design.enabled === true;
+  updateScopeLabel();
+}
+
+function updateScopeLabel() {
+  const label = $('#shadowing-visual-enabled-label');
+  const description = $('#shadowing-visual-tools-description');
+  const caption = $('#shadowing-visual-source-caption');
+  if (!design) return;
+  if (label) {
+    label.textContent = design.thumbnailOnly
+      ? 'Dùng riêng thiết kế Thumbnail này cho video Shadowing mới'
+      : 'Dùng thiết kế Thumbnail và Nội dung cho video Shadowing mới';
+  }
+  if (!design.enabled) {
+    if (description) description.textContent = design.thumbnailOnly
+      ? 'Thiết kế Thumbnail đang tắt. Bật để áp dụng riêng Thumbnail; Nội dung giữ cấu hình có sẵn của tool.'
+      : 'Thiết kế Thumbnail và Nội dung đang tắt. Bật để áp dụng thiết kế đã lưu cho video mới.';
+    if (caption) caption.textContent = design.thumbnailOnly
+      ? 'Thiết kế Thumbnail đã lưu riêng nhưng chưa áp dụng cho video mới.'
+      : 'Thiết kế Thumbnail và Nội dung đã lưu nhưng chưa áp dụng cho video mới.';
+  } else if (design.thumbnailOnly) {
+    if (description) description.textContent = 'Thiết kế tùy chỉnh chỉ áp dụng cho Thumbnail. Nội dung tiếp tục dùng cấu hình có sẵn của tool.';
+    if (caption) caption.textContent = `Đang áp dụng riêng Thumbnail cho video Shadowing mới. Nội dung giữ cấu hình của tool. Thumbnail mở đầu: ${design.thumbnail.introSeconds} giây.`;
+  } else {
+    if (description) description.textContent = 'Thiết kế tùy chỉnh áp dụng cho Thumbnail và Nội dung của video Shadowing mới.';
+    if (caption) caption.textContent = 'Đang áp dụng thiết kế Thumbnail và Nội dung cho video Shadowing mới.';
+  }
+}
+
+function syncControlsFromDesign() {
+  const settings = currentSettings();
+  if (!settings) return;
+  for (const input of controlsRoot.querySelectorAll('[data-design-key]')) {
+    const value = settings[input.dataset.designKey];
+    if (input.type === 'checkbox') input.checked = Boolean(value);
+    else if (document.activeElement !== input) input.value = value;
+  }
+  $('#shadowing-visual-enabled').checked = design.enabled === true;
+  renderFitNote();
 }
 
 function renderSampleInputs() {
@@ -345,11 +418,12 @@ function renderFitNote() {
   }
 }
 
-async function postPreview(render = false, mode = activeMode) {
+async function postPreview(render = false, mode = activeMode, cardPreview = false) {
+  const previewSample = { ...currentSample(mode), ...(cardPreview ? { cardPreview: true } : {}) };
   const response = await fetch('/api/english-shadowing/visual-design/preview.svg', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ mode, visualDesign: design, sample: currentSample(mode), render })
+    body: JSON.stringify({ mode, visualDesign: design, sample: previewSample, render })
   });
   if (!response.ok) {
     const data = await response.text();
@@ -383,7 +457,7 @@ async function refreshCardPreviews() {
   if (!design) return;
   await Promise.all(['thumbnail', 'content'].map(async (mode) => {
     try {
-      const response = await postPreview(false, mode);
+      const response = await postPreview(false, mode, true);
       const svg = await response.text();
       const card = $(`#shadowing-visual-${mode}-card`);
       if (card) card.innerHTML = scopeSvgMarkup(svg);
@@ -650,13 +724,17 @@ async function loadDesign() {
     if (saved.schemaVersion < 3) {
       design = clone(defaults);
       design.enabled = saved.enabled;
+      design.thumbnailOnly = saved.enabled !== true;
       design.thumbnail.introSeconds = saved.thumbnail.introInVideo ? saved.thumbnail.introSeconds : 0;
     } else {
       design = saved;
     }
+    contentDesignEnabled = !design.thumbnailOnly;
     savedDesign = clone(design);
     dirty = false;
     updateTabs();
+    $('#shadowing-visual-enabled').checked = design.enabled === true;
+    updateScopeLabel();
     await refreshCardPreviews();
     setStatus(saved.schemaVersion < 3
       ? 'Thiết kế Shadowing đã được chuyển sang cấu trúc gốc. Mở từng mục để tinh chỉnh.'
@@ -668,14 +746,34 @@ async function loadDesign() {
   }
 }
 
-async function saveDesign(enable = false, closeOnSuccess = false) {
-  if (!design) return;
-  const button = $(closeOnSuccess ? '#shadowing-visual-save' : '#shadowing-visual-save-settings');
-  button.disabled = true;
+async function saveDesign(enable = false, applyCurrentMode = false) {
+  if (!design || saving) return;
+  saving = true;
+  const saveButtons = [$('#shadowing-visual-save'), $('#shadowing-visual-save-settings')].filter(Boolean);
+  const lockedControls = [
+    ...controlsRoot.querySelectorAll('[data-design-key]'),
+    ...sampleRoot.querySelectorAll('[data-sample-key]'),
+    $('#shadowing-visual-enabled'), ...saveButtons,
+    $('#shadowing-visual-default'), $('#shadowing-visual-render'),
+    $('#shadowing-visual-cancel'), $('#shadowing-visual-close')
+  ].filter(Boolean);
+  const priorDisabled = lockedControls.map((control) => control.disabled);
+  const priorSaveLabels = saveButtons.map((control) => control.textContent);
+  lockedControls.forEach((control) => { control.disabled = true; });
+  saveButtons.forEach((control) => { control.textContent = 'Đang lưu…'; });
+  const overlay = canvas.querySelector('.shadowing-source-overlay');
+  const priorPointerEvents = overlay?.style.pointerEvents;
+  if (overlay) overlay.style.pointerEvents = 'none';
   if (enable) {
     design.enabled = true;
     design.schemaVersion = 3;
   }
+  if (applyCurrentMode) {
+    design.enabled = true;
+    design.thumbnailOnly = activeMode === 'thumbnail';
+    design.schemaVersion = 3;
+  }
+  $('#shadowing-visual-enabled').checked = design.enabled === true;
   setStatus('Đang lưu thiết kế Shadowing…');
   try {
     const result = await api('/api/english-shadowing/visual-design', {
@@ -683,25 +781,34 @@ async function saveDesign(enable = false, closeOnSuccess = false) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(design)
     });
-    design = result.visualDesign;
+    const confirmed = await api('/api/english-shadowing/visual-design');
+    if (JSON.stringify(confirmed.visualDesign) !== JSON.stringify(result.visualDesign)) {
+      throw new Error('Máy chủ chưa xác nhận được thiết kế đã lưu. Hãy thử lưu lại.');
+    }
+    design = confirmed.visualDesign;
+    contentDesignEnabled = !design.thumbnailOnly;
     savedDesign = clone(design);
     dirty = false;
-    renderControls();
+    syncControlsFromDesign();
+    updateScopeLabel();
+    if (applyCurrentMode && activeMode === 'thumbnail') persistThumbnailSample();
     await refreshCardPreviews();
     if (previewTab === 'design') await renderDesignPreview();
-    $('#shadowing-visual-source-caption').textContent = design.enabled
-      ? `Đã lưu thiết kế Shadowing. Thumbnail đầu video: ${design.thumbnail.introSeconds} giây. Cấu hình này dùng cho video Shadowing mới.`
-      : 'Đã lưu thiết kế riêng cho Shadowing. Bật “Dùng thiết kế này cho video Shadowing mới” để áp dụng.';
-    setStatus(design.enabled
-      ? (design.thumbnail.introSeconds > 0
-        ? `Đã áp dụng. Video Shadowing mới có Thumbnail mở đầu im lặng ${design.thumbnail.introSeconds} giây.`
-        : 'Đã áp dụng thiết kế cho video Shadowing mới; Thumbnail không được chèn vào đầu MP4.')
-      : 'Đã lưu thiết kế. Bật công tắc phía trên để dùng cho video Shadowing mới.');
-    if (closeOnSuccess) closeEditor(false);
+    updateScopeLabel();
+    setStatus(applyCurrentMode
+      ? (design.thumbnailOnly
+        ? 'Đã lưu và xác nhận Thumbnail. Video Shadowing mới sẽ dùng thiết kế này; Nội dung vẫn theo cài đặt của tool. Bạn vẫn ở mục Thumbnail.'
+        : 'Đã lưu và xác nhận Thumbnail và Nội dung. Bạn vẫn ở mục Nội dung.')
+      : design.enabled && design.thumbnailOnly
+        ? 'Đã lưu. Video Shadowing mới chỉ dùng thiết kế Thumbnail; Nội dung không thay đổi.'
+        : 'Đã lưu thiết kế Shadowing.');
   } catch (error) {
     setStatus(error.message, true);
   } finally {
-    button.disabled = false;
+    lockedControls.forEach((control, index) => { control.disabled = priorDisabled[index]; });
+    saveButtons.forEach((control, index) => { control.textContent = priorSaveLabels[index]; });
+    if (overlay) overlay.style.pointerEvents = priorPointerEvents;
+    saving = false;
   }
 }
 
@@ -724,7 +831,7 @@ function closeEditor(discard = true) {
     dirty = false;
     renderControls();
   }
-  setSampleDefaults('thumbnail');
+  restoreThumbnailSample();
   setSampleDefaults('content');
   void refreshCardPreviews();
   if (lastRender?.url) URL.revokeObjectURL(lastRender.url);
@@ -735,10 +842,10 @@ function closeEditor(discard = true) {
 }
 
 async function openEditor(mode) {
-  if (!design && !await loadDesign()) return;
+  if (!await loadDesign()) return;
   activeMode = mode;
   selected = mode === 'thumbnail' ? 'headline' : 'content';
-  setSampleDefaults(mode);
+  if (mode === 'content') setSampleDefaults('content');
   $('#shadowing-visual-dialog').hidden = false;
   document.body.classList.add('shadowing-design-open');
   updateTabs();
@@ -757,20 +864,22 @@ $('#shadowing-visual-tab-render').addEventListener('click', () => {
 $('#shadowing-visual-enabled').addEventListener('change', (event) => {
   if (!design) return;
   design.enabled = event.currentTarget.checked;
+  if (design.enabled) design.thumbnailOnly = !contentDesignEnabled;
+  updateScopeLabel();
   if (design.enabled) design.schemaVersion = 3;
   markDirty();
 });
 $('#shadowing-visual-default').addEventListener('click', () => void resetMode());
 $('#shadowing-visual-render').addEventListener('click', () => void renderNow());
-$('#shadowing-visual-save').addEventListener('click', () => void saveDesign(design?.enabled === true, true));
+$('#shadowing-visual-save').addEventListener('click', () => void saveDesign(true, true));
 $('#shadowing-visual-save-settings').addEventListener('click', () => void saveDesign(false));
-$('#shadowing-visual-cancel').addEventListener('click', () => closeEditor(true));
-$('#shadowing-visual-close').addEventListener('click', () => closeEditor(true));
+$('#shadowing-visual-cancel').addEventListener('click', () => { if (!saving) closeEditor(true); });
+$('#shadowing-visual-close').addEventListener('click', () => { if (!saving) closeEditor(true); });
 $('#shadowing-visual-dialog').addEventListener('pointerdown', (event) => {
-  if (event.target === event.currentTarget) closeEditor(true);
+  if (event.target === event.currentTarget && !saving) closeEditor(true);
 });
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !$('#shadowing-visual-dialog').hidden) closeEditor(true);
+  if (event.key === 'Escape' && !$('#shadowing-visual-dialog').hidden && !saving) closeEditor(true);
 });
 $('#shadowing-editor-button').addEventListener('click', () => {
   if (!design) void loadDesign();

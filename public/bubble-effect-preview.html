@@ -101,7 +101,8 @@
     const wordsByLanguage = {
       en: ['hello', 'learn', 'speak', 'dream', 'grow', 'A2', 'you'],
       zh: ['你好', '学习', '表达', '梦想', '成长', '中文'],
-      ja: ['こんにちは', '学ぶ', '表現', '夢', '成長', '日本語']
+      ja: ['こんにちは', '学ぶ', '表現', '夢', '成長', '日本語'],
+      vi: ['khám phá', 'ký ức', 'thiên nhiên', 'vì sao', 'bạn biết?', 'khoa học']
     };
     let words = wordsByLanguage.en;
     const previewNodes = {
@@ -128,6 +129,14 @@
         example: '今日もお疲れ様でした。',
         caption: '今日もお疲れ様でした。<br>今日も一日、お疲れさまでした。',
         social: '毎日、日本語を一言', captionNote: 'Khung dọc 9:16 · xem hiệu ứng nền tiếng Nhật đang chọn'
+      },
+      vi: {
+        brandmark: '✦', brandcopy: 'MỘT PHÚT VỠ LẼ<small>Mỗi ngày một điều thú vị</small>',
+        kicker: 'KIẾN THỨC HÔM NAY', title: 'Bạn có<br>biết không?', pronunciation: 'Khám phá điều mới mỗi ngày',
+        definition: '<strong>Một ý tưởng, một phút</strong><br>Giải thích ngắn gọn một điều thú vị quanh ta.',
+        example: 'Điều quen thuộc đôi khi có một lời giải bất ngờ.',
+        caption: 'Mỗi ngày thêm một điều thú vị.<br>Hiểu nhanh, nhớ lâu.',
+        social: 'Mỗi ngày một phút vỡ lẽ', captionNote: 'Khung dọc 9:16 · xem hiệu ứng nền Một Phút Vỡ Lẽ'
       }
     };
     function setPreviewLanguage(language) {
@@ -331,7 +340,7 @@
     window.addEventListener('message', (event) => {
       if (event.origin !== location.origin || event.source !== window.parent) return;
       if (event.data?.type === 'background-effect-preview:set-effect') {
-        if (['en', 'zh', 'ja'].includes(event.data.language)) setPreviewLanguage(event.data.language);
+        if (['en', 'zh', 'ja', 'vi'].includes(event.data.language)) setPreviewLanguage(event.data.language);
         setEffect(event.data.effectId);
         const nextDensity = Number(event.data.density);
         if (Number.isInteger(nextDensity) && nextDensity >= 10 && nextDensity <= 60) density.value = String(nextDensity);
