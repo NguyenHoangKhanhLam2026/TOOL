@@ -42,8 +42,7 @@ const fields = {
     { title: 'Headline', fields: [
       { key: 'headlineFont', label: 'Font chữ', type: 'select', options: brandFontOptions },
       { key: 'textColor', label: 'Màu chữ', type: 'color' }, { key: 'highlightColor', label: 'Màu từ nổi bật', type: 'color' }, { key: 'outlineColor', label: 'Màu viền chữ', type: 'color' },
-      { key: 'headlineMaxPx', label: 'Cỡ chữ lớn nhất (px)', type: 'number', min: 40, max: 400, slider: true },
-      { key: 'headlineCase', label: 'Kiểu chữ', type: 'select', options: [['uppercase', 'uppercase (viết hoa hết)'], ['as written', 'as written (giữ nguyên)']] },
+      { key: 'headlineMaxPx', label: 'Cỡ chữ cố định (px)', type: 'number', min: 40, max: 400, slider: true },
       { key: 'headlineLeftPct', label: 'Trái (%)', type: 'number', min: 0, max: 80, step: 0.5, group: 'geometry' },
       { key: 'headlineTopPct', label: 'Trên (%)', type: 'number', min: 0, max: 90, step: 0.5, group: 'geometry' },
       { key: 'headlineWidthPct', label: 'Rộng (%)', type: 'number', min: 20, max: 100, group: 'geometry' },
@@ -551,6 +550,11 @@ function renderFitNote() {
     return;
   }
   note.classList.remove('warning');
+  if (editorState.activeMode === 'thumbnail') {
+    const limit = currentSettings().headlineMaxPx;
+    note.textContent = `Tựa đề gốc được giữ nguyên; cỡ chữ cố định ${editorState.fitResult.size || limit}px và chỉ xuống dòng.`;
+    return;
+  }
   const limit = editorState.activeMode === 'thumbnail' ? currentSettings().headlineMaxPx : currentSettings().bodyMaxPx;
   const textType = editorState.activeMode === 'thumbnail' ? 'Headline' : 'Nội dung';
   note.textContent = `${textType} đang vẽ: ${editorState.fitResult.size}px (tối đa ${limit}px). Chữ tự co để vừa vùng; kéo rộng vùng để chữ có thêm chỗ.`;

@@ -514,7 +514,7 @@ export function buildEnglishShadowingThumbnailSvg(script, requestedVisualDesign 
     : { schemaVersion: 2, enabled: true, thumbnail: requestedVisualDesign || {} };
   const visualDesign = normalizeEnglishShadowingVisualDesign({ ...suppliedDesign, enabled: true });
   const design = visualDesign.thumbnail;
-  const title = String(script?.thumbnailTitle || script?.title || 'Quick Check, Clear Plan').trim().slice(0, 100);
+  const title = String(script?.title ?? script?.thumbnailTitle ?? '');
   const sourceHeadline = headline ?? title;
   const selectedHighlights = resolveThumbnailHighlights(
     sourceHeadline, design.highlightWords, highlight, script?.thumbnailHighlightWords, script?.thumbnail?.highlight, script?.highlight
@@ -529,7 +529,7 @@ export function buildEnglishShadowingThumbnailSvg(script, requestedVisualDesign 
   }
   if (visualDesign.schemaVersion < 2) {
     const words = title.split(/\s+/u).filter(Boolean).map((text) => ({ text }));
-    const lines = wrapTokens(words, 850, design.titleFontSize, 5).slice(0, 4);
+    const lines = wrapTokens(words, 850, design.titleFontSize, Number.MAX_SAFE_INTEGER);
     const lineHeight = Math.round(design.titleFontSize * 1.18);
     const titleMarkup = lines.map((line, index) =>
       `<tspan x="${design.titleX}" y="${design.titleY + index * lineHeight}">${xml(line.map((token) => token.text).join(' '))}</tspan>`
@@ -546,17 +546,12 @@ export function buildEnglishShadowingThumbnailSvg(script, requestedVisualDesign 
 </svg>`;
   }
 
-  const displayTitle = design.titleCase === 'uppercase' ? title.toLocaleUpperCase() : title;
-  const words = displayTitle.split(/\s+/u).filter(Boolean).map((text) => ({ text }));
-  let renderedSize = design.titleFontSize;
-  let lines = wrapTokens(words, design.titleMaxWidth, renderedSize, 5);
-  while (renderedSize > 32 && (lines.length * Math.round(renderedSize * 1.18) > design.titleHeight || lines.length > 5)) {
-    renderedSize = Math.max(32, renderedSize - 2);
-    lines = wrapTokens(words, design.titleMaxWidth, renderedSize, 5);
-  }
+  const words = title.split(/\s+/u).filter(Boolean).map((text) => ({ text }));
+  const renderedSize = design.titleFontSize;
+  const lines = wrapTokens(words, design.titleMaxWidth, renderedSize, Number.MAX_SAFE_INTEGER);
   const lineHeight = Math.round(renderedSize * 1.18);
   const highlightWords = new Set(selectedHighlights.map(plainTitleWord));
-  const titleMarkup = lines.slice(0, 5).map((line, index) =>
+  const titleMarkup = lines.map((line, index) =>
     `<tspan x="${design.titleX}" y="${design.titleY + index * lineHeight}">${line.map((token, tokenIndex) => {
       const fill = highlightWords.has(plainTitleWord(token.text)) ? design.highlightColor : design.titleColor;
       return `<tspan fill="${fill}">${xml(token.text)}${tokenIndex < line.length - 1 ? '&#160;' : ''}</tspan>`;

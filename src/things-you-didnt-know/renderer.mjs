@@ -131,13 +131,8 @@ export function buildThingsYouDidntKnowContentSvg({ script, design: inputDesign,
 
 export function buildThingsYouDidntKnowThumbnailSvg({ script, design: inputDesign }) {
   const c = normalizeThingsYouDidntKnowVisualDesign(inputDesign).thumbnail;
-  const words = splitWords(script.thumbnailHeadline || script.title);
-  let layout = null;
-  for (let size = c.titleFontSize; size >= 54; size -= 2) {
-    const lines = fitLines(words, size, WIDTH * c.headlineWidthPct / 100, 5);
-    if (lines) { layout = { lines, size }; break; }
-  }
-  if (!layout) throw new Error("Thumbnail headline không vừa template Things You Didn't Know.");
+  const words = splitWords(script.title);
+  const layout = { lines: fitLines(words, c.titleFontSize, WIDTH * c.headlineWidthPct / 100), size: c.titleFontSize };
   const highlights = new Set((script.thumbnailHighlights || []).map((word) => String(word).toLowerCase()));
   const top = HEIGHT * c.headlineTopPct / 100;
   const text = layout.lines.map((line, index) => {
@@ -151,7 +146,7 @@ export function buildThingsYouDidntKnowThumbnailSvg({ script, design: inputDesig
       return output;
     }).join('');
   }).join('');
-  return '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><defs><linearGradient id="kraft" x1="0" y1="0" x2="0" y2="1"><stop stop-color="' + c.backgroundColor + '"/><stop offset=".58" stop-color="' + c.backgroundColor + '"/><stop offset="1" stop-color="' + c.bottomColor + '"/></linearGradient><filter id="shadow"><feGaussianBlur stdDeviation="5"/></filter></defs>'
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920" data-fit="true" data-size="' + layout.size + '"><defs><linearGradient id="kraft" x1="0" y1="0" x2="0" y2="1"><stop stop-color="' + c.backgroundColor + '"/><stop offset=".58" stop-color="' + c.backgroundColor + '"/><stop offset="1" stop-color="' + c.bottomColor + '"/></linearGradient><filter id="shadow"><feGaussianBlur stdDeviation="5"/></filter></defs>'
     + '<rect width="1080" height="1920" fill="url(#kraft)"/><rect width="1080" height="1920" fill="#3B2412" opacity=".05"/>'
     + '<text x="540" y="' + (HEIGHT * c.brandTopPct / 100 + 35) + '" text-anchor="middle" class="brand">THINGS YOU DIDN&apos;T KNOW</text>'
     + '<text x="540" y="' + (HEIGHT * c.brandTopPct / 100 + 86) + '" text-anchor="middle" class="brand-name">' + xml(script.country || '') + '</text>'

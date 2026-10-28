@@ -22,8 +22,7 @@ const fields = {
       { key: 'textColor', label: 'Màu chữ', type: 'color' },
       { key: 'highlightColor', label: 'Màu từ nổi bật', type: 'color' },
       { key: 'outlineColor', label: 'Màu viền chữ', type: 'color' },
-      { key: 'headlineMaxPx', label: 'Cỡ chữ lớn nhất (px)', type: 'number', min: 40, max: 400, slider: true },
-      { key: 'headlineCase', label: 'Kiểu chữ', type: 'select', options: [['uppercase', 'uppercase (viết hoa hết)'], ['as written', 'as written (giữ nguyên)']] },
+      { key: 'headlineMaxPx', label: 'Cỡ chữ cố định (px)', type: 'number', min: 40, max: 400, slider: true },
       { key: 'headlineFont', label: 'Font', type: 'select', options: [['display', 'display (poster đậm)'], ['serif', 'serif (có chân)']] },
       { key: 'headlineLeftPct', label: 'Trái (%)', type: 'number', min: 0, max: 80, step: 0.5, group: 'geometry' },
       { key: 'headlineTopPct', label: 'Trên (%)', type: 'number', min: 0, max: 90, step: 0.5, group: 'geometry' },
@@ -411,7 +410,7 @@ function renderFitNote() {
   note.classList.remove('warning');
   if (activeMode === 'thumbnail') {
     const limit = currentSettings().headlineMaxPx;
-    note.textContent = `Chữ đang vẽ: ${fitResult.size}px (tối đa ${limit}px).${fitResult.size >= limit - 1 ? ' Chữ đã chạm cỡ tối đa: kéo nút “A↕” hoặc tăng cỡ chữ lớn nhất. Mở rộng vùng không làm chữ to thêm.' : ' Chữ tự co để vừa vùng: mở rộng vùng để chữ to hơn.'}`;
+    note.textContent = `Tựa đề gốc được giữ nguyên; cỡ chữ cố định ${fitResult.size || limit}px và chỉ xuống dòng.`;
   } else {
     const limit = currentSettings().bodyMaxPx;
     note.textContent = `Chữ đang vẽ: ${fitResult.size}px (tối đa ${limit}px).${fitResult.size >= limit - 1 ? ' Chữ đã chạm cỡ tối đa: tăng cỡ chữ lớn nhất. Mở rộng vùng không làm chữ to thêm.' : ' Chữ tự co để vừa vùng: mở rộng vùng để chữ to hơn.'}`;

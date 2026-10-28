@@ -283,7 +283,7 @@ function contentCard(content) {
     : ['pending', 'running'].includes(job?.status) ? 'neutral'
       : content.videoPath && content.sourceStatus === 'human-reviewed' ? 'ok' : 'warn';
   const thumbnail = content.thumbnailPath
-    ? `<img src="${API}/files/${encodeURIComponent(content.id)}/thumbnail" alt="${escapeHtml(content.thumbnailHeadline)}" loading="lazy" />`
+    ? `<img src="${API}/files/${encodeURIComponent(content.id)}/thumbnail" alt="${escapeHtml(content.title)}" loading="lazy" />`
     : `<span class="video-placeholder">${escapeHtml(content.title)}<small>${escapeHtml(job?.lastError || (job?.status === 'running' ? 'Đang render…' : 'Chưa có thumbnail'))}</small></span>`;
   const videoLink = content.videoPath ? `${API}/files/${encodeURIComponent(content.id)}/video` : '#';
   const scheduleForm = canSchedule ? `<div class="tydk-row-schedule" data-tydk-schedule-form="${escapeHtml(content.id)}" hidden><input type="datetime-local" data-tydk-time="${escapeHtml(content.id)}" aria-label="Ngày giờ đăng" /><button class="mini-action" data-tydk-schedule="${escapeHtml(content.id)}">Xác nhận lịch</button></div>` : '';

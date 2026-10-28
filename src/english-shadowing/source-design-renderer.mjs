@@ -37,18 +37,6 @@ function wrapWords(words, maxWidth, fontSize) {
   return lines;
 }
 
-function posterLines(words) {
-  const count = Math.min(words.length, words.length >= 7 ? 4 : 3);
-  const lines = [];
-  let taken = 0;
-  for (let line = 0; line < count; line += 1) {
-    const size = Math.ceil((words.length - taken) / (count - line));
-    lines.push(words.slice(taken, taken + size));
-    taken += size;
-  }
-  return lines;
-}
-
 function paperDefs({ seed, vignette, bottomShade = 0, dark = 0.3 }) {
   return `<filter id="paperGrain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9 0.5" numOctaves="3" seed="${seed}"/><feColorMatrix type="matrix" values="0 0 0 0 ${dark} 0 0 0 0 ${dark} 0 0 0 0 ${dark} 0 0 0 0.55 -0.12"/></filter>
   <filter id="paperStains" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.004 0.006" numOctaves="2" seed="${seed + 7}"/><feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.4 -0.45"/></filter>
@@ -70,40 +58,24 @@ function sourceFont(font) {
   return "'Tinos', Georgia, serif";
 }
 
-function fitThumbnailHeadline(words, style) {
-  const lines = posterLines(words);
-  const roomWidth = WIDTH * style.headlineWidthPct / 100;
-  const roomHeight = HEIGHT * style.headlineHeightPct / 100;
-  const min = Math.min(40, style.headlineMaxPx);
-  const fits = (size) => lines.every((line) => estimateTextWidth(line.join(' '), size) <= roomWidth)
-    && lines.length * size * 1.02 <= roomHeight;
-  if (!fits(min)) return { lines, size: min, fits: false };
-  let low = min;
-  let high = style.headlineMaxPx;
-  while (high - low > 0.5) {
-    const middle = (low + high) / 2;
-    if (fits(middle)) low = middle;
-    else high = middle;
-  }
-  return { lines, size: low, fits: true };
+function wrapThumbnailHeadline(words, width, fontSize) {
+  return wrapWords(words.map((text) => ({ text })), width, fontSize).map((line) => line.map((token) => token.text));
 }
 
 export function buildSourceThumbnailSvg(script, style, { editorMode = false, brand = 'Easy English Shadowing', headline, highlight } = {}) {
-  const sourceHeadline = String(headline ?? script?.thumbnailTitle ?? script?.title ?? '').trim().slice(0, 120);
-  const shownHeadline = style.headlineCase === 'uppercase' ? sourceHeadline.toLocaleUpperCase() : sourceHeadline;
+  const sourceHeadline = String(headline ?? script?.title ?? script?.thumbnailTitle ?? '').trim();
   const brandWords = String(brand || 'Easy English Shadowing').split(/\s+/u).filter(Boolean);
   const split = Math.ceil(brandWords.length / 2);
-  const words = shownHeadline.split(/\s+/u).filter(Boolean);
-  const lines = posterLines(words);
-  const marked = new Set((Array.isArray(highlight) ? highlight : String(highlight ?? '').split(/\s+/u)).flatMap((word) => String(word).split(/\s+/u)).map(plainWord));
-  const fit = fitThumbnailHeadline(words, style);
-  const fontSize = fit.size;
-  const lineHeight = fontSize * 1.02;
+  const words = sourceHeadline.split(/\s+/u).filter(Boolean);
+  const fontSize = Number(style.headlineMaxPx) || 40;
   const boxLeft = WIDTH * style.headlineLeftPct / 100;
   const boxTop = HEIGHT * style.headlineTopPct / 100;
   const boxWidth = WIDTH * style.headlineWidthPct / 100;
   const boxHeight = HEIGHT * style.headlineHeightPct / 100;
-  const firstBaseline = boxTop + (boxHeight - lines.length * lineHeight) / 2 + fontSize;
+  const lines = wrapThumbnailHeadline(words, boxWidth, fontSize);
+  const marked = new Set((Array.isArray(highlight) ? highlight : String(highlight ?? '').split(/\s+/u)).flatMap((word) => String(word).split(/\s+/u)).map(plainWord));
+  const lineHeight = fontSize * 1.02;
+  const firstBaseline = boxTop + Math.max(0, (boxHeight - lines.length * lineHeight) / 2) + fontSize;
   const titleMarkup = lines.map((line, lineIndex) => {
     const wordGap = estimateTextWidth(' ', fontSize);
     const content = line.map((word, wordIndex) => `<tspan${wordIndex ? ` dx="${wordGap}"` : ''} fill="${marked.has(plainWord(word)) ? style.highlightColor : style.textColor}">${xml(word)}</tspan>`).join('');
@@ -111,8 +83,8 @@ export function buildSourceThumbnailSvg(script, style, { editorMode = false, bra
   }).join('');
   const brandGap = estimateTextWidth(' ', style.brandSizePx);
   const brandMarkup = `<text data-source-brand="top" x="${WIDTH * style.brandCenterXPct / 100}" y="${HEIGHT * style.brandTopPct / 100 + style.brandSizePx}" text-anchor="middle" font-family="${sourceFont('serif')}" font-size="${style.brandSizePx}" font-weight="700"><tspan fill="${style.brandColorA}">${xml(brandWords.slice(0, split).join(' '))}</tspan><tspan${brandWords.length > split ? ` dx="${brandGap}"` : ''} fill="${style.brandColorB}">${xml(brandWords.slice(split).join(' '))}</tspan></text>`;
-  const box = editorMode ? `<metadata data-fit="${fit.fits}" data-size="${Math.round(fontSize)}"/>` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" data-design-kind="thumbnail" data-fit="${fit.fits}" data-size="${Math.round(fontSize)}">
+  const box = editorMode ? `<metadata data-fit="true" data-size="${Math.round(fontSize)}"/>` : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" data-design-kind="thumbnail" data-fit="true" data-size="${Math.round(fontSize)}">
   <defs>${paperDefs({ seed: 21, vignette: style.vignette, bottomShade: style.bottomShade })}<filter id="headlineShadow" x="-30%" y="-30%" width="160%" height="180%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#281405" flood-opacity=".45"/></filter></defs>
   ${paperMarkup(style.paperColor, { seed: 21, vignette: style.vignette, bottomShade: style.bottomShade })}
   ${brandMarkup}${titleMarkup}${box}

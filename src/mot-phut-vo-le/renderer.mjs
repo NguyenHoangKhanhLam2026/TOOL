@@ -257,12 +257,13 @@ function measureText(text, fontSize, fontFamily = 'Arial, sans-serif') {
 
 function buildLegacyThumbnailSvg(content, design) {
   const thumb = design.thumbnail;
-  const sourceTitle = thumb.headlineCase === 'uppercase' ? String(content.title || '').toLocaleUpperCase('vi-VN') : content.title;
-  const titleLines = fitTextLines(sourceTitle, thumb.headlineMaxPx || thumb.fontSize, 850, 4, 42);
-  const titleLineHeight = Math.round(titleLines.fontSize * 1.22);
-  const blockHeight = titleLines.lines.length * titleLineHeight;
+  const sourceTitle = String(content.title ?? '');
+  const fontSize = Number(thumb.headlineMaxPx || thumb.fontSize) || 60;
+  const titleLines = wrapTextAtFixedSize(sourceTitle, fontSize, 850);
+  const titleLineHeight = Math.round(fontSize * 1.22);
+  const blockHeight = titleLines.length * titleLineHeight;
   const startY = thumb.titlePosition === 'top' ? 560 : thumb.titlePosition === 'bottom' ? 1740 - blockHeight : 1150 - blockHeight / 2;
-  const titleSvg = thumb.headlineVisible ? `<g data-source-headline="top">${titleLines.lines.map((line, index) => `<text x="540" y="${startY + (index + 1) * titleLineHeight}" text-anchor="middle" class="title">${escapeXml(line)}</text>`).join('')}</g>` : '';
+  const titleSvg = thumb.headlineVisible ? `<g data-source-headline="top">${titleLines.map((line, index) => `<text x="540" y="${startY + (index + 1) * titleLineHeight}" text-anchor="middle" class="title">${escapeXml(line)}</text>`).join('')}</g>` : '';
   const headlineFamily = thumb.headlineFont === 'serif' ? 'Georgia, serif' : 'Arial Black, Arial, sans-serif';
   return `
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
@@ -270,17 +271,18 @@ function buildLegacyThumbnailSvg(content, design) {
       ${thumb.brandVisible ? `<text x="${thumb.brandCenterXPct * 10.8}" y="${thumb.brandTopPct * 19.2 + thumb.brandSizePx}" text-anchor="middle" class="brand" data-source-brand="top">${escapeXml(thumb.brand)}</text>` : ''}
       ${titleSvg}
       ${thumb.watermarkVisible ? `<text x="${thumb.watermarkCenterXPct * 10.8}" y="${thumb.watermarkTopPct * 19.2}" text-anchor="middle" class="watermark" data-source-watermark="top">${escapeXml(thumb.watermark)}</text>` : ''}
-      <style>.brand{font-family:${escapeCssFont(thumb.fontFamily)};font-size:${thumb.brandSizePx}px;font-weight:700;letter-spacing:2px;fill:${thumb.textColor}}.watermark{font-family:${escapeCssFont(thumb.watermarkFontFamily)};font-size:${thumb.watermarkSizePx}px;fill:${thumb.watermarkColor};opacity:${thumb.watermarkOpacity}}.title{font-family:${escapeCssFont(headlineFamily)};font-size:${titleLines.fontSize}px;font-weight:900;fill:${thumb.textColor};stroke:${thumb.outlineColor};stroke-width:4;paint-order:stroke;stroke-linejoin:round}</style>
+      <style>.brand{font-family:${escapeCssFont(thumb.fontFamily)};font-size:${thumb.brandSizePx}px;font-weight:700;letter-spacing:2px;fill:${thumb.textColor}}.watermark{font-family:${escapeCssFont(thumb.watermarkFontFamily)};font-size:${thumb.watermarkSizePx}px;fill:${thumb.watermarkColor};opacity:${thumb.watermarkOpacity}}.title{font-family:${escapeCssFont(headlineFamily)};font-size:${fontSize}px;font-weight:900;fill:${thumb.textColor};stroke:${thumb.outlineColor};stroke-width:4;paint-order:stroke;stroke-linejoin:round}</style>
     </svg>`;
 }
 
 function buildLegacyThumbnailPreviewSvg(content, design) {
   const c = design.thumbnail;
-  const sourceTitle = c.headlineCase === 'uppercase' ? String(content?.title || 'Một câu hỏi thú vị').toLocaleUpperCase('vi-VN') : (content?.title || 'Một câu hỏi thú vị');
-  const title = fitTextLines(sourceTitle, c.headlineMaxPx || c.fontSize, 850, 4, 42);
-  const lines = title.lines.map((line, index) => `<text x="540" y="${920 + index * title.fontSize * 1.2}" text-anchor="middle" class="title">${escapeXml(line)}</text>`).join('');
+  const sourceTitle = String(content?.title ?? 'Một câu hỏi thú vị');
+  const fontSize = Number(c.headlineMaxPx || c.fontSize) || 60;
+  const titleLines = wrapTextAtFixedSize(sourceTitle, fontSize, 850);
+  const lines = titleLines.map((line, index) => `<text x="540" y="${920 + index * fontSize * 1.2}" text-anchor="middle" class="title">${escapeXml(line)}</text>`).join('');
   const headlineFamily = c.headlineFont === 'serif' ? 'Georgia, serif' : 'Arial Black, Arial, sans-serif';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920" data-fit="true" data-size="${title.fontSize}">${backgroundSvg(c.background, design.preset)}${c.brandVisible ? `<text x="${c.brandCenterXPct * 10.8}" y="${c.brandTopPct * 19.2 + c.brandSizePx}" text-anchor="middle" class="brand" data-source-brand="top">${escapeXml(c.brand)}</text>` : ''}${c.headlineVisible ? `<g data-source-headline="top">${lines}</g>` : ''}${c.watermarkVisible ? `<text x="${c.watermarkCenterXPct * 10.8}" y="${c.watermarkTopPct * 19.2}" text-anchor="middle" class="watermark" data-source-watermark="top">${escapeXml(c.watermark)}</text>` : ''}<style>.brand{font-family:${escapeCssFont(c.fontFamily)};fill:${c.textColor};font-size:${c.brandSizePx}px;font-weight:700}.title{font-family:${escapeCssFont(headlineFamily)};fill:${c.textColor};font-size:${title.fontSize}px;font-weight:900;stroke:${c.outlineColor};stroke-width:4;paint-order:stroke;stroke-linejoin:round}.watermark{font-family:${escapeCssFont(c.watermarkFontFamily)};font-size:${c.watermarkSizePx}px;fill:${c.watermarkColor};opacity:${c.watermarkOpacity}}</style></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920" data-fit="true" data-size="${fontSize}">${backgroundSvg(c.background, design.preset)}${c.brandVisible ? `<text x="${c.brandCenterXPct * 10.8}" y="${c.brandTopPct * 19.2 + c.brandSizePx}" text-anchor="middle" class="brand" data-source-brand="top">${escapeXml(c.brand)}</text>` : ''}${c.headlineVisible ? `<g data-source-headline="top">${lines}</g>` : ''}${c.watermarkVisible ? `<text x="${c.watermarkCenterXPct * 10.8}" y="${c.watermarkTopPct * 19.2}" text-anchor="middle" class="watermark" data-source-watermark="top">${escapeXml(c.watermark)}</text>` : ''}<style>.brand{font-family:${escapeCssFont(c.fontFamily)};fill:${c.textColor};font-size:${c.brandSizePx}px;font-weight:700}.title{font-family:${escapeCssFont(headlineFamily)};fill:${c.textColor};font-size:${fontSize}px;font-weight:900;stroke:${c.outlineColor};stroke-width:4;paint-order:stroke;stroke-linejoin:round}.watermark{font-family:${escapeCssFont(c.watermarkFontFamily)};font-size:${c.watermarkSizePx}px;fill:${c.watermarkColor};opacity:${c.watermarkOpacity}}</style></svg>`;
 }
 
 function buildContentSvg({ content, design, tokenLayout, activeTokenIndexes = new Set(), backgroundEffect = {}, highlightMode = 'syllable', effectTime = 0 }) {
@@ -513,7 +515,7 @@ async function buildThumbnailPreviewSvg(content, design) {
   const width = 1080;
   const height = 1920;
   const highlights = resolveMotPhutThumbnailHighlights(content?.title, content?.thumbnailHighlight);
-  const title = await posterHeadlineLayout(content?.title, c, highlights);
+  const title = await posterHeadlineLayout(content?.title, c);
   const lines = posterHeadlineMarkup(title, c, highlights);
   const brandX = width * c.brandCenterXPct / 100;
   const brandFont = getMotPhutVoLeHeadlineFont(c.brandFont);
@@ -533,16 +535,15 @@ async function buildThumbnailPreviewSvg(content, design) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" data-fit="${title.fits}" data-size="${Math.round(title.fontSize)}">${thumbnailPaperSvg(c)}${brandMarkup}${headlineMarkup}${watermarkMarkup}<style>.brand{font-family:${escapeCssFont(brandFont.cssFamily)},${brandFallback};font-size:${brandFontSize}px;font-weight:700;letter-spacing:2px}.watermark{font-family:${escapeCssFont(c.watermarkFontFamily)};font-size:${c.watermarkSizePx}px;fill:${c.watermarkColor};opacity:${c.watermarkOpacity}}.headline{font-family:${escapeCssFont(headlineFamily)},${headlineFallback};font-size:${title.fontSize}px;font-weight:${headlineFont.serif ? 700 : 900};stroke:${c.outlineColor};stroke-width:${outlineWidth}px;stroke-linejoin:round;paint-order:stroke fill;filter:url(#mpvl-headline-shadow)}</style></svg>`;
 }
 
-async function posterHeadlineLayout(value, style, highlights = new Set()) {
+async function posterHeadlineLayout(value, style) {
   const left = 1080 * style.headlineLeftPct / 100;
   const top = 1920 * style.headlineTopPct / 100;
   const boxWidth = Math.max(1, Math.min(1080 * style.headlineWidthPct / 100, 1080 - left));
   const boxHeight = Math.max(1, Math.min(1920 * style.headlineHeightPct / 100, 1920 - top));
-  const sourceTitle = String(value || 'Má»™t cÃ¢u há»i thÃº vá»‹');
-  const headline = style.headlineCase === 'uppercase' ? sourceTitle.toLocaleUpperCase('vi-VN') : sourceTitle;
-  const words = headline.trim().split(/\s+/u).filter(Boolean);
+  const sourceTitle = String(value ?? '');
+  const words = sourceTitle.trim().split(/\s+/u).filter(Boolean);
   const fitted = style.headlineVisible
-    ? await fitPosterHeadline(words, style, highlights)
+    ? await layoutPosterHeadline(words, style)
     : { lines: [], fontSize: style.headlineMaxPx, fits: true, lineHeight: 0, textHeights: [], outlinePadding: 0, blockHeight: 0 };
   return { ...fitted, left, top, boxWidth, boxHeight };
 }
@@ -555,7 +556,7 @@ function posterHeadlineMarkup(title, style, highlights = new Set()) {
       const fill = highlights.has(normalized) ? style.highlightColor : style.textColor;
       return `<tspan${wordIndex ? ` dx="${wordGap}"` : ''} fill="${fill}">${escapeXml(word)}</tspan>`;
     }).join('');
-    const lineTop = title.top + (title.boxHeight - title.blockHeight) / 2 + index * title.lineHeight;
+    const lineTop = title.top + Math.max(0, (title.boxHeight - title.blockHeight) / 2) + index * title.lineHeight;
     const baseline = lineTop + title.outlinePadding + title.textHeights[index];
     return `<text data-mpvl-headline-line="${index}" data-mpvl-font="${style.headlineFont}" font-size="${title.fontSize}" x="${title.left + title.boxWidth / 2}" y="${baseline}" text-anchor="middle" class="headline">${pieces}</text>`;
   }).join('');
@@ -580,95 +581,31 @@ function estimateHeadlineWidth(value, fontSize) {
   return units * fontSize;
 }
 
-function posterHeadlineLineCandidates(words, highlightWords = new Set()) {
-  if (!words.length) return [[]];
-  const lineCount = words.length >= 6
-    ? Math.min(4, Math.ceil(words.length / 2))
-    : words.length >= 3 ? 2 : 1;
-  const candidates = [];
-  const collect = (start, remaining, lines) => {
-    if (remaining === 1) {
-      candidates.push([...lines, words.slice(start)]);
-      return;
-    }
-    const lastEnd = words.length - remaining + 1;
-    for (let end = start + 1; end <= lastEnd; end += 1) {
-      collect(end, remaining - 1, [...lines, words.slice(start, end)]);
-    }
-  };
-  collect(0, lineCount, []);
-  // Give one intentionally highlighted keyword its own centered line when the
-  // title has enough words on both sides. This avoids shrinking a long first
-  // line just to keep a short ending on the same two-line layout.
-  if (words.length >= 5 && words.length <= 7 && highlightWords.size === 1) {
-    const highlighted = [...highlightWords][0];
-    const index = words.findIndex((word) => normalizeMotPhutHeadlineWord(word) === highlighted);
-    if (index >= 2 && words.length - index - 1 >= 2) {
-      candidates.push([words.slice(0, index), [words[index]], words.slice(index + 1)]);
-    }
-  }
-  const unique = new Map(candidates.map((lines) => [lines.map((line) => line.join(' ')).join('\n'), lines]));
-  return [...unique.values()];
-}
-
-function countBrokenHeadlinePhrases(lines) {
-  const preferredPairs = new Set(['mùi hương', 'ký ức']);
-  const words = lines.flat();
-  const boundaries = new Set();
-  let cursor = 0;
-  for (const line of lines.slice(0, -1)) {
-    cursor += line.length;
-    boundaries.add(cursor);
-  }
-  let breaks = 0;
-  for (let index = 0; index < words.length - 1; index += 1) {
-    const pair = `${normalizeMotPhutHeadlineWord(words[index])} ${normalizeMotPhutHeadlineWord(words[index + 1])}`;
-    if (boundaries.has(index + 1) && preferredPairs.has(pair)) breaks += 1;
-  }
-  return breaks;
-}
-
-async function fitPosterHeadline(words, style, highlightWords = new Set()) {
-  const candidates = posterHeadlineLineCandidates(words, highlightWords);
+async function layoutPosterHeadline(words, style) {
   const roomWidth = 1080 * style.headlineWidthPct / 100;
-  const roomHeight = 1920 * style.headlineHeightPct / 100;
-  const minimumSize = Math.min(40, style.headlineMaxPx);
+  const fontSize = Number(style.headlineMaxPx) || 40;
   const fontMode = style.headlineFont;
-  const measured = await Promise.all(candidates.map(async (lines) => ({
-    lines,
-    brokenPhrases: countBrokenHeadlinePhrases(lines),
-    metricsPerPixel: await Promise.all(lines.map((line) => measureMotPhutVoLeHeadlineLine(line, fontMode)))
-  })));
-  const evaluate = (candidate) => {
-    const layoutAt = (size) => {
-      const outlinePadding = Math.ceil(size * 0.035) + 2;
-      const textHeights = candidate.metricsPerPixel.map((metrics) => metrics.heightPerPixel * size);
-      const rowHeight = Math.max(...textHeights) + outlinePadding * 2 + 6;
-      const lineGap = Math.max(8, size * 0.055);
-      const lineHeight = rowHeight + lineGap;
-      const blockHeight = rowHeight * candidate.lines.length + lineGap * Math.max(0, candidate.lines.length - 1);
-      const fits = candidate.metricsPerPixel.every((metrics) => metrics.widthPerPixel * size + outlinePadding * 2 <= roomWidth)
-        && blockHeight <= roomHeight;
-      return { fits, textHeights, outlinePadding, lineHeight, blockHeight };
-    };
-    if (!layoutAt(minimumSize).fits) return { ...candidate, fontSize: minimumSize, ...layoutAt(minimumSize) };
-    let low = minimumSize;
-    let high = style.headlineMaxPx;
-    while (high - low > 0.5) {
-      const middle = (low + high) / 2;
-      if (layoutAt(middle).fits) low = middle;
-      else high = middle;
+  const outlinePadding = Math.ceil(fontSize * 0.035) + 2;
+  const lineGap = Math.max(8, fontSize * 0.055);
+  const lines = [];
+  let line = [];
+  for (const word of words) {
+    const candidate = [...line, word];
+    const metrics = await measureMotPhutVoLeHeadlineLine(candidate, fontMode);
+    if (line.length && metrics.widthPerPixel * fontSize + outlinePadding * 2 > roomWidth) {
+      lines.push(line);
+      line = [word];
+    } else {
+      line = candidate;
     }
-    return { ...candidate, fontSize: low, ...layoutAt(low) };
-  };
-  const evaluated = measured.map(evaluate);
-  const viable = evaluated.filter((candidate) => candidate.fits);
-  const pool = viable.length ? viable : evaluated;
-  const fewestPhraseBreaks = Math.min(...pool.map((candidate) => candidate.brokenPhrases));
-  const preferred = pool.filter((candidate) => candidate.brokenPhrases === fewestPhraseBreaks);
-  preferred.sort((a, b) => b.fontSize - a.fontSize);
-  const { lines, fontSize, fits, lineHeight, textHeights, outlinePadding, blockHeight } = preferred[0];
-  return { lines, fontSize, fits, lineHeight, textHeights, outlinePadding, blockHeight };
+  }
+  if (line.length) lines.push(line);
+  const metricsPerLine = await Promise.all(lines.map((items) => measureMotPhutVoLeHeadlineLine(items, fontMode)));
+  const textHeights = metricsPerLine.map((metrics) => metrics.heightPerPixel * fontSize);
+  const rowHeight = lines.length ? Math.max(...textHeights) + outlinePadding * 2 + 6 : 0;
+  const lineHeight = rowHeight + lineGap;
+  const blockHeight = lines.length ? rowHeight * lines.length + lineGap * Math.max(0, lines.length - 1) : 0;
+  return { lines, fontSize, fits: true, lineHeight, textHeights, outlinePadding, blockHeight };
 }
 
 function thumbnailPaperSvg(style) {
@@ -757,6 +694,23 @@ function backgroundAdjustments(vignette, bottomShade, width, height) {
   const shadeMarkup = shadeOpacity > 0
     ? `<defs><linearGradient id="mot-bottom-shade" x1="0" y1="0" x2="0" y2="1"><stop offset="52%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity="${shadeOpacity}"/></linearGradient></defs><rect width="${width}" height="${height}" fill="url(#mot-bottom-shade)"/>` : '';
   return `${vignetteMarkup}${shadeMarkup}`;
+}
+
+function wrapTextAtFixedSize(value, fontSize, maxWidth) {
+  const words = String(value ?? '').split(/\s+/u).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && measureText(next, fontSize) > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 function fitTextLines(value, initialSize, maxWidth, maxLines, minSize) {
