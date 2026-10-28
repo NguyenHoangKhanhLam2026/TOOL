@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { ROOT, PORT, HOST, PATHS, PYTHON_BIN, FFMPEG_BIN, FFPROBE_BIN, COSYVOICE_REFERENCE_PATH, COSYVOICE_PROFILES_DIR } from './config.mjs';
 import {
   db, getSettings, saveSettings, getOverview, listTopics, listVideos, listJobs,
-  listPublishHistory, listSchedules, listPublishedSchedules, deletePublishedSchedule, deleteScheduleFromApp, queueJob, createSchedule, approveVideoAndCreateRandomSchedule, queueFacebookSchedule, completePublishedSchedule, log, getScript, updateVideo, addTopic, deleteVideo,
+  listPublishHistory, listSchedules, listPublishedSchedules, deletePublishedSchedule, deleteScheduleFromApp, purgeExpiredOrFailedSchedule, queueJob, createSchedule, approveVideoAndCreateRandomSchedule, queueFacebookSchedule, completePublishedSchedule, log, getScript, updateVideo, addTopic, deleteVideo,
   listFacebookPageProfiles, getFacebookPageProfile, getFacebookPageForLanguage, facebookPageProfileLanguage, facebookPageProfileMatchesLanguage, facebookPageProfileHasActiveWork, saveFacebookPageProfile, setFacebookPageVerification, setFacebookPageRoute, clearFacebookPageRoute, getFacebookPageRoutes, deleteFacebookPageProfile,
   getEnglishShadowingSettings, saveEnglishShadowingSettings
 } from './database/db.mjs';
@@ -1004,6 +1004,25 @@ async function handleApi(req, res, url) {
   if (req.method === 'DELETE' && publishedScheduleMatch) {
     const deleted = deletePublishedSchedule(publishedScheduleMatch[1]);
     return deleted ? json(res, 200, { deleted: true, id: publishedScheduleMatch[1] }) : json(res, 404, { error: 'KhÃ´ng tÃ¬m tháº¥y thÃ´ng tin bÃ i Ä‘Ã£ Ä‘Äƒng.' });
+  }
+  const purgeScheduleMatch = url.pathname.match(/^\/api\/schedules\/([\w-]+)\/purge$/u);
+  if (req.method === 'DELETE' && purgeScheduleMatch) {
+    let result;
+    try { result = purgeExpiredOrFailedSchedule(purgeScheduleMatch[1]); }
+    catch (error) { return json(res, error.statusCode || 500, { error: error.message }); }
+    if (!result) return json(res, 404, { error: 'Không tìm thấy bài cần xóa.' });
+    if (result.cleanupWarnings.length) {
+      log('WARN', 'SCHEDULE_CONTENT_PURGE_FILES_PENDING', `Đã xóa bài ${result.videoId} khỏi tool nhưng còn thư mục chưa dọn được: ${result.cleanupWarnings.join(', ')}.`);
+    } else {
+      log('INFO', 'SCHEDULE_CONTENT_PURGED', `Đã xóa bài ${result.videoId}, lịch và tệp riêng khỏi tool.`);
+    }
+    return json(res, 200, {
+      deleted: true,
+      id: result.id,
+      videoId: result.videoId,
+      facebookRemoteMayRemain: result.facebookRemoteMayRemain,
+      cleanupWarnings: result.cleanupWarnings
+    });
   }
   const deleteScheduleMatch = url.pathname.match(/^\/api\/schedules\/([\w-]+)$/u);
   if (req.method === 'DELETE' && deleteScheduleMatch) {

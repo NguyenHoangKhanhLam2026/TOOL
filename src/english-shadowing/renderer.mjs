@@ -20,6 +20,7 @@ import {
 const WIDTH = ENGLISH_SHADOWING_PROFILE.canvas.width;
 const HEIGHT = ENGLISH_SHADOWING_PROFILE.canvas.height;
 const FPS = ENGLISH_SHADOWING_PROFILE.canvas.fps;
+const SPOKEN_FLOW_BODY_MAX_WIDTH = 850;
 const LEGACY_PALETTE = Object.freeze({
   paper: '#EEF4F1',
   navy: '#285D78',
@@ -158,7 +159,7 @@ function resolveSpokenFlowVisualDesign(value, script) {
     automaticVerticalPosition = content.textY === defaults.textY;
     useIfDefault('textY', defaults.textY, 960);
     useIfDefault('textFontSize', defaults.textFontSize, bodyFontSize);
-    useIfDefault('textMaxWidth', defaults.textMaxWidth, 940);
+    useIfDefault('textMaxWidth', defaults.textMaxWidth, SPOKEN_FLOW_BODY_MAX_WIDTH);
     useIfDefault('textMaxHeight', defaults.textMaxHeight, 1160);
   }
   return { ...design, content, automaticVerticalPosition };
@@ -166,7 +167,7 @@ function resolveSpokenFlowVisualDesign(value, script) {
 
 function spokenFlowLayoutOptions(tokens) {
   const fontSize = spokenFlowFontSize(tokens.length);
-  return { centerX: 540, centerY: 960, fontSize, maxWidth: 940, maxHeight: 1160, lineHeightRatio: 1.44 };
+  return { centerX: 540, centerY: 960, fontSize, maxWidth: SPOKEN_FLOW_BODY_MAX_WIDTH, maxHeight: 1160, lineHeightRatio: 1.44 };
 }
 
 function positionSpokenFlowBody(layout, firstBaseline = 520) {
@@ -480,7 +481,7 @@ export async function buildEnglishShadowingVisualPreviewSvg(profile = ENGLISH_SH
     centerX: visualDesign.content.textX,
     centerY: visualDesign.content.textY,
     fontSize: visualDesign.content.textFontSize,
-    ...(contentDesign ? { maxWidth: contentDesign.textMaxWidth, maxHeight: contentDesign.textMaxHeight } : {}),
+    ...(contentDesign ? { maxWidth: Math.min(contentDesign.textMaxWidth, SPOKEN_FLOW_BODY_MAX_WIDTH), maxHeight: contentDesign.textMaxHeight } : {}),
     lineHeightRatio: 1.44
   } : spokenFlowLayoutOptions(tokens));
   if (!visualDesign.enabled || visualDesign.automaticVerticalPosition) layout = positionSpokenFlowBody(layout);
@@ -680,7 +681,7 @@ export async function renderEnglishShadowingVideo({ script, audioPath, tokens, w
     centerX: activeVisualDesign.content.textX,
     centerY: activeVisualDesign.content.textY,
     fontSize: activeVisualDesign.content.textFontSize,
-    ...(v2ContentDesign ? { maxWidth: v2ContentDesign.textMaxWidth, maxHeight: v2ContentDesign.textMaxHeight } : {}),
+    ...(v2ContentDesign ? { maxWidth: spokenFlow ? Math.min(v2ContentDesign.textMaxWidth, SPOKEN_FLOW_BODY_MAX_WIDTH) : v2ContentDesign.textMaxWidth, maxHeight: v2ContentDesign.textMaxHeight } : {}),
     ...(spokenFlow ? { lineHeightRatio: 1.44 } : {})
   } : spokenFlow ? spokenFlowLayoutOptions(allTokens) : {});
   if (spokenFlow && (!activeVisualDesign || visualDesign.automaticVerticalPosition)) {

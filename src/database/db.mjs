@@ -970,6 +970,134 @@ export function deleteScheduleFromApp(scheduleId) {
   }
 }
 
+function stageGeneratedVideoFiles(videoId) {
+  const safeId = String(videoId || '');
+  if (!/^[\w-]+$/.test(safeId)) throw new Error('Video ID không hợp lệ khi dọn tệp.');
+  const staged = [];
+  try {
+    for (const root of [PATHS.output, PATHS.temporary]) {
+      const absoluteRoot = path.resolve(root);
+      const target = path.resolve(absoluteRoot, safeId);
+      if (path.dirname(target) !== absoluteRoot || path.basename(target) !== safeId || !fs.existsSync(target)) continue;
+      const quarantine = path.resolve(absoluteRoot, `.purge-${safeId}-${crypto.randomUUID()}`);
+      if (path.dirname(quarantine) !== absoluteRoot) throw new Error('Đường dẫn tạm để dọn tệp không hợp lệ.');
+      fs.renameSync(target, quarantine);
+      staged.push({ target, quarantine });
+    }
+    return staged;
+  } catch (error) {
+    const restoreErrors = restoreGeneratedVideoFiles(staged);
+    if (restoreErrors.length) error.message += ` Không khôi phục được thư mục: ${restoreErrors.join(', ')}.`;
+    throw error;
+  }
+}
+
+function restoreGeneratedVideoFiles(staged) {
+  const errors = [];
+  for (const { target, quarantine } of [...staged].reverse()) {
+    try {
+      if (fs.existsSync(quarantine) && !fs.existsSync(target)) fs.renameSync(quarantine, target);
+    } catch { errors.push(quarantine); }
+  }
+  return errors;
+}
+
+function removeStagedGeneratedVideoFiles(staged) {
+  const errors = [];
+  for (const { quarantine } of staged) {
+    try { fs.rmSync(quarantine, { recursive: true, force: true, maxRetries: 4, retryDelay: 250 }); }
+    catch { errors.push(quarantine); }
+  }
+  return errors;
+}
+
+export function purgeExpiredOrFailedSchedule(scheduleId) {
+  const staged = [];
+  let transactionOpen = false;
+  let schedule;
+  let relatedJobIds = [];
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    transactionOpen = true;
+    schedule = db.prepare(`SELECT p.id,p.video_id,p.scheduled_at,p.status,p.facebook_schedule_state,p.facebook_video_id,
+      v.status AS video_status,v.script_id,s.topic,s.title,
+      (SELECT h.status FROM publish_history h WHERE h.video_id=v.id ORDER BY h.created_at DESC LIMIT 1) AS last_publish_status
+      FROM scheduled_posts p JOIN videos v ON v.id=p.video_id JOIN scripts s ON s.id=v.script_id WHERE p.id=?`).get(scheduleId);
+    if (!schedule) {
+      db.exec('COMMIT');
+      transactionOpen = false;
+      return null;
+    }
+
+    const scheduledTimestamp = Date.parse(schedule.scheduled_at);
+    const expired = Number.isFinite(scheduledTimestamp) && scheduledTimestamp <= Date.now();
+    const failed = ['failed', 'publish_failed'].includes(schedule.status)
+      || ['failed', 'publish_failed'].includes(schedule.video_status)
+      || schedule.facebook_schedule_state === 'failed'
+      || schedule.last_publish_status === 'failed';
+    if (!expired && !failed) {
+      throw Object.assign(new Error('Chỉ có thể xóa sạch bài đã quá lịch hoặc đang báo lỗi.'), { statusCode: 409 });
+    }
+    if (['publishing', 'published'].includes(schedule.status)
+      || ['processing', 'script_ready', 'publishing', 'published'].includes(schedule.video_status)
+      || ['queued', 'uploading', 'finishing', 'published'].includes(schedule.facebook_schedule_state)) {
+      throw Object.assign(new Error('Bài đang được xử lý hoặc đã đăng; không thể xóa sạch lúc này.'), { statusCode: 409 });
+    }
+
+    const scriptIsOrphaned = !db.prepare('SELECT 1 FROM videos WHERE script_id=? AND id<>? LIMIT 1').get(schedule.script_id, schedule.video_id);
+    const jobs = db.prepare("SELECT id,type,status,payload_json FROM jobs WHERE type IN ('create_video','create_english_shadowing_video','schedule_facebook_video','publish_video')").all();
+    const relatedJobs = [];
+    for (const job of jobs) {
+      let payload;
+      try { payload = JSON.parse(job.payload_json); } catch { continue; }
+      if (payload.videoId !== schedule.video_id && payload.scheduleId !== schedule.id
+        && !(scriptIsOrphaned && payload.scriptId === schedule.script_id)) continue;
+      relatedJobs.push(job);
+    }
+    if (relatedJobs.some((job) => ['pending', 'running'].includes(job.status))) {
+      throw Object.assign(new Error('Bài vẫn còn job đang chờ hoặc đang chạy; hãy đợi job kết thúc rồi xóa.'), { statusCode: 409 });
+    }
+    if (db.prepare('SELECT 1 FROM active_publications WHERE video_id=? LIMIT 1').get(schedule.video_id)) {
+      throw Object.assign(new Error('Bài đang được đăng; hãy thử lại sau khi tác vụ kết thúc.'), { statusCode: 409 });
+    }
+
+    relatedJobIds = relatedJobs.map((job) => job.id);
+    staged.push(...stageGeneratedVideoFiles(schedule.video_id));
+    if (relatedJobIds.length) {
+      const placeholders = relatedJobIds.map(() => '?').join(',');
+      db.prepare(`DELETE FROM logs WHERE job_id IN (${placeholders})`).run(...relatedJobIds);
+      db.prepare(`DELETE FROM jobs WHERE id IN (${placeholders})`).run(...relatedJobIds);
+    }
+    db.prepare('DELETE FROM scheduled_posts WHERE id=?').run(schedule.id);
+    db.prepare('DELETE FROM publish_history WHERE video_id=?').run(schedule.video_id);
+    db.prepare('DELETE FROM published_schedule_history WHERE video_id=?').run(schedule.video_id);
+    db.prepare('DELETE FROM active_publications WHERE video_id=?').run(schedule.video_id);
+    db.prepare('DELETE FROM videos WHERE id=?').run(schedule.video_id);
+    if (scriptIsOrphaned) {
+      db.prepare('DELETE FROM scripts WHERE id=?').run(schedule.script_id);
+    }
+    db.exec('COMMIT');
+    transactionOpen = false;
+  } catch (error) {
+    if (transactionOpen) {
+      try { db.exec('ROLLBACK'); } catch { /* Keep restoring staged media after a database rollback error. */ }
+    }
+    const restoreErrors = restoreGeneratedVideoFiles(staged);
+    if (restoreErrors.length) error.message += ` Không khôi phục được thư mục: ${restoreErrors.join(', ')}.`;
+    throw error;
+  }
+
+  const cleanupWarnings = removeStagedGeneratedVideoFiles(staged);
+  return {
+    id: schedule.id,
+    videoId: schedule.video_id,
+    topic: schedule.topic,
+    facebookRemoteMayRemain: Boolean(schedule.facebook_video_id)
+      || ['scheduled', 'uncertain'].includes(schedule.facebook_schedule_state),
+    cleanupWarnings
+  };
+}
+
 export function listPublishedSchedules() {
   return db.prepare(`SELECT h.*,COALESCE(s.content_language,'en') AS content_language
     FROM published_schedule_history h

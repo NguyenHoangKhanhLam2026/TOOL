@@ -1,5 +1,7 @@
 const WIDTH = 1080;
 const HEIGHT = 1920;
+const BODY_SAFE_MARGIN_PCT = 6;
+const BODY_MAX_WIDTH_PCT = 100 - BODY_SAFE_MARGIN_PCT * 2;
 
 const xml = (value) => String(value ?? '').replace(/[&<>"']/gu, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
@@ -103,28 +105,29 @@ function splitSentences(textValue, tokens) {
   return cursor === tokens.length ? paragraphs : [tokens];
 }
 
-function layoutContent(title, paragraphs, style, tokens) {
-  const roomWidth = WIDTH * style.contentWidthPct / 100;
+function layoutContent(title, paragraphs, style, tokens, bodyStyle = style) {
+  const titleRoomWidth = WIDTH * style.contentWidthPct / 100;
+  const bodyRoomWidth = WIDTH * bodyStyle.contentWidthPct / 100;
   const roomHeight = HEIGHT * style.contentHeightPct / 100;
   const titleWords = String(title ?? '').split(/\s+/u).filter(Boolean).map((text, index) => ({ id: `title:${index}`, text }));
   for (let size = style.bodyMaxPx; size >= 22; size -= 1) {
     const titleSize = size * 1.45;
-    const titleLines = wrapWords(titleWords, roomWidth, titleSize);
-    const paragraphLines = paragraphs.map((paragraph) => wrapWords(paragraph, roomWidth, size));
+    const titleLines = wrapWords(titleWords, titleRoomWidth, titleSize);
+    const paragraphLines = paragraphs.map((paragraph) => wrapWords(paragraph, bodyRoomWidth, size));
     const titleHeight = titleLines.length * titleSize * 1.1;
     const bodyHeight = paragraphLines.reduce((sum, lines) => sum + lines.length * size * 1.45, 0)
       + Math.max(0, paragraphLines.length - 1) * size * 0.8;
     const totalHeight = titleHeight + size * 0.9 + bodyHeight;
-    const titleTooWide = titleLines.some((line) => estimateTextWidth(line.map((word) => word.text).join(' '), titleSize) > roomWidth + 1);
-    const bodyTooWide = paragraphLines.flat().some((line) => estimateTextWidth(line.map((word) => word.text).join(' '), size) > roomWidth + 1);
+    const titleTooWide = titleLines.some((line) => estimateTextWidth(line.map((word) => word.text).join(' '), titleSize) > titleRoomWidth + 1);
+    const bodyTooWide = paragraphLines.flat().some((line) => estimateTextWidth(line.map((word) => word.text).join(' '), size) > bodyRoomWidth + 1);
     if (totalHeight <= roomHeight && !titleTooWide && !bodyTooWide) {
       return { size, titleSize, titleLines, paragraphLines, totalHeight, fits: true, tokens };
     }
   }
   const size = 22;
   const titleSize = size * 1.45;
-  const titleLines = wrapWords(titleWords, roomWidth, titleSize);
-  const paragraphLines = paragraphs.map((paragraph) => wrapWords(paragraph, roomWidth, size));
+  const titleLines = wrapWords(titleWords, titleRoomWidth, titleSize);
+  const paragraphLines = paragraphs.map((paragraph) => wrapWords(paragraph, bodyRoomWidth, size));
   const titleHeight = titleLines.length * titleSize * 1.1;
   const bodyHeight = paragraphLines.reduce((sum, lines) => sum + lines.length * size * 1.45, 0)
     + Math.max(0, paragraphLines.length - 1) * size * 0.8;
@@ -142,16 +145,20 @@ export function buildSourceContentSvg({ script, tokens = [], activeTokenIds = []
   const allTokens = Array.isArray(tokens) ? tokens : [];
   const paragraphs = splitSentences(script?.scriptText, allTokens);
   const title = String(script?.title ?? '').trim();
-  const layout = layoutContent(title, paragraphs, style, allTokens);
-  const roomLeft = WIDTH * style.contentLeftPct / 100;
+  const bodyWidthPct = Math.min(style.contentWidthPct, BODY_MAX_WIDTH_PCT);
+  const bodyLeftPct = Math.max(BODY_SAFE_MARGIN_PCT, Math.min(style.contentLeftPct, 100 - BODY_SAFE_MARGIN_PCT - bodyWidthPct));
+  const bodyStyle = { ...style, contentLeftPct: bodyLeftPct, contentWidthPct: bodyWidthPct };
+  const layout = layoutContent(title, paragraphs, style, allTokens, bodyStyle);
+  const roomLeft = WIDTH * bodyStyle.contentLeftPct / 100;
   const roomTop = HEIGHT * style.contentTopPct / 100;
   const roomHeight = HEIGHT * style.contentHeightPct / 100;
   let cursorY = roomTop + (roomHeight - layout.totalHeight) / 2;
-  const centerX = roomLeft + WIDTH * style.contentWidthPct / 200;
+  const titleCenterX = WIDTH * (style.contentLeftPct + style.contentWidthPct / 2) / 100;
+  const centerX = roomLeft + WIDTH * bodyStyle.contentWidthPct / 200;
   const titleMarkup = layout.titleLines.map((line, index) => {
     const baseline = cursorY + layout.titleSize * (index + 0.9);
     const wordsMarkup = line.map((word, wordIndex) => `<tspan>${xml(word.text)}${wordIndex < line.length - 1 ? '&#160;' : ''}</tspan>`).join('');
-    return `<text x="${centerX}" y="${baseline}" text-anchor="middle" font-family="${sourceFont(style.bodyFont)}" font-size="${layout.titleSize}" font-weight="700" fill="${style.bodyColor}">${wordsMarkup}</text>`;
+    return `<text x="${titleCenterX}" y="${baseline}" text-anchor="middle" font-family="${sourceFont(style.bodyFont)}" font-size="${layout.titleSize}" font-weight="700" fill="${style.bodyColor}">${wordsMarkup}</text>`;
   }).join('');
   cursorY += layout.titleSize * 1.1 * layout.titleLines.length + layout.size * 0.9;
 

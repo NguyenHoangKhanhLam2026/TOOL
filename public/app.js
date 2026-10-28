@@ -604,7 +604,13 @@ function renderSchedules() {
   const visible = schedules.filter((item) => item.status !== 'published');
   renderScheduleLanguageOverview();
   $('#schedule-list').innerHTML = visible.length ? visible.map((item) => {
-    const failed = item.status === 'failed' || item.video_status === 'publish_failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state);
+    const failed = item.status === 'failed' || ['failed', 'publish_failed'].includes(item.video_status)
+      || item.last_publish_status === 'failed' || ['failed', 'uncertain'].includes(item.facebook_schedule_state);
+    const scheduleTimestamp = Date.parse(item.scheduled_at);
+    const pastDue = Number.isFinite(scheduleTimestamp) && scheduleTimestamp <= Date.now();
+    const purgeBlocked = item.status === 'publishing' || ['processing', 'script_ready', 'publishing', 'published'].includes(item.video_status)
+      || ['queued', 'uploading', 'finishing', 'published'].includes(item.facebook_schedule_state);
+    const canPurge = !purgeBlocked && item.status !== 'published' && (failed || pastDue);
     const retryableFacebookState = ['local', 'failed', 'uncertain'].includes(item.facebook_schedule_state)
       || (item.facebook_schedule_state === 'scheduled' && !item.facebook_video_id);
     const canRetry = item.status !== 'published' && item.status !== 'publishing'
@@ -620,8 +626,9 @@ function renderSchedules() {
       ? `<small class="schedule-error">Page ${escapeHtml(String(item.content_language || 'en').toUpperCase())} chưa được xác minh hoặc token chưa sẵn sàng.</small>` : '';
     const error = failed && item.error ? `<small class="schedule-error">${escapeHtml(item.error)}</small>` : retryHint;
     const retryButton = canRetry ? `<button class="button button-outline button-small schedule-retry" data-retry-schedule-id="${escapeHtml(item.id)}">Đăng lại</button>` : '';
-    const deleteButton = canRetry ? `<button class="mini-action danger-action" data-delete-schedule-id="${escapeHtml(item.id)}">Xóa</button>` : '';
-    const scheduleActions = canRetry ? `<div class="button-row">${retryButton}${deleteButton}</div>` : '';
+    const purgeButton = canPurge ? `<button class="mini-action danger-action" data-purge-schedule-id="${escapeHtml(item.id)}">Xóa sạch</button>` : '';
+    const deleteButton = canRetry && !canPurge ? `<button class="mini-action danger-action" data-delete-schedule-id="${escapeHtml(item.id)}">Xóa lịch</button>` : '';
+    const scheduleActions = retryButton || purgeButton || deleteButton ? `<div class="button-row">${retryButton}${purgeButton || deleteButton}</div>` : '';
     const language = facebookScheduleLanguage(item.content_language || 'en');
     const languageStateLabel = item.facebook_schedule_state === 'scheduled'
       ? `Đã lên lịch nội dung Facebook ${language.name} (${language.code})`
@@ -645,6 +652,7 @@ function renderSchedules() {
   }
   $$('[data-retry-schedule-id]').forEach((button) => button.addEventListener('click', retryScheduledPost));
   $$('[data-delete-schedule-id]').forEach((button) => button.addEventListener('click', deleteScheduledPost));
+  $$('[data-purge-schedule-id]').forEach((button) => button.addEventListener('click', purgeScheduledPost));
   $('#published-list').innerHTML = state.publishedSchedules.length ? state.publishedSchedules.map((item) => {
     const mode = item.adapter === 'mock' ? ' · Bản chạy thử' : '';
     const language = facebookScheduleLanguage(item.content_language || 'en');
@@ -2048,6 +2056,34 @@ async function deleteScheduledPost(event) {
     await loadOverview();
   } catch (error) {
     toast('Không xóa được lịch', true, error.message);
+    button.disabled = false;
+  }
+}
+
+async function purgeScheduledPost(event) {
+  const button = event.currentTarget;
+  const schedule = state.schedules.find((item) => item.id === button.dataset.purgeScheduleId);
+  if (!schedule) return;
+  const title = schedule.title || schedule.topic || 'nội dung này';
+  const remoteMayRemain = Boolean(schedule.facebook_video_id)
+    || ['scheduled', 'uncertain'].includes(schedule.facebook_schedule_state);
+  const confirmation = [
+    `Xóa sạch “${title}” khỏi tool và máy? Lịch, video, ảnh bìa, audio và tệp tạm riêng của bài sẽ bị xóa; không thể hoàn tác.`,
+    'Nút này không gỡ bài hoặc hủy lịch đã gửi lên Facebook.'
+  ];
+  if (remoteMayRemain) confirmation.push('Facebook đã nhận hoặc chưa xác minh được lịch này; hãy kiểm tra Planner nếu muốn xóa cả bên Facebook.');
+  if (!window.confirm(confirmation.join('\n\n'))) return;
+  button.disabled = true;
+  try {
+    const result = await api(`/api/schedules/${encodeURIComponent(schedule.id)}/purge`, { method: 'DELETE' });
+    await refreshData();
+    if (result.cleanupWarnings?.length) {
+      toast('Đã xóa khỏi tool nhưng còn thư mục chưa dọn được trên máy', true, result.cleanupWarnings.join(' · '));
+    } else {
+      toast('Đã xóa sạch bài khỏi tool và máy', false, result.facebookRemoteMayRemain ? 'Lịch hoặc bài trên Facebook vẫn có thể còn; kiểm tra Planner.' : 'Đã dọn dữ liệu riêng của bài.');
+    }
+  } catch (error) {
+    toast('Không xóa sạch được bài', true, error.message);
     button.disabled = false;
   }
 }
