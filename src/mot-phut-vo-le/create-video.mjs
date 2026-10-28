@@ -23,6 +23,23 @@ import { reviewMotPhutVoLeFactClaims } from './fact-check.mjs';
 const OUTPUT_DIR = path.join(DATA, 'outputs', 'mot-phut-vo-le');
 const MODULE_DATA_DIR = path.join(DATA, 'mot-phut-vo-le');
 
+function normalizedScriptWords(value) {
+  return (String(value || '').normalize('NFC').match(/\S+/gu) || [])
+    .map((word) => word.toLocaleLowerCase('vi').replace(/[^\p{L}\p{N}]/gu, ''));
+}
+
+function canReuseSavedAlignment(content, voiceProfile, settings, contentId) {
+  const alignment = content?.alignmentManifest;
+  const tokens = alignment?.tokens;
+  if (!contentId || !content?.audioPath || !fs.existsSync(content.audioPath) || !alignment?.reliable || !Array.isArray(tokens) || !tokens.length) return false;
+  if (voiceProfile?.voice !== settings.voice || Number(voiceProfile?.speed) !== Number(settings.speed)) return false;
+  const scriptWords = normalizedScriptWords(content.scriptText);
+  const alignedWords = tokens.map((token) => String(token.text || '').normalize('NFC').toLocaleLowerCase('vi').replace(/[^\p{L}\p{N}]/gu, ''));
+  return scriptWords.length === alignedWords.length
+    && scriptWords.every((word, index) => word === alignedWords[index])
+    && tokens.every((token, index) => token.id === `${contentId}:word:${index + 1}` && Number(token.index) === index);
+}
+
 export async function createMotPhutVoLeDraft({ topic = '', category = '', contentId = '', settings: settingsInput = {}, onProgress = () => {}, generate } = {}) {
   const settings = normalizeMotPhutVoLeSettings(settingsInput);
   let resumedReservation = null;
@@ -121,14 +138,29 @@ export async function createMotPhutVoLeVideo({ topic = '', category = '', conten
 
   try {
     let content = getMotPhutVoLeContent(id);
-    onProgress({ phase: 'vieneu-synthesis', contentId: id, attempt: 1 });
-    let audio = await synthesizeMotPhutVoLeAudio({ id, text: content.scriptText, settings, onProgress: (detail) => onProgress({ contentId: id, ...detail }) });
-    let duration = await readAudioDuration(audio.audioPath);
-    validateAudioDuration(duration);
-    onProgress({ phase: 'audio-ready', contentId: id, durationSeconds: duration, reused: audio.reused === true });
+    const reuseSavedAssets = contentId && existing?.scriptText === content.scriptText
+      && canReuseSavedAlignment(existing, existing.voiceProfile, settings, id);
+    let audio, duration, alignment;
+    if (reuseSavedAssets) {
+      audio = { audioPath: existing.audioPath, reused: true };
+      duration = await readAudioDuration(audio.audioPath);
+      validateAudioDuration(duration);
+      alignment = existing.alignmentManifest;
+      onProgress({ phase: 'vieneu-cache-hit', contentId: id, resumed: true });
+      onProgress({ phase: 'audio-ready', contentId: id, durationSeconds: duration, reused: true, resumed: true });
+      onProgress({ phase: 'local-alignment-complete', contentId: id, reliable: true,
+        mappedTokenCount: alignment.alignment?.mappedTokenCount ?? alignment.tokens.length,
+        unmatchedTokenCount: alignment.alignment?.unmatchedTokenCount ?? 0, source: alignment.source, resumed: true });
+    } else {
+      onProgress({ phase: 'vieneu-synthesis', contentId: id, attempt: 1 });
+      audio = await synthesizeMotPhutVoLeAudio({ id, text: content.scriptText, settings, onProgress: (detail) => onProgress({ contentId: id, ...detail }) });
+      duration = await readAudioDuration(audio.audioPath);
+      validateAudioDuration(duration);
+      onProgress({ phase: 'audio-ready', contentId: id, durationSeconds: duration, reused: audio.reused === true });
 
-    let alignment = await alignMotPhutVoLeAudio({ audioPath: audio.audioPath, scriptText: content.scriptText, segmentId: id,
-      onProgress: (detail) => onProgress({ contentId: id, ...detail }) });
+      alignment = await alignMotPhutVoLeAudio({ audioPath: audio.audioPath, scriptText: content.scriptText, segmentId: id,
+        onProgress: (detail) => onProgress({ contentId: id, ...detail }) });
+    }
     if (!alignment.reliable && alignment.status === 'partial' && !settings.allowStaticOnAlignmentFailure) {
       onProgress({ phase: 'alignment-script-revision', contentId: id, unmatchedTokenCount: alignment.alignment?.unmatchedTokenCount || 0 });
       const correction = 'Một lượt căn chỉnh tiếng Việt cục bộ còn thiếu một âm tiết. Hãy viết lại các câu ngắn và rõ hơn, dùng cụm từ phổ biến, giữ nguyên kiến thức và góc khai thác, tránh tên riêng hoặc chuỗi từ khó nghe. Không thêm hoặc bỏ ý quan trọng.';

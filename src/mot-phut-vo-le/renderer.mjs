@@ -13,6 +13,7 @@ export const MOT_PHUT_VO_LE_VIDEO_PROFILE = Object.freeze({ width: 1080, height:
 export const MOT_PHUT_VO_LE_BACKGROUND_EFFECTS = Object.freeze(BACKGROUND_EFFECTS.filter((effect) => effect.id !== 'vocabulary'));
 const OUTPUT_DIR = path.join(DATA, 'outputs', 'mot-phut-vo-le');
 const FRAME_DIR = path.join(DATA, 'temporary', 'mot-phut-vo-le', 'frames');
+const FRAME_RENDER_TIMEOUT_MS = 90_000;
 
 export async function createMotPhutVoLeThumbnail({ content, design = {}, outputPath } = {}) {
   if (!content?.title) throw new Error('Thiếu tiêu đề để tạo thumbnail.');
@@ -33,7 +34,9 @@ export async function renderMotPhutVoLeVideo({ content, audioPath, alignment, de
   const normalizedDesign = effectiveDesign(design);
   const contentDir = path.dirname(outputPath || path.join(OUTPUT_DIR, String(content.id || 'draft'), 'video-v1.mp4'));
   const pathOut = outputPath || path.join(contentDir, `video-${Date.now()}.mp4`);
-  const buildDir = path.join(FRAME_DIR, `${safeDirectoryToken(content.id || 'draft')}-${Date.now()}`);
+  const contentToken = safeDirectoryToken(content.id || 'draft');
+  if (content.id) removeAbandonedFrameDirectories(contentToken);
+  const buildDir = path.join(FRAME_DIR, `${contentToken}-${Date.now()}`);
   fs.mkdirSync(buildDir, { recursive: true });
   fs.mkdirSync(path.dirname(pathOut), { recursive: true });
   try {
@@ -55,22 +58,24 @@ export async function renderMotPhutVoLeVideo({ content, audioPath, alignment, de
   for (let index = 0; index < timeline.length; index += 1) {
     const item = timeline[index];
     const imagePath = path.join(buildDir, `frame-${String(index).padStart(4, '0')}.png`);
-    if (item.type === 'thumbnail-intro') {
-      const introSvg = normalizedDesign.schemaVersion >= 2
-        ? await buildThumbnailPreviewSvg(content, normalizedDesign)
-        : buildLegacyThumbnailSvg(content, normalizedDesign);
-      const introImage = normalizedDesign.schemaVersion >= 2
-        ? await renderMotPhutVoLeThumbnailSvg(introSvg)
-        : await sharp(Buffer.from(introSvg)).png().toBuffer();
-      await sharp(introImage).resize(1080, 1920, { fit: 'contain', background: parseHexColor(normalizedDesign.thumbnail.paperColor) }).png().toFile(imagePath);
-    } else {
-      const svg = buildContentSvg({ content, design: normalizedDesign, tokenLayout, activeTokenIndexes: item.activeTokenIndexes,
-        backgroundEffect, highlightMode, effectTime: item.contentStartSeconds });
-      const frameImage = normalizedDesign.schemaVersion >= 4
-        ? await renderMotPhutVoLeThumbnailSvg(svg)
-        : await sharp(Buffer.from(svg)).png().toBuffer();
-      await sharp(frameImage).png().toFile(imagePath);
-    }
+    await withFrameRenderTimeout(async () => {
+      if (item.type === 'thumbnail-intro') {
+        const introSvg = normalizedDesign.schemaVersion >= 2
+          ? await buildThumbnailPreviewSvg(content, normalizedDesign)
+          : buildLegacyThumbnailSvg(content, normalizedDesign);
+        const introImage = normalizedDesign.schemaVersion >= 2
+          ? await renderMotPhutVoLeThumbnailSvg(introSvg)
+          : await sharp(Buffer.from(introSvg)).png().toBuffer();
+        await sharp(introImage).resize(1080, 1920, { fit: 'contain', background: parseHexColor(normalizedDesign.thumbnail.paperColor) }).png().toFile(imagePath);
+      } else {
+        const svg = buildContentSvg({ content, design: normalizedDesign, tokenLayout, activeTokenIndexes: item.activeTokenIndexes,
+          backgroundEffect, highlightMode, effectTime: item.contentStartSeconds });
+        const frameImage = normalizedDesign.schemaVersion >= 4
+          ? await renderMotPhutVoLeThumbnailSvg(svg)
+          : await sharp(Buffer.from(svg)).png().toBuffer();
+        await sharp(frameImage).png().toFile(imagePath);
+      }
+    }, index + 1, timeline.length);
     concatRows.push(`file '${ffconcatQuote(imagePath)}'`, `duration ${Math.max(0.001, item.durationSeconds).toFixed(6)}`);
     onProgress({ phase: 'frame-render', current: index + 1, total: timeline.length });
   }
@@ -100,7 +105,10 @@ export async function renderMotPhutVoLeVideo({ content, audioPath, alignment, de
   } finally {
     const root = path.resolve(FRAME_DIR);
     const target = path.resolve(buildDir);
-    if (target.startsWith(`${root}${path.sep}`)) fs.rmSync(target, { recursive: true, force: true });
+    if (target.startsWith(`${root}${path.sep}`)) {
+      try { fs.rmSync(target, { recursive: true, force: true }); }
+      catch (error) { if (!['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(error.code)) throw error; }
+    }
   }
 }
 
@@ -784,6 +792,27 @@ function ffconcatQuote(value) {
 
 function safeDirectoryToken(value) {
   return String(value || 'draft').replace(/[^a-zA-Z0-9_-]/gu, '_').slice(0, 100) || 'draft';
+}
+
+function removeAbandonedFrameDirectories(contentToken) {
+  if (!fs.existsSync(FRAME_DIR)) return;
+  const prefix = `${contentToken}-`;
+  for (const entry of fs.readdirSync(FRAME_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith(prefix)) continue;
+    const target = path.resolve(FRAME_DIR, entry.name);
+    if (target.startsWith(`${path.resolve(FRAME_DIR)}${path.sep}`)) fs.rmSync(target, { recursive: true, force: true });
+  }
+}
+
+function withFrameRenderTimeout(renderFrame, current, total) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(
+      new Error(`MPVL frame render timed out at frame ${current}/${total} after ${FRAME_RENDER_TIMEOUT_MS} ms.`),
+      { code: 'MOT_PHUT_VO_LE_FRAME_RENDER_TIMEOUT' }
+    )), FRAME_RENDER_TIMEOUT_MS);
+  });
+  return Promise.race([Promise.resolve().then(renderFrame), timeout]).finally(() => clearTimeout(timer));
 }
 
 function clampInteger(value, fallback, min, max) {

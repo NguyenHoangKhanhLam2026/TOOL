@@ -184,14 +184,20 @@ export async function processMotPhutVoLeJob(job) {
   } catch (error) {
     const latest = getMotPhutVoLeJob(job.id);
     const cancelled = latest?.cancelRequested === true;
-    if (job.type === 'rerender' && job.payload.contentId) {
-      try { updateMotPhutVoLeContent(job.payload.contentId, { status: 'failed', lastError: error.message }); } catch { }
+    const frameTimeout = error.code === 'MOT_PHUT_VO_LE_FRAME_RENDER_TIMEOUT';
+    const retryFrame = frameTimeout && !cancelled && Number(job.attempts) < 4;
+    const contentId = String(latest?.progress?.resumeContentId || latest?.progress?.contentId || job.payload.contentId || '');
+    if ((job.type === 'rerender' || frameTimeout) && contentId) {
+      try { updateMotPhutVoLeContent(contentId, { status: retryFrame ? 'processing' : 'failed', lastError: error.message }); } catch { }
     }
-    updateMotPhutVoLeJob(job.id, { status: cancelled ? 'cancelled' : 'failed', lastError: error.message, progress: {
-      ...(latest?.progress || {}), phase: cancelled ? 'cancelled' : 'failed', errorCode: error.code || null
+    updateMotPhutVoLeJob(job.id, { status: cancelled ? 'cancelled' : retryFrame ? 'pending' : 'failed', lastError: error.message, progress: {
+      ...(latest?.progress || {}), phase: cancelled ? 'cancelled' : retryFrame ? 'recovered' : 'failed', errorCode: error.code || null,
+      ...(retryFrame ? { recovery: { at: new Date().toISOString(), reason: 'Timed out while rendering one frame; retrying once from the saved MPVL content.' } } : {})
     } });
-    logMotPhutVoLeActivity(cancelled ? 'WARN' : 'ERROR', cancelled ? 'MOT_PHUT_VO_LE_JOB_CANCELLED' : 'MOT_PHUT_VO_LE_JOB_FAILED',
-      cancelled ? 'Job MPVL đã được hủy.' : `Quy trình MPVL thất bại${error.code ? ` (${error.code})` : ''}: ${safeActivityMessage(error.message) || 'Lỗi không rõ.'}`, job.id);
+    logMotPhutVoLeActivity(cancelled || retryFrame ? 'WARN' : 'ERROR', cancelled ? 'MOT_PHUT_VO_LE_JOB_CANCELLED' : retryFrame ? 'MOT_PHUT_VO_LE_JOB_RECOVERED' : 'MOT_PHUT_VO_LE_JOB_FAILED',
+      cancelled ? 'Job MPVL đã được hủy.' : retryFrame
+        ? 'Một khung hình bị treo; đã lưu trạng thái để worker phục hồi và render lại.'
+        : `Quy trình MPVL thất bại${error.code ? ` (${error.code})` : ''}: ${safeActivityMessage(error.message) || 'Lỗi không rõ.'}`, job.id);
     throw error;
   }
 }
@@ -205,7 +211,13 @@ export async function runMotPhutVoLeWorker({ pollIntervalMs = 5000, idleExitMs =
       if (job) {
         idleSince = Date.now();
         try { await processMotPhutVoLeJob(job); }
-        catch (error) { onError(error); }
+        catch (error) {
+          onError(error);
+          if (error.code === 'MOT_PHUT_VO_LE_FRAME_RENDER_TIMEOUT') {
+            process.exitCode = 1;
+            return;
+          }
+        }
         try { await processMotPhutVoLeScheduleTick({ onError }); }
         catch (error) { onError(error); }
         continue;

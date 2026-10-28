@@ -689,7 +689,7 @@ export function claimNextMotPhutVoLeJob() {
     const row = db.prepare("SELECT * FROM module_jobs WHERE status='pending' ORDER BY created_at LIMIT 1").get();
     if (!row) { db.exec('COMMIT'); return null; }
     const now = new Date().toISOString();
-    db.prepare("UPDATE module_jobs SET status='running',attempts=attempts+1,updated_at=? WHERE id=? AND status='pending'").run(now, row.id);
+    db.prepare("UPDATE module_jobs SET status='running',attempts=attempts+1,last_error=NULL,updated_at=? WHERE id=? AND status='pending'").run(now, row.id);
     db.exec('COMMIT');
     return mapJobRow(db.prepare('SELECT * FROM module_jobs WHERE id=?').get(row.id));
   } catch (error) {
@@ -729,10 +729,65 @@ export function isMotPhutVoLeJobCancellationRequested(id) {
 }
 
 export function recoverMotPhutVoLeJobs({ staleAfterMs = 45 * 60_000 } = {}) {
-  const cutoff = new Date(Date.now() - Math.max(5 * 60_000, staleAfterMs)).toISOString();
-  const result = database().prepare("UPDATE module_jobs SET status=CASE WHEN attempts < 2 THEN 'pending' ELSE 'failed' END,last_error=CASE WHEN attempts < 2 THEN 'Worker trước đó dừng giữa chừng; job được xếp lại.' ELSE 'Job dừng giữa chừng quá số lần phục hồi.' END,updated_at=? WHERE status='running' AND updated_at < ?")
-    .run(new Date().toISOString(), cutoff);
-  return result.changes;
+  const db = database();
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  const jobs = db.prepare("SELECT * FROM module_jobs WHERE status='running'").all();
+  let recovered = 0;
+
+  for (const row of jobs) {
+    const progress = parseJson(row.progress_json, {});
+    const payload = parseJson(row.payload_json, {});
+    const phase = String(progress?.phase || '');
+    const contentId = String(progress.resumeContentId || progress.contentId || payload.contentId || payload.resumeContentId || '');
+    const canResumeWithoutAlignment = phase === 'local-alignment-started'
+      && hasReusableMotPhutVoLeAssets(db, contentId, payload.settings || {});
+    const phaseTimeout = phase === 'frame-render' ? 5 * 60_000
+      : phase === 'ffmpeg-render' ? 25 * 60_000
+        : canResumeWithoutAlignment ? 2 * 60_000
+          : Math.max(5 * 60_000, Number(staleAfterMs) || 45 * 60_000);
+    const updatedAt = Date.parse(row.updated_at);
+    if (!Number.isFinite(updatedAt) || nowMs - updatedAt < phaseTimeout) continue;
+
+    const retry = Number(row.attempts) < 4;
+    const message = retry
+      ? 'MPVL job không có tiến triển; đang xếp lại với kịch bản và media đã lưu.'
+      : 'MPVL job tiếp tục không có tiến triển sau lần phục hồi; đã dừng để tránh treo vô hạn.';
+    const recoveryProgress = {
+      ...progress,
+      phase: retry ? 'recovered' : 'failed',
+      recovery: { at: now, previousPhase: phase || null, reason: message }
+    };
+    const result = db.prepare(`UPDATE module_jobs SET status=?,progress_json=?,last_error=?,updated_at=?
+      WHERE id=? AND status='running' AND updated_at=?`)
+      .run(retry ? 'pending' : 'failed', JSON.stringify(recoveryProgress), message, now, row.id, row.updated_at);
+    if (!result.changes) continue;
+    recovered += 1;
+
+    if (!retry) {
+      if (contentId) {
+        db.prepare("UPDATE content_records SET status='failed',last_error=?,updated_at=? WHERE id=? AND status='processing'")
+          .run(message, now, contentId);
+      }
+    }
+  }
+  return recovered;
+}
+
+function hasReusableMotPhutVoLeAssets(db, contentId, settings) {
+  if (!contentId) return false;
+  const row = db.prepare('SELECT script_text,audio_path,alignment_manifest_json,voice_profile_json FROM content_records WHERE id=?').get(contentId);
+  if (!row?.audio_path || !fs.existsSync(row.audio_path)) return false;
+  const alignment = parseJson(row.alignment_manifest_json, null);
+  const voice = parseJson(row.voice_profile_json, null);
+  if (!alignment?.reliable || !Array.isArray(alignment.tokens) || !alignment.tokens.length
+    || voice?.voice !== settings.voice || Number(voice?.speed) !== Number(settings.speed)) return false;
+  const normalizeWord = (value) => String(value || '').normalize('NFC').toLocaleLowerCase('vi').replace(/[^\p{L}\p{N}]/gu, '');
+  const scriptWords = (String(row.script_text || '').normalize('NFC').match(/\S+/gu) || []).map(normalizeWord);
+  const alignedWords = alignment.tokens.map((token) => normalizeWord(token.text));
+  return scriptWords.length === alignedWords.length
+    && scriptWords.every((word, index) => word === alignedWords[index])
+    && alignment.tokens.every((token, index) => token.id === `${contentId}:word:${index + 1}` && Number(token.index) === index);
 }
 
 function mapJobRow(row) {

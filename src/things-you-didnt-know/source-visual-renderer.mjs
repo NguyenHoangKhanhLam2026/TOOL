@@ -9,7 +9,7 @@ function sourceScript(script = {}) {
     ...script,
     brand: String(script.brand || "Things You Didn't Know").trim(),
     title,
-    thumbnailTitle: String(script.title || '').trim(),
+    thumbnailTitle: String(script.thumbnailHeadline || script.title || '').trim(),
     scriptText: String(script.imageBody || script.scriptText || PREVIEW_BODY).trim()
   };
 }

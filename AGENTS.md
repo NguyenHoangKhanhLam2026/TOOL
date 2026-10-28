@@ -69,3 +69,21 @@ Quy tắc này áp dụng cho mọi ngôn ngữ, không chỉ EN/ZH. Mọi nội
 - Trước mọi thay đổi có thể tác động đến nội dung đã khóa, dừng lại và báo chính xác file/thành phần, chủ đề bị ảnh hưởng, thay đổi dự kiến và rủi ro. Chờ người dùng duyệt rõ phạm vi đó rồi mới sửa. Yêu cầu chung như “update”, “fix” hoặc “thêm nội dung” không tự mở khóa.
 - Nếu có thể cô lập thay đổi mới để không đụng nội dung đã khóa, chỉ tiến hành trong phạm vi cô lập đó. Nếu không thể bảo đảm cô lập, hỏi người dùng trước và chưa thực hiện phần phụ thuộc.
 - Sau khi được duyệt và sửa, rà diff để xác nhận dữ liệu/chủ đề ngoài phạm vi được duyệt không bị thay đổi. Không chạy cập nhật hàng loạt hoặc render lại chủ đề đã hoàn thiện nếu chưa được duyệt rõ.
+
+## Khóa tuyệt đối quy trình Easy English Shadowing đã hoàn thiện
+
+Quy trình làm Easy English Shadowing hiện tại đã được người dùng xác nhận hoàn chỉnh và khóa 100%. Giữ nguyên toàn bộ nội dung và mọi thành phần của quy trình này, gồm kịch bản, dữ liệu, giọng đọc, audio, căn chỉnh/tô sáng từ, bố cục, template, cấu hình, pipeline, giao diện, lịch đăng và đầu ra/video đã hoàn thiện.
+
+- Không tự ý sửa, tái tạo, ghi đè, migration, render lại hoặc thay đổi gián tiếp nội dung, mã, cấu hình hay đầu ra thuộc Easy English Shadowing.
+- Không sửa mã dùng chung nếu có thể làm thay đổi hành vi hoặc đầu ra của Easy English Shadowing.
+- Với mọi yêu cầu sau này có thể tác động đến phạm vi này, dừng trước khi thay đổi; nêu rõ file/thành phần, nội dung hoặc đầu ra bị ảnh hưởng, thay đổi dự kiến và rủi ro; hỏi người dùng và chờ họ mở khóa chính xác phạm vi đó. Không suy diễn quyền mở khóa từ yêu cầu chung như update, fix, render hoặc tối ưu.
+- Chỉ thực hiện kiểm tra đọc-only khi được yêu cầu; không chỉnh sửa trong lúc kiểm tra. Sau mọi lần được mở khóa và sửa, rà diff để xác nhận phần ngoài phạm vi duyệt không đổi.
+
+## Khóa tuyệt đối quy trình Things You Didn’t Know đã hoàn thiện
+
+Quy trình Things You Didn’t Know hiện tại và các nội dung đã hoàn thiện được người dùng xác nhận hoàn chỉnh, khóa 100%. Giữ nguyên toàn bộ fact, chủ đề, kịch bản, tiêu đề, narration, caption/hashtag, nguồn, giọng đọc, audio, căn chỉnh/tô sáng từ, thumbnail, bố cục, template, cấu hình, pipeline, giao diện, lịch đăng và đầu ra/video đã hoàn thiện.
+
+- Không tự ý sửa, tái tạo, ghi đè, xóa, migration, render lại hoặc thay đổi gián tiếp bất kỳ nội dung, mã, dữ liệu, cấu hình, hành vi hay đầu ra nào thuộc Things You Didn’t Know.
+- Không sửa mã dùng chung nếu có thể làm thay đổi Things You Didn’t Know.
+- Với mọi yêu cầu sau này có thể tác động đến Things You Didn’t Know, nêu rõ file/thành phần, nội dung hoặc đầu ra bị ảnh hưởng, thay đổi dự kiến và rủi ro; hỏi người dùng và chờ họ mở khóa chính xác phạm vi đó trước khi thực hiện. Không suy diễn quyền mở khóa từ yêu cầu chung như update, fix, render hoặc tối ưu.
+- Chỉ thực hiện kiểm tra đọc-only khi được yêu cầu; không chỉnh sửa trong lúc kiểm tra. Sau mọi lần được mở khóa và sửa, rà diff để xác nhận phần ngoài phạm vi duyệt không đổi.
