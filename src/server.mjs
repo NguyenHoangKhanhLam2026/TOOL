@@ -644,9 +644,11 @@ async function handleApi(req, res, url) {
   }
   if (route === 'POST /api/english-shadowing/settings') {
     const body = await readJson(req);
-    const allowed = new Set(['voice', 'highlightEnabled', 'highlightStyle', 'highlightMode', 'highlightColor', 'highlightPadding', 'highlightRadius', 'backgroundEffectConfig']);
+    const allowed = new Set(['voice', 'speechRate', 'sentencePauseSeconds', 'highlightEnabled', 'highlightStyle', 'highlightMode', 'highlightColor', 'highlightPadding', 'highlightRadius', 'backgroundEffectConfig']);
     if (Object.keys(body).some((key) => !allowed.has(key))) return json(res, 400, { error: 'Chỉ có thể lưu giọng, Highlight và hiệu ứng nền riêng của EnglishShadowing.' });
     const merged = { ...getEnglishShadowingSettings(), ...body };
+    if (!Number.isFinite(Number(merged.speechRate)) || Number(merged.speechRate) < 0.65 || Number(merged.speechRate) > 0.9) return json(res, 400, { error: 'Tốc độ đọc Shadowing phải từ 0.65× đến 0.90×.' });
+    if (!Number.isFinite(Number(merged.sentencePauseSeconds)) || Number(merged.sentencePauseSeconds) < 0.35 || Number(merged.sentencePauseSeconds) > 0.9) return json(res, 400, { error: 'Khoảng nghỉ câu Shadowing phải từ 0.35 đến 0.90 giây.' });
     if (!KOKORO_VOICES.some((voice) => voice.id === String(merged.voice))) return json(res, 400, { error: 'Giọng Kokoro EnglishShadowing không hợp lệ.' });
     if (typeof merged.highlightEnabled !== 'boolean') return json(res, 400, { error: 'Trạng thái Highlight EnglishShadowing không hợp lệ.' });
     if (!['text', 'tool'].includes(String(merged.highlightStyle))) return json(res, 400, { error: 'Kiểu hiệu ứng Highlight EnglishShadowing không hợp lệ.' });

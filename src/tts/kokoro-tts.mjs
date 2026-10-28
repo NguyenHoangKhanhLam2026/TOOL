@@ -183,7 +183,7 @@ async function makeAudio(items, { settings = {}, onProgress = () => {}, onWorker
   }
 }
 
-export async function synthesizeKokoroSegments(segments, videoId, { settings = {}, onProgress = () => {}, lease = null } = {}) {
+export async function synthesizeKokoroSegments(segments, videoId, { settings = {}, onProgress = () => {}, lease = null, resolveSegmentRate = null } = {}) {
   const workDir = path.join(PATHS.temporary, videoId, 'audio');
   const stagingDir = path.join(PATHS.temporary, videoId, 'kokoro-staging');
   const cacheDir = path.join(PATHS.temporary, 'audio-cache');
@@ -198,8 +198,12 @@ export async function synthesizeKokoroSegments(segments, videoId, { settings = {
   const pending = [];
   const pendingBySegment = new Map();
   for (const [index, segment] of segments.entries()) {
+    const requestedSegmentRate = typeof resolveSegmentRate === 'function' ? Number(resolveSegmentRate(segment)) : speed;
+    const segmentSpeed = Number.isFinite(requestedSegmentRate)
+      ? Math.max(0.5, Math.min(1.25, requestedSegmentRate))
+      : speed;
     const hash = crypto.createHash('sha256')
-      .update(`${MODEL_VERSION}|${voice}|${speed}|${segment.speechText || segment.text}`)
+      .update(`${MODEL_VERSION}|${voice}|${segmentSpeed}|${segment.speechText || segment.text}`)
       .digest('hex');
     const cached = path.join(cacheDir, `${hash}.kokoro.wav`);
     const cachedTiming = `${cached}.wordtimings.json`;
@@ -208,12 +212,12 @@ export async function synthesizeKokoroSegments(segments, videoId, { settings = {
       const token = crypto.randomUUID();
       const rawPath = path.join(stagingDir, `${String(index + 1).padStart(3, '0')}-${token}.raw.wav`);
       const rawTimingPath = `${rawPath}.wordtimings.json`;
-      const item = { ...segment, voiceName: voice, rate: speed, rawPath, rawTimingPath, cachePath: cached, cacheTimingPath: cachedTiming };
+      const item = { ...segment, voiceName: voice, rate: segmentSpeed, rawPath, rawTimingPath, cachePath: cached, cacheTimingPath: cachedTiming };
       pending.push(item);
       pendingBySegment.set(segment.segmentId, item);
     }
     files.push({
-      ...segment, index: segment.order + 1, voice: voice, voiceName: voice, rate: speed,
+      ...segment, index: segment.order + 1, voice: voice, voiceName: voice, rate: segmentSpeed,
       path: target, audioPath: target, cachePath: cached, cacheTimingPath: cachedTiming,
       wordTimings: [], tokens: [], alignment: null, alignmentSource: null,
       alignmentWarning: null, modelVersion: modelStatus.version

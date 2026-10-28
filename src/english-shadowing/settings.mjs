@@ -1,4 +1,3 @@
-import { ENGLISH_SHADOWING_PROFILE } from './profile.mjs';
 import { normalizeBackgroundEffectProfile } from '../../packages/video-engine/background-effects.mjs';
 
 /**
@@ -8,7 +7,8 @@ import { normalizeBackgroundEffectProfile } from '../../packages/video-engine/ba
 export const ENGLISH_SHADOWING_SETTINGS_KEY = 'englishShadowingProfile';
 export const ENGLISH_SHADOWING_DEFAULT_SETTINGS = Object.freeze({
   voice: 'af_heart',
-  speechRate: 1,
+  speechRate: 0.75,
+  sentencePauseSeconds: 0.62,
   highlightEnabled: true,
   highlightStyle: 'text',
   highlightMode: 'word',
@@ -45,11 +45,17 @@ export function normalizeEnglishShadowingSettings(value = {}, { validVoices = nu
   const requestedColor = String(input.highlightColor || ENGLISH_SHADOWING_DEFAULT_SETTINGS.highlightColor).trim();
   const requestedPadding = Number(input.highlightPadding ?? ENGLISH_SHADOWING_DEFAULT_SETTINGS.highlightPadding);
   const requestedRadius = Number(input.highlightRadius ?? ENGLISH_SHADOWING_DEFAULT_SETTINGS.highlightRadius);
+  const requestedSpeechRate = Number(input.speechRate ?? ENGLISH_SHADOWING_DEFAULT_SETTINGS.speechRate);
+  const requestedSentencePause = Number(input.sentencePauseSeconds ?? ENGLISH_SHADOWING_DEFAULT_SETTINGS.sentencePauseSeconds);
 
   return Object.freeze({
     voice,
-    // Speech cadence follows the sample profile and is not a user setting.
-    speechRate: ENGLISH_SHADOWING_PROFILE.reading.fixedModelRate,
+    speechRate: Number.isFinite(requestedSpeechRate)
+      ? Math.round(Math.max(0.65, Math.min(0.9, requestedSpeechRate)) * 100) / 100
+      : ENGLISH_SHADOWING_DEFAULT_SETTINGS.speechRate,
+    sentencePauseSeconds: Number.isFinite(requestedSentencePause)
+      ? Math.round(Math.max(0.35, Math.min(0.9, requestedSentencePause)) * 100) / 100
+      : ENGLISH_SHADOWING_DEFAULT_SETTINGS.sentencePauseSeconds,
     highlightEnabled: input.highlightEnabled !== false,
     highlightStyle,
     highlightMode,
@@ -76,16 +82,12 @@ export function normalizeEnglishShadowingSettings(value = {}, { validVoices = nu
  * is never mutated; only the cloned voice/rate used for this Shadowing job is
  * overridden.
  */
-export function englishShadowingTtsSettings(baseSettings = {}, profile = {}, deliveryProfile = {}) {
+export function englishShadowingTtsSettings(baseSettings = {}, profile = {}) {
   const normalized = normalizeEnglishShadowingSettings(profile);
-  const deliveryRate = Number(deliveryProfile.modelRate);
-  const speechRate = Number.isFinite(deliveryRate) && deliveryRate >= 0.5 && deliveryRate <= 1.25
-    ? deliveryRate
-    : normalized.speechRate;
   return {
     ...baseSettings,
     kokoroEnVoice: normalized.voice,
-    kokoroEnSpeed: speechRate,
+    kokoroEnSpeed: normalized.speechRate,
     // This isolated lesson always needs word timestamps even when the shared
     // highlight preference for another content type is disabled.
     highlightEnabled: true

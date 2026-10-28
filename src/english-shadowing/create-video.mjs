@@ -124,23 +124,19 @@ async function synthesizeLesson(script, videoId, profile) {
   if (sentences.length < 2 || sentences.length > 8) throw new Error('EnglishShadowing: AI phải tạo bài gồm 2 đến 8 câu để giữ nhịp nghỉ như video mẫu.');
   const styleId = resolveEnglishShadowingDeliveryStyle(script.deliveryStyle, script);
   const delivery = getEnglishShadowingDeliveryProfile(styleId, script);
-  const segments = spokenFlow
-    ? [buildEnglishShadowingNarrationSegment(script.scriptText, styleId)]
-    : buildEnglishShadowingSentencePlan(sentences, styleId);
-  // The shared Kokoro cache key includes speechText and the job speed but not
-  // each segment's rate. Add rate-specific trailing whitespace only to the
-  // TTS request; Kokoro normalizes whitespace before phonemizing, so the audio
-  // stays identical apart from its requested rate while cache entries remain
-  // distinct across delivery contours.
-  const ttsSegments = segments.map((segment) => ({
+  const baseSegments = buildEnglishShadowingSentencePlan(sentences, styleId);
+  const segments = baseSegments.map((segment, index) => ({
     ...segment,
-    speechText: `${segment.text}${' '.repeat(Math.round(segment.rate * 100))}`
+    rate: Math.max(0.65, Math.min(0.9, profile.speechRate * (segment.rate / delivery.modelRate))),
+    pauseAfterSeconds: index < baseSegments.length - 1 ? profile.sentencePauseSeconds : 0
   }));
+  const ttsSegments = segments.map((segment) => ({ ...segment, speechText: segment.text }));
   // The per-job copy carries this topic's native rate without changing shared EN settings.
-  const settings = englishShadowingTtsSettings(getSettings(), profile, delivery);
+  const settings = englishShadowingTtsSettings(getSettings(), profile);
   const audio = await withLocalTtsModel('Kokoro TTS', (lease) => synthesizeKokoroSegments(ttsSegments, videoId, {
     settings,
     lease,
+    resolveSegmentRate: (segment) => segment.rate,
     onProgress: (progress, detail) => log('INFO', 'ENGLISH_SHADOWING_TTS_PROGRESS', JSON.stringify({ videoId, progress, ...detail }))
   }));
   const durations = await Promise.all(audio.map((file) => getEnglishShadowingMediaDuration(file.path)));
@@ -154,7 +150,7 @@ async function synthesizeLesson(script, videoId, profile) {
       ? Number(file.pauseAfterSeconds || delivery.sentencePauseSeconds)
       : 0);
   });
-  const combinedAudioPath = spokenFlow ? audio[0]?.path : await joinSentenceAudio(audio, videoId);
+  const combinedAudioPath = audio.length === 1 ? audio[0]?.path : await joinSentenceAudio(audio, videoId);
   return { audioPath: combinedAudioPath, tokens: allTokens, wordTimings: allWordTimings, segmentCount: audio.length, sentenceCount: sentences.length, deliveryStyle: styleId };
 }
 

@@ -666,7 +666,7 @@ export async function renderEnglishShadowingVideo({ script, audioPath, tokens, w
     text: script.scriptText,
     sourceAudioDurationSeconds: sentenceAudioDuration,
     targetWordsPerMinute: delivery.targetWordsPerMinute,
-    preserveSourcePace: usesEnglishShadowingSpokenFlow(script)
+    preserveSourcePace: true
   });
   const scaledTimings = scaleEnglishShadowingWordTimings(wordTimings, pace);
   const intervals = profile.highlightEnabled === false

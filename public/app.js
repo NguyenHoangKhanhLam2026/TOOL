@@ -915,6 +915,13 @@ function updateKokoroSpeedLabel() {
   $('#kokoro-en-speed-label').textContent = `${value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x`;
 }
 
+function updateEnglishShadowingDeliveryLabels() {
+  const rate = Number($('#english-shadowing-speech-rate').value) || 0.75;
+  const pause = Number($('#english-shadowing-sentence-pause').value) || 0.62;
+  $('#english-shadowing-speech-rate-label').textContent = `${rate.toFixed(2)}×`;
+  $('#english-shadowing-sentence-pause-label').textContent = `${pause.toFixed(2)} giây`;
+}
+
 function updateSupertonicKoreanSpeedLabel() {
   const input = $('#supertonic-ko-speed');
   const label = $('#supertonic-ko-speed-label');
@@ -1273,6 +1280,8 @@ async function loadSettings() {
   state.facebookPages = facebookPages;
   if (libraryStatus) applyCosyVoiceLibraryStatus(libraryStatus, { mergeProfiles: false });
   if (!state.englishShadowingSettingsDirty) {
+    $('#english-shadowing-speech-rate').value = englishShadowing.settings.speechRate ?? 0.75;
+    $('#english-shadowing-sentence-pause').value = englishShadowing.settings.sentencePauseSeconds ?? 0.62;
     $('#english-shadowing-highlight-enabled').checked = englishShadowing.settings.highlightEnabled !== false;
     $('#english-shadowing-highlight-style').value = englishShadowing.settings.highlightStyle || 'text';
     $('#english-shadowing-highlight-mode').value = englishShadowing.settings.highlightMode || 'word';
@@ -1280,6 +1289,7 @@ async function loadSettings() {
     $('#english-shadowing-highlight-padding').value = englishShadowing.settings.highlightPadding ?? 6;
     $('#english-shadowing-highlight-radius').value = englishShadowing.settings.highlightRadius ?? 8;
   }
+  updateEnglishShadowingDeliveryLabels();
   const facebookLanguageSelect = $('#facebook-quick-route-language');
   if (!state.facebookPageLanguageDirty) facebookLanguageSelect.value = ['en', 'zh', 'ja', 'english-shadowing'].includes(settings.facebookPageSelectedLanguage) ? settings.facebookPageSelectedLanguage : 'en';
   if (!state.facebookPageCredentialDirty && facebookLanguageSelect.value !== MOT_PHUT_CONTENT) updateFacebookPageForm(settings, facebookPages, facebookLanguageSelect.value);
@@ -1685,11 +1695,49 @@ async function saveSettings() {
     finally { button.disabled = false; }
     return;
   }
+  if (state.englishShadowingSettingsDirty && !state.settingsDirty && !motPhutSettingsPending) {
+    const revision = state.englishShadowingSettingsRevision;
+    storeCurrentBackgroundEffectProfile();
+    const payload = {
+      voice: $('#english-shadowing-voice').value,
+      speechRate: Number($('#english-shadowing-speech-rate').value),
+      sentencePauseSeconds: Number($('#english-shadowing-sentence-pause').value),
+      highlightEnabled: $('#english-shadowing-highlight-enabled').checked,
+      highlightStyle: $('#english-shadowing-highlight-style').value,
+      highlightMode: $('#english-shadowing-highlight-mode').value,
+      highlightColor: $('#english-shadowing-highlight-color').value,
+      highlightPadding: Number($('#english-shadowing-highlight-padding').value),
+      highlightRadius: Number($('#english-shadowing-highlight-radius').value),
+      backgroundEffectConfig: state.englishShadowingSettings?.backgroundEffectConfig
+        ? { ...state.englishShadowingSettings.backgroundEffectConfig }
+        : undefined
+    };
+    try {
+      const result = await api('/api/english-shadowing/settings', { method: 'POST', body: JSON.stringify(payload) });
+      const editedWhileSaving = state.englishShadowingSettingsRevision !== revision;
+      const latestBackgroundEffectConfig = state.englishShadowingSettings?.backgroundEffectConfig;
+      state.englishShadowingSettings = {
+        ...result.settings,
+        ...(editedWhileSaving ? { backgroundEffectConfig: latestBackgroundEffectConfig } : {})
+      };
+      if (!editedWhileSaving) {
+        state.englishShadowingSettingsDirty = false;
+        if (state.backgroundEffectLanguage === 'english-shadowing') applyBackgroundEffectProfile('english-shadowing');
+      }
+      toast(editedWhileSaving ? 'Đã lưu cài đặt Shadowing trước đó' : 'Đã lưu cài đặt Shadowing', false,
+        editedWhileSaving ? 'Bạn vừa thay đổi thêm; hãy lưu lần nữa để lưu các giá trị mới.' : 'Cài đặt này chỉ áp dụng cho video Shadowing mới.');
+    } catch (error) {
+      toast('Không lưu được cài đặt Shadowing', true, error.message);
+    } finally { button.disabled = false; }
+    return;
+  }
   const revisionAtSave = state.settingsRevision;
   storeCurrentBackgroundEffectProfile();
   const englishShadowingRevisionAtSave = state.englishShadowingSettingsRevision;
   const englishShadowingPayloadAtSave = state.englishShadowingSettingsDirty ? {
     voice: $('#english-shadowing-voice').value,
+    speechRate: Number($('#english-shadowing-speech-rate').value),
+    sentencePauseSeconds: Number($('#english-shadowing-sentence-pause').value),
     highlightEnabled: $('#english-shadowing-highlight-enabled').checked,
     highlightStyle: $('#english-shadowing-highlight-style').value,
     highlightMode: $('#english-shadowing-highlight-mode').value,
@@ -2149,7 +2197,9 @@ function setupEvents() {
   }
   $('#preview-vieneu-vi').addEventListener('click', (event) => previewVoice('vi', '', event.currentTarget));
   $('#preview-vieneu-en').addEventListener('click', (event) => previewVoice('en', '', event.currentTarget));
-  $('#preview-english-shadowing-voice').addEventListener('click', (event) => previewVoice('en', $('#english-shadowing-voice').value, event.currentTarget, 0.8));
+  $('#preview-english-shadowing-voice').addEventListener('click', (event) => previewVoice('en', $('#english-shadowing-voice').value, event.currentTarget, Number($('#english-shadowing-speech-rate').value || 0.75)));
+  $('#english-shadowing-speech-rate').addEventListener('input', updateEnglishShadowingDeliveryLabels);
+  $('#english-shadowing-sentence-pause').addEventListener('input', updateEnglishShadowingDeliveryLabels);
   $('#preview-vieneu-vi-sbv2').addEventListener('click', (event) => previewVoice('vi', $('#sbv2-vi-voice').value, event.currentTarget));
   $('#preview-vieneu-vi-cosyvoice').addEventListener('click', (event) => previewVoice('vi', $('#cosyvoice-vi-voice').value, event.currentTarget));
   $('#preview-ja').addEventListener('click', (event) => previewVoice('ja', '', event.currentTarget));

@@ -15,11 +15,12 @@ export const ENGLISH_SHADOWING_PROFILE = Object.freeze({
     targetWordsPerMinute: 130.2,
     sampleClipWordsPerMinuteRange: Object.freeze([104, 164]),
     sampleSpeechWordsPerMinuteRange: Object.freeze([106, 172]),
-    fixedModelRate: 0.8,
+    defaultModelRate: 0.75,
+    defaultSentencePauseSeconds: 0.62,
     averageSentencePauseSeconds: 0.54,
-    cadence: 'Every lesson matches sample-1.wav at 130.2 clip words per minute; keep topic-specific tone guidance and sentence intent in each lesson.',
-    userControls: Object.freeze(['voice']),
-    speedControl: 'No speed control in the UI. Use sample-1.wav as the fixed pace for every Shadowing topic. Do not reuse the main English speed setting.'
+    cadence: 'Use the existing sample as a style reference. Shadowing keeps its own adjustable rate and sentence pause while preserving each script verbatim.',
+    userControls: Object.freeze(['voice', 'speechRate', 'sentencePauseSeconds']),
+    speedControl: 'Use the isolated Shadowing controls (0.65x–0.90x and 0.35–0.90s sentence pause); do not reuse the main English speed setting.'
   }),
   visual: Object.freeze({
     background: 'Single cool mint-paper texture; static through the lesson.',
