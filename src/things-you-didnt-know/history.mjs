@@ -11,6 +11,7 @@ const DATABASE_PATH = path.join(STORE_DIR, 'history.sqlite');
 const OUTPUT_ROOT = path.join(DATA, 'outputs', 'things-you-didnt-know');
 const TEMP_ROOT = path.join(DATA, 'temporary');
 let connection;
+let activityConnection;
 
 function db() {
   if (connection) return connection;
@@ -262,6 +263,43 @@ export function logThingsYouDidntKnowActivity({ jobId = null, contentId = null, 
 }
 export function listThingsYouDidntKnowActivity(limit = 200) {
   return db().prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?').all(Math.max(1, Math.min(1000, Number(limit) || 200)));
+}
+
+function activityDbIfPresent() {
+  if (activityConnection) return activityConnection;
+  if (!fs.existsSync(DATABASE_PATH)) return null;
+  const database = new DatabaseSync(DATABASE_PATH);
+  database.exec('PRAGMA busy_timeout=5000;');
+  const exists = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='activity_log'").get();
+  if (!exists) { database.close(); return null; }
+  activityConnection = database;
+  return activityConnection;
+}
+
+export function listThingsYouDidntKnowActivityForGlobalLog(limit = 100) {
+  const database = activityDbIfPresent();
+  if (!database) return [];
+  return database.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?')
+    .all(Math.max(1, Math.min(1000, Number(limit) || 100)));
+}
+
+export function listAllThingsYouDidntKnowActivity() {
+  return activityDbIfPresent()?.prepare('SELECT * FROM activity_log ORDER BY created_at DESC').all() || [];
+}
+
+export function clearThingsYouDidntKnowActivity() {
+  const database = activityDbIfPresent();
+  if (!database) return 0;
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const count = database.prepare('SELECT COUNT(*) AS count FROM activity_log').get().count;
+    database.prepare('DELETE FROM activity_log').run();
+    database.exec('COMMIT');
+    return count;
+  } catch (error) {
+    try { database.exec('ROLLBACK'); } catch { }
+    throw error;
+  }
 }
 
 function factFingerprint(countryId, themeId, factText) {

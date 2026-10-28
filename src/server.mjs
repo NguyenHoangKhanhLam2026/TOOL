@@ -10,6 +10,7 @@ import {
   listFacebookPageProfiles, getFacebookPageProfile, getFacebookPageForLanguage, facebookPageProfileLanguage, facebookPageProfileMatchesLanguage, facebookPageProfileHasActiveWork, saveFacebookPageProfile, setFacebookPageVerification, setFacebookPageRoute, clearFacebookPageRoute, getFacebookPageRoutes, deleteFacebookPageProfile,
   getEnglishShadowingSettings, saveEnglishShadowingSettings
 } from './database/db.mjs';
+import { clearThingsYouDidntKnowActivity, listAllThingsYouDidntKnowActivity, listThingsYouDidntKnowActivityForGlobalLog } from './things-you-didnt-know/history.mjs';
 import { providerStatus } from './ai/script-service.mjs';
 import { beginChatGPTSignIn, completeChatGPTSignIn, chatgptStatus, disconnectChatGPT } from './ai/chatgpt-plan.mjs';
 import { facebookTokenSaved, saveFacebookToken, clearFacebookToken, facebookPageTokenPath, MetaGraphAdapter } from '../packages/facebook-engine/meta-graph-adapter.mjs';
@@ -1036,14 +1037,31 @@ async function handleApi(req, res, url) {
     }
   }
   if (route === 'GET /api/publish-history') return json(res, 200, { history: listPublishHistory() });
-  if (route === 'GET /api/logs') return json(res, 200, { logs: db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id DESC LIMIT 100').all() });
+  if (route === 'GET /api/logs') {
+    const mainLogs = db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id DESC LIMIT 100').all();
+    const thingsLogs = listThingsYouDidntKnowActivityForGlobalLog(100).map((item) => ({
+      level: item.severity, code: item.code, message: item.message, job_id: item.job_id,
+      created_at: item.created_at, source: 'things-you-didnt-know'
+    }));
+    const logs = [...mainLogs, ...thingsLogs]
+      .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
+      .slice(0, 100);
+    return json(res, 200, { logs });
+  }
   if (route === 'DELETE /api/logs') {
+    const thingsDeleted = clearThingsYouDidntKnowActivity();
     const count = db.prepare('SELECT COUNT(*) AS count FROM logs').get().count;
     db.prepare('DELETE FROM logs').run();
-    return json(res, 200, { deleted: count });
+    return json(res, 200, { deleted: count + thingsDeleted, deletedBySource: { main: count, thingsYouDidntKnow: thingsDeleted } });
   }
   if (route === 'GET /api/logs/export') {
-    const lines = db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id').all();
+    const lines = [
+      ...db.prepare('SELECT level,code,message,job_id,created_at FROM logs ORDER BY id').all(),
+      ...listAllThingsYouDidntKnowActivity().map((item) => ({
+        level: item.severity, code: item.code, message: item.message, job_id: item.job_id,
+        created_at: item.created_at, source: 'things-you-didnt-know'
+      }))
+    ].sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
     const safe = lines.map((item) => ({ ...item, message: item.message.replace(/(access_token|refresh_token|Authorization)\s*[:=]\s*[^\s,&]+/gi, '$1=[ẩn]') }));
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'content-disposition': 'attachment; filename="auto-english-reels-logs.json"' });
     res.end(JSON.stringify(safe, null, 2)); return;

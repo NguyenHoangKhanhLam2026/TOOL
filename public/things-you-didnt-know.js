@@ -488,15 +488,6 @@ function renderPublishedSchedules() {
   parent.append(wrapper);
 }
 
-function renderActivity() {
-  const list = $('#logs-list');
-  if (!list) return;
-  list.querySelectorAll('.things-log-row').forEach((node) => node.remove());
-  if (!state.activity.length) return;
-  list.querySelector('.empty-state')?.remove();
-  list.insertAdjacentHTML('beforeend', state.activity.slice(0, 80).map((item) => `<div class="log-row things-log-row"><span>${escapeHtml(new Date(item.created_at).toLocaleString())}</span><span class="log-level INFO">INFO</span><strong>${escapeHtml(item.code || 'TYDK')}</strong><span>${escapeHtml(item.message)}</span></div>`).join(''));
-}
-
 function syncScheduleListProfile() {
   const parent = $('#schedule-list');
   const ownList = $('#things-schedule-list');
@@ -515,7 +506,6 @@ async function loadContents() {
     state.activity = activity.activity || [];
     renderLibrary();
     renderSchedules();
-    renderActivity();
     if (state.jobs.some((job) => ['pending', 'running'].includes(job.status))) schedulePoll();
   } catch (error) {
     const status = $('#tydk-create-status');
@@ -727,7 +717,6 @@ window.addEventListener('things-you-didnt-know-mode-change', (event) => setMode(
 $('#content-language-filter')?.addEventListener('change', () => { renderLibrary(); void loadContents(); });
 window.addEventListener('library:rendered', renderLibrary);
 window.addEventListener('schedules:rendered', renderSchedules);
-window.addEventListener('logs:rendered', renderActivity);
 $('.filter-tabs')?.addEventListener('click', () => setTimeout(renderLibrary, 0));
 $('#library-list')?.addEventListener('click', onLibraryClick);
 $('#tydk-save-settings')?.addEventListener('click', () => void saveSettings());

@@ -5,6 +5,7 @@ const MOT_PHUT_CONTENT = 'mot-phut-vo-le';
 const THINGS_YOU_DIDNT_KNOW_CONTENT = 'things-you-didnt-know';
 const autoTopicLabel = 'AI t\u1ef1 ch\u1ecdn ch\u1ee7 \u0111\u1ec1';
 const state = { view: 'overview', topics: [], videos: [], schedules: [], publishedSchedules: [], motPhutSchedules: [], motPhutVideos: [], logs: [], jobs: [], filter: 'all', languageFilter: 'all', overview: null, settings: null, system: null, facebookPages: { profiles: [], routes: {} }, backgroundEffects: [], backgroundEffectEditor: null, backgroundEffectLanguage: 'en', backgroundEffectProfiles: { en: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, zh: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 }, ja: { backgroundEffect: 'bubbles', backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32 } }, backgroundEffectDensity: 28, backgroundEffectSpeed: 58, backgroundEffectOpacity: 32, settingsDirty: false, settingsRevision: 0, contentLanguageSavePromise: Promise.resolve(), contentLanguageRevision: 0, createLanguageSelectionTouched: false, englishShadowingSettings: null, englishShadowingSettingsDirty: false, englishShadowingSettingsRevision: 0, ttsProviderView: 'standard', voiceHighlightContentProfile: 'standard', cosyVoiceUploadedProfileId: '', cosyVoiceActiveProfileId: '', facebookPageLanguageDirty: false, facebookPageCredentialDirty: false, facebookSelectedLanguage: 'en', facebookPageLoadRevision: 0, facebookActiveProfile: null };
+let logsRevision = 0;
 let previewAudio = null;
 let scheduleCalendarMonth = '';
 let scheduleSelectedDay = '';
@@ -663,7 +664,6 @@ function renderSchedules() {
 
 function renderLogs() {
   $('#logs-list').innerHTML = state.logs.length ? state.logs.map((item) => `<div class="log-row"><span>${dateText(item.created_at, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><span class="log-level ${escapeHtml(item.level)}">${escapeHtml(item.level)}</span><strong>${escapeHtml(item.code || 'EVENT')}</strong><span>${escapeHtml(item.message)}</span></div>`).join('') : `<div class="empty-state">Chưa có nhật ký.</div>`;
-  window.dispatchEvent(new Event('logs:rendered'));
 }
 
 async function loadOverview() {
@@ -693,7 +693,13 @@ async function loadSchedules() {
   window.dispatchEvent(new CustomEvent('mot-phut-schedule-state', { detail: { schedules: state.motPhutSchedules } }));
 }
 
-async function loadLogs() { state.logs = (await api('/api/logs')).logs; renderLogs(); }
+async function loadLogs() {
+  const revision = logsRevision;
+  const response = await api('/api/logs');
+  if (revision !== logsRevision) return;
+  state.logs = response.logs || [];
+  renderLogs();
+}
 
 function selectSavedVoice(select, voice) {
   const value = String(voice || '');
@@ -2326,7 +2332,14 @@ function setupEvents() {
   $('#clear-logs').addEventListener('click', async () => {
     if (!confirm('Xóa toàn bộ nhật ký hoạt động?')) return;
     const button = $('#clear-logs'); button.disabled = true;
-    try { const result = await api('/api/logs', { method: 'DELETE' }); state.logs = []; renderLogs(); toast(`Đã xóa ${result.deleted} mục nhật ký.`); }
+    logsRevision += 1;
+    try {
+      const result = await api('/api/logs', { method: 'DELETE' });
+      logsRevision += 1;
+      state.logs = [];
+      renderLogs();
+      toast(`Đã xóa ${result.deleted} mục nhật ký.`);
+    }
     catch (error) { toast('Không xóa được nhật ký', true, error.message); }
     finally { button.disabled = false; }
   });
