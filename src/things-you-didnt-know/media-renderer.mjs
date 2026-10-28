@@ -88,6 +88,7 @@ export async function renderThingsYouDidntKnowVideo({ content, audioPath, timing
   const renderId = crypto.randomUUID();
   const workDir = path.join(TEMP_DIR, renderId);
   fs.mkdirSync(workDir, { recursive: true });
+  try {
   const stagedVideo = path.join(workDir, 'render.tmp.mp4');
   const timing = (() => { try { return JSON.parse(fs.readFileSync(timingPath, 'utf8')); } catch { return { wordBoundaries: [] }; } })();
   const mapped = mapWordBoundariesToTokens(content.imageBody, timing.wordBoundaries || [], 'things-' + content.id, { language: 'en' });
@@ -152,7 +153,6 @@ export async function renderThingsYouDidntKnowVideo({ content, audioPath, timing
   fs.writeFileSync(manifest, lines.join('\n'), 'utf8');
   const stagedScript = path.join(workDir, 'timeline.ffconcat');
   onProgress({ phase: 'render-started', durationSeconds: duration, frameCount: framePlan.length });
-  try {
     await run(FFMPEG_BIN, [
       '-y', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', stagedScript,
       '-i', audioPath, '-map', '0:v:0', '-map', '1:a:0', '-r', '30', '-fps_mode:v', 'cfr',
@@ -174,9 +174,6 @@ export async function renderThingsYouDidntKnowVideo({ content, audioPath, timing
     fs.renameSync(stagedVideo, videoTarget);
     onProgress({ phase: 'render-complete', quality });
     return { path: videoTarget, durationSeconds: quality.durationSeconds, quality, alignment: mapped.alignment };
-  } catch (error) {
-    if (fs.existsSync(videoTarget)) throw error;
-    throw error;
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }

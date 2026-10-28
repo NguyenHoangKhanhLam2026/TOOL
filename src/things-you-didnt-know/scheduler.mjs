@@ -4,13 +4,27 @@ import {
   claimThingsYouDidntKnowUploadSchedule, createThingsYouDidntKnowSchedule, getNextThingsYouDidntKnowStatusCheck,
   getNextThingsYouDidntKnowUploadSchedule, getThingsYouDidntKnowContent, getThingsYouDidntKnowDueSchedule,
   listThingsYouDidntKnowContents, listThingsYouDidntKnowJobs, listThingsYouDidntKnowSchedules,
-  logThingsYouDidntKnowActivity, queueThingsYouDidntKnowJob, updateThingsYouDidntKnowSchedule
+  logThingsYouDidntKnowActivity, queueThingsYouDidntKnowJob, updateThingsYouDidntKnowSchedule,
+  cleanupPublishedThingsYouDidntKnowMedia
 } from './history.mjs';
 import { getThingsYouDidntKnowSettings } from './settings-store.mjs';
 import { getThingsYouDidntKnowSourceVisualDesign } from './source-visual-design-store.mjs';
 import { getThingsYouDidntKnowFacebookVideoStatus, scheduleThingsYouDidntKnowOnFacebook } from './facebook-publisher.mjs';
 
 let tickRunning = false;
+
+function cleanupConfirmedThingsMedia(contentId = '') {
+  for (const result of cleanupPublishedThingsYouDidntKnowMedia(contentId)) {
+    if (result.cleaned) {
+      const freedMb = (Number(result.removedBytes || 0) / (1024 * 1024)).toFixed(1);
+      logThingsYouDidntKnowActivity({ contentId: result.id, stage: 'media-cleanup', code: 'TYDK_PUBLISHED_MEDIA_CLEANED',
+        message: `Đã dọn ${result.removedArtifacts || 0} thư mục media sau khi Facebook đăng; giải phóng khoảng ${freedMb} MB. Fact và lịch sử được giữ.` });
+    } else if (result.failed) {
+      logThingsYouDidntKnowActivity({ contentId: result.id, stage: 'media-cleanup', severity: 'WARN', code: 'TYDK_PUBLISHED_MEDIA_CLEANUP_FAILED',
+        message: `Facebook đã đăng Reel nhưng chưa dọn hết media: ${result.error}` });
+    }
+  }
+}
 
 export function createThingsYouDidntKnowManualSchedule(contentId, scheduledAt, { adapter = null } = {}) {
   const settings = getThingsYouDidntKnowSettings();
@@ -54,6 +68,7 @@ export async function processThingsYouDidntKnowScheduleTick({ onError = () => {}
   if (tickRunning) return;
   tickRunning = true;
   try {
+    cleanupConfirmedThingsMedia();
     const settings = getThingsYouDidntKnowSettings();
     const activeJobs = listThingsYouDidntKnowJobs(500).some((job) => ['pending', 'running'].includes(job.status));
     const today = minuteSlot(new Date()).day;
@@ -144,6 +159,7 @@ export async function processThingsYouDidntKnowScheduleTick({ onError = () => {}
             facebookCheckedAt: new Date().toISOString(), facebookError: null });
           logThingsYouDidntKnowActivity({ contentId: due.contentId, stage: 'facebook-published', code: 'TYDK_FACEBOOK_PUBLISHED',
             message: 'Facebook xác nhận Reel đã đăng.' });
+          cleanupConfirmedThingsMedia(due.contentId);
         } else if (['error', 'failed'].includes(videoStatus)) {
           updateThingsYouDidntKnowSchedule(due.id, { status: 'failed', facebookState: 'failed',
             facebookCheckedAt: new Date().toISOString(), facebookError: 'Meta báo Reel đã đăng thất bại (' + videoStatus + ').' });

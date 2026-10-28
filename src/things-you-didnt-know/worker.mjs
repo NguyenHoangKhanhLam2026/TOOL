@@ -5,7 +5,7 @@ import { claimNextThingsYouDidntKnowJob, completeThingsYouDidntKnowReservation,
   releaseThingsYouDidntKnowReservation, updateThingsYouDidntKnowJob } from './history.mjs';
 import { createThingsYouDidntKnowVideo } from './create-video.mjs';
 import { getThingsYouDidntKnowSettings } from './settings-store.mjs';
-import { listThingsYouDidntKnowSchedules } from './history.mjs';
+import { hasPendingThingsYouDidntKnowPublishedMediaCleanup, listThingsYouDidntKnowSchedules } from './history.mjs';
 import { processThingsYouDidntKnowScheduleTick } from './scheduler.mjs';
 
 let stopping = false;
@@ -31,7 +31,8 @@ export async function processThingsYouDidntKnowJob(job, { onProgress = () => {} 
 
 export function thingsYouDidntKnowSchedulerShouldStayAwake() {
   if (getThingsYouDidntKnowSettings().fullAutoEnabled) return true;
-  return listThingsYouDidntKnowSchedules().some((item) => ['scheduled', 'publishing'].includes(item.status));
+  return hasPendingThingsYouDidntKnowPublishedMediaCleanup()
+    || listThingsYouDidntKnowSchedules().some((item) => ['scheduled', 'publishing'].includes(item.status));
 }
 
 export async function runThingsYouDidntKnowWorker({ pollIntervalMs = 3500, idleExitMs = 0, onError = console.error } = {}) {

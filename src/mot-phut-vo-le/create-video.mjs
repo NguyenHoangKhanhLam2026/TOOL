@@ -73,7 +73,9 @@ export async function createMotPhutVoLeDraft({ topic = '', category = '', conten
       const existing = getAllMotPhutVoLeHistoryForDeduplication({ excludeId: id });
       const duplicate = findIdeaDuplicate(generated, existing, 0.84);
       if (duplicate.duplicate) {
-        throw Object.assign(new Error(`Kịch bản trùng hoặc quá giống nội dung ${duplicate.matchId || 'đã lưu'} (độ tương đồng văn bản ${duplicate.score}).`), { code: 'MOT_PHUT_VO_LE_DUPLICATE_CONTENT' });
+        throw Object.assign(new Error(`Kịch bản trùng hoặc quá giống nội dung ${duplicate.matchId || 'đã lưu'} (lý do ${duplicate.reason}; độ tương đồng văn bản ${duplicate.score}).`), {
+          code: 'MOT_PHUT_VO_LE_DUPLICATE_CONTENT', matchId: duplicate.matchId, similarity: duplicate.score, duplicateReason: duplicate.reason
+        });
       }
       const factCheck = reviewMotPhutVoLeFactClaims(generated);
       const content = saveMotPhutVoLeScript(id, generated, { validation: { schema: 'mot-phut-vo-le-v1', valid: true, factCheck } });
@@ -97,6 +99,11 @@ export async function createMotPhutVoLeVideo({ topic = '', category = '', conten
   const baseSettings = normalizeMotPhutVoLeSettings(settingsInput);
   const existing = contentId ? getMotPhutVoLeContent(contentId) : null;
   if (contentId && !existing) throw Object.assign(new Error(`Saved MPVL draft not found: ${contentId}.`), { code: 'MOT_PHUT_VO_LE_CONTENT_NOT_FOUND' });
+  if (existing?.mediaCleanedAt || existing?.status === 'published') {
+    throw Object.assign(new Error('Video MPVL đã đăng lên Facebook và media cục bộ đã được dọn; không thể tạo lại đầu ra cho mục đã khóa.'), {
+      code: 'MOT_PHUT_VO_LE_PUBLISHED_MEDIA_CLEANED'
+    });
+  }
   if (existing?.status === 'complete' && existing.videoPath && fs.existsSync(existing.videoPath)) {
     onProgress({ phase: 'complete', contentId, videoPath: existing.videoPath, resumed: true });
     return existing;
@@ -229,6 +236,11 @@ export async function rerenderMotPhutVoLeVideo(id, { design: designInput = null,
   let content = getMotPhutVoLeContent(id);
   const savedRenderSettings = content?.validation?.renderSettings || createMotPhutVoLeRenderSettings(getMotPhutVoLeSettings());
   if (!content) throw new Error('Không tìm thấy nội dung để render lại.');
+  if (content.mediaCleanedAt || content.status === 'published') {
+    throw Object.assign(new Error('Video MPVL đã đăng lên Facebook và media cục bộ đã được dọn; không thể render lại mục đã khóa.'), {
+      code: 'MOT_PHUT_VO_LE_PUBLISHED_MEDIA_CLEANED'
+    });
+  }
   const currentVoice = content.voiceProfile?.voice || 'Hải Đăng';
   const currentSpeed = Number(content.voiceProfile?.speed) || 1;
   const targetSettings = normalizeMotPhutVoLeSettings({ voice: voice || currentVoice, speed: speed ?? currentSpeed });

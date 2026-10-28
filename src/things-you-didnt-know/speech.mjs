@@ -73,9 +73,10 @@ function sentencePause(sentence, index, count) {
 /** Generate Things narration in sentence-sized Kokoro units, then join it with short, predictable rests.
  * The generic EN/ZH TTS path is intentionally untouched. Word timings are aligned once on the final audio.
  */
-export async function synthesizeThingsNarration({ text, voice, speed, outputPath, timingPath, settings = {} }) {
+export async function synthesizeThingsNarration({ text, voice, speed, outputPath, timingPath, contentId = '', settings = {} }) {
   const sentences = splitNarrationSentences(text);
-  const batchId = 'things-speech-' + crypto.randomUUID();
+  const safeContentId = String(contentId || '').replace(/[^a-zA-Z0-9_-]+/gu, '-').slice(0, 80) || 'unassigned';
+  const batchId = 'things-speech-' + safeContentId + '-' + crypto.randomUUID();
   const batchSettings = {
     ...settings,
     kokoroEnVoice: voice,

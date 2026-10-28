@@ -24,12 +24,45 @@ export function jaccardSimilarity(left, right) {
 }
 
 export function trigramSimilarity(left, right) {
-  const a = new Set(trigrams(normalizeForComparison(left)));
-  const b = new Set(trigrams(normalizeForComparison(right)));
+  const normalizedLeft = normalizeForComparison(left);
+  const normalizedRight = normalizeForComparison(right);
+  if (!normalizedLeft || !normalizedRight) return 0;
+  const a = new Set(trigrams(normalizedLeft));
+  const b = new Set(trigrams(normalizedRight));
   if (!a.size || !b.size) return 0;
   let intersection = 0;
   for (const gram of a) if (b.has(gram)) intersection += 1;
   return intersection / (a.size + b.size - intersection);
+}
+
+function fieldSimilarity(left, right) {
+  if (!String(left || '').trim() || !String(right || '').trim()) return 0;
+  return Math.max(jaccardSimilarity(left, right), trigramSimilarity(left, right));
+}
+
+function findCoreConceptDuplicate(candidate, previous) {
+  const title = fieldSimilarity(candidate.titleHint || candidate.title, previous.title);
+  const topic = fieldSimilarity(candidate.topic, previous.topic);
+  const angle = fieldSimilarity(candidate.angle, previous.angle);
+  const summary = fieldSimilarity(candidate.summary || candidate.titleHint, previous.summary || previous.title);
+
+  // MPVL titles are short, so one repeated subject word is not enough. Require
+  // matching title plus another content field, or a close match in both the
+  // topic and its explanatory angle. This catches paraphrased repeats without
+  // blocking a different fact just because it belongs to the same category.
+  if (title >= 0.72 && Math.max(topic, angle, summary) >= 0.28) {
+    return { duplicate: true, score: Math.max(title, topic, angle, summary), reason: 'core-concept-title' };
+  }
+  if (topic >= 0.62 && angle >= 0.58) {
+    return { duplicate: true, score: Math.max(topic, angle), reason: 'core-concept-topic-angle' };
+  }
+  if (topic >= 0.48 && angle >= 0.48 && Math.max(title, summary) >= 0.28) {
+    return { duplicate: true, score: Math.max(topic, angle, title, summary), reason: 'core-concept-topic-angle' };
+  }
+  if (angle >= 0.72 && topic >= 0.38 && Math.max(title, summary) >= 0.32) {
+    return { duplicate: true, score: Math.max(topic, angle, title, summary), reason: 'core-concept-angle' };
+  }
+  return null;
 }
 
 function trigrams(value) {
@@ -80,6 +113,8 @@ export function findIdeaDuplicate(candidate, history = [], threshold = 0.78) {
     if (repeatedSentence >= SCRIPT_SENTENCE_DUPLICATE_THRESHOLD) {
       return { duplicate: true, score: repeatedSentence, reason: 'script-sentence', matchId: previous.id || null };
     }
+    const coreConcept = findCoreConceptDuplicate(candidate, previous);
+    if (coreConcept) return { ...coreConcept, matchId: previous.id || null };
     const score = compareIdeaSimilarity(candidate, previous);
     if (score >= threshold) return { duplicate: true, score, reason: 'text-similarity', matchId: previous.id || null };
   }

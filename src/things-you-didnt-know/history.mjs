@@ -8,6 +8,8 @@ import { THINGS_YOU_DIDNT_KNOW_JOB_TYPE } from './settings.mjs';
 
 const STORE_DIR = path.join(DATA, 'things-you-didnt-know');
 const DATABASE_PATH = path.join(STORE_DIR, 'history.sqlite');
+const OUTPUT_ROOT = path.join(DATA, 'outputs', 'things-you-didnt-know');
+const TEMP_ROOT = path.join(DATA, 'temporary');
 let connection;
 
 function db() {
@@ -40,6 +42,8 @@ function db() {
       source_status TEXT NOT NULL DEFAULT 'needs_review', source_review_note TEXT,
       script_json TEXT NOT NULL, settings_snapshot_json TEXT NOT NULL, design_snapshot_json TEXT NOT NULL,
       audio_path TEXT, timing_path TEXT, video_path TEXT, thumbnail_path TEXT, duration_seconds REAL,
+      media_cleanup_on_publish INTEGER NOT NULL DEFAULT 0, media_cleanup_pending INTEGER NOT NULL DEFAULT 0,
+      media_cleaned_at TEXT,
       status TEXT NOT NULL DEFAULT 'script_ready', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS tydk_contents_created_idx ON contents(created_at DESC);
@@ -72,6 +76,14 @@ function db() {
   const addCountry = dbInsertCountry();
   for (const country of COUNTRY_CATALOG) addCountry.run(country.id, country.name, country.continent);
   connection.prepare("INSERT OR IGNORE INTO module_state(key,value,updated_at) VALUES('country_cycle','1',?)").run(now());
+  const contentColumns = new Set(connection.prepare('PRAGMA table_info(contents)').all().map((column) => column.name));
+  for (const [name, definition] of Object.entries({
+    media_cleanup_on_publish: 'INTEGER NOT NULL DEFAULT 0',
+    media_cleanup_pending: 'INTEGER NOT NULL DEFAULT 0',
+    media_cleaned_at: 'TEXT'
+  })) {
+    if (!contentColumns.has(name)) connection.exec('ALTER TABLE contents ADD COLUMN ' + name + ' ' + definition);
+  }
   const scheduleColumns = new Set(connection.prepare('PRAGMA table_info(module_schedules)').all().map((column) => column.name));
   for (const [name, definition] of [['target_page_id', 'TEXT'], ['adapter', "TEXT NOT NULL DEFAULT 'mock'"], ['upload_json', 'TEXT'], ['facebook_checked_at', 'TEXT']]) {
     if (!scheduleColumns.has(name)) connection.exec('ALTER TABLE module_schedules ADD COLUMN ' + name + ' ' + definition);
@@ -101,6 +113,8 @@ function mapContent(row) {
     settingsSnapshot: parse(row.settings_snapshot_json, {}), designSnapshot: parse(row.design_snapshot_json, {}),
     audioPath: row.audio_path, timingPath: row.timing_path, videoPath: row.video_path,
     thumbnailPath: row.thumbnail_path, durationSeconds: row.duration_seconds, status: row.status,
+    mediaCleanupOnPublish: Boolean(row.media_cleanup_on_publish), mediaCleanupPending: Boolean(row.media_cleanup_pending),
+    mediaCleanedAt: row.media_cleaned_at,
     createdAt: row.created_at, updatedAt: row.updated_at
   };
 }
@@ -291,8 +305,8 @@ export function createThingsYouDidntKnowContent({ jobId, payload, script, source
     database.prepare(`INSERT INTO contents(id,job_id,country_id,country_name,continent,cycle_no,theme_id,theme_name,
       fact_key,fact_text,fact_fingerprint,title,hook,narration,caption,interaction_question,hashtags_json,image_title,image_body,
       illustration_brief,thumbnail_headline,thumbnail_highlights_json,sources_json,voice_style,source_status,source_review_note,
-      script_json,settings_snapshot_json,design_snapshot_json,status,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'script_ready',?,?)`).run(
+      script_json,settings_snapshot_json,design_snapshot_json,media_cleanup_on_publish,status,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,'script_ready',?,?)`).run(
       id, jobId, country.id, country.name, country.continent, Number(payload.cycle) || 1, String(payload.themeId || 'daily-life'), themeName,
       factKey, factText, fingerprint, script.title, script.hook, script.narration, script.caption, script.interactionQuestion,
       JSON.stringify(script.hashtags), script.imageTitle, script.imageBody, script.illustrationBrief, script.thumbnailHeadline,
@@ -398,6 +412,119 @@ export function deleteThingsYouDidntKnowVideo(id) {
     }
     throw error;
   }
+}
+
+function measureThingsArtifactBytes(target) {
+  const stat = fs.lstatSync(target);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) return stat.isFile() ? stat.size : 0;
+  return fs.readdirSync(target).reduce((total, name) => total + measureThingsArtifactBytes(path.join(target, name)), 0);
+}
+
+function activeThingsJobUsesContent(database, row, contentId) {
+  const active = database.prepare("SELECT id,payload_json,progress_json FROM module_jobs WHERE type=? AND status IN ('pending','running')")
+    .all(THINGS_YOU_DIDNT_KNOW_JOB_TYPE);
+  return active.some((job) => {
+    const payload = parse(job.payload_json, {});
+    const progress = parse(job.progress_json, {});
+    return job.id === row.job_id || payload.contentId === contentId || progress.contentId === contentId;
+  });
+}
+
+function cleanupPublishedThingsYouDidntKnowMediaForId(contentId) {
+  const database = db();
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const row = database.prepare('SELECT * FROM contents WHERE id=?').get(contentId);
+    if (!row || !row.media_cleanup_on_publish) {
+      database.exec('COMMIT');
+      return { id: contentId, skipped: true };
+    }
+    const facebookPost = database.prepare(`SELECT 1 FROM module_schedules
+      WHERE content_id=? AND status='published' AND facebook_state='published' AND adapter='meta'
+        AND facebook_video_id IS NOT NULL LIMIT 1`).get(contentId);
+    if (!facebookPost || row.media_cleaned_at) {
+      database.exec('COMMIT');
+      return { id: contentId, skipped: true };
+    }
+    if (activeThingsJobUsesContent(database, row, contentId)) {
+      const stamp = now();
+      database.prepare('UPDATE contents SET media_cleanup_pending=1,updated_at=? WHERE id=?').run(stamp, contentId);
+      database.exec('COMMIT');
+      return { id: contentId, deferred: true };
+    }
+
+    const outputRoot = path.resolve(OUTPUT_ROOT);
+    const contentOutput = path.resolve(outputRoot, contentId);
+    if (path.dirname(contentOutput) !== outputRoot || path.basename(contentOutput) !== contentId) {
+      throw new Error('Thư mục media Things You Didn\'t Know không hợp lệ khi dọn sau khi đăng.');
+    }
+    for (const file of [row.audio_path, row.timing_path, row.video_path, row.thumbnail_path].filter(Boolean)) {
+      const absolute = path.resolve(file);
+      if (!absolute.startsWith(contentOutput + path.sep)) {
+        throw new Error('Đường dẫn media nằm ngoài thư mục Reel; đã dừng để bảo vệ tệp khác.');
+      }
+    }
+
+    let removedBytes = 0;
+    let removedArtifacts = 0;
+    if (fs.existsSync(contentOutput)) {
+      removedBytes = measureThingsArtifactBytes(contentOutput);
+      fs.rmSync(contentOutput, { recursive: true, force: true });
+      removedArtifacts = 1;
+    }
+    const tempRoot = path.resolve(TEMP_ROOT);
+    const speechPrefix = 'things-speech-' + contentId + '-';
+    if (fs.existsSync(tempRoot)) {
+      for (const entry of fs.readdirSync(tempRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !entry.name.startsWith(speechPrefix)) continue;
+        const target = path.resolve(tempRoot, entry.name);
+        if (path.dirname(target) !== tempRoot || path.basename(target) !== entry.name) {
+          throw new Error("Thư mục audio tạm Things You Didn't Know không hợp lệ khi dọn sau khi đăng.");
+        }
+        removedBytes += measureThingsArtifactBytes(target);
+        fs.rmSync(target, { recursive: true, force: true });
+        removedArtifacts += 1;
+      }
+    }
+    const stamp = now();
+    database.prepare(`UPDATE contents SET status='published',audio_path=NULL,timing_path=NULL,video_path=NULL,
+      thumbnail_path=NULL,media_cleanup_pending=0,media_cleaned_at=?,updated_at=? WHERE id=?`).run(stamp, stamp, contentId);
+    database.exec('COMMIT');
+    return { id: contentId, cleaned: true, removedArtifacts, removedBytes };
+  } catch (error) {
+    try { database.exec('ROLLBACK'); } catch { }
+    try {
+      const retryAt = now();
+      database.prepare('UPDATE contents SET media_cleanup_pending=1,updated_at=? WHERE id=?').run(retryAt, contentId);
+    } catch { }
+    throw error;
+  }
+}
+
+export function cleanupPublishedThingsYouDidntKnowMedia(contentId = '') {
+  const id = String(contentId || '');
+  if (id && !/^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/iu.test(id)) {
+    return [{ id, failed: true, error: 'Mã Reel Things You Didn\'t Know không hợp lệ.' }];
+  }
+  const database = db();
+  const retryBefore = new Date(Date.now() - 60_000).toISOString();
+  const rows = id ? [{ id }] : database.prepare(`SELECT c.id FROM contents c WHERE c.media_cleanup_on_publish=1
+    AND c.media_cleaned_at IS NULL AND (c.media_cleanup_pending=0 OR c.updated_at<=?) AND EXISTS (
+      SELECT 1 FROM module_schedules p WHERE p.content_id=c.id AND p.status='published'
+        AND p.facebook_state='published' AND p.adapter='meta' AND p.facebook_video_id IS NOT NULL
+    ) ORDER BY c.updated_at`).all(retryBefore);
+  return rows.map((row) => {
+    try { return cleanupPublishedThingsYouDidntKnowMediaForId(row.id); }
+    catch (error) { return { id: row.id, failed: true, error: String(error.message || error).slice(0, 800) }; }
+  });
+}
+
+export function hasPendingThingsYouDidntKnowPublishedMediaCleanup() {
+  return Boolean(db().prepare(`SELECT 1 FROM contents c WHERE c.media_cleanup_on_publish=1
+    AND c.media_cleaned_at IS NULL AND EXISTS (
+      SELECT 1 FROM module_schedules p WHERE p.content_id=c.id AND p.status='published'
+        AND p.facebook_state='published' AND p.adapter='meta' AND p.facebook_video_id IS NOT NULL
+    ) LIMIT 1`).get());
 }
 
 export function listThingsYouDidntKnowContents({ limit = 250, status = '' } = {}) {

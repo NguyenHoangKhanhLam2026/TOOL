@@ -2,13 +2,27 @@ import { TIMEZONE } from '../config.mjs';
 import { localScheduleSlot, randomNextScheduledTime, zonedLocalToDate } from '../scheduler/time.mjs';
 import {
   createMotPhutVoLeSchedule, deleteMotPhutVoLeSchedule, listMotPhutVoLeJobs, listMotPhutVoLeSchedules,
-  recoverMotPhutVoLeSchedules, queueMotPhutVoLeJob, updateMotPhutVoLeSchedule
+  recoverMotPhutVoLeSchedules, queueMotPhutVoLeJob, updateMotPhutVoLeSchedule,
+  cleanupPublishedMotPhutVoLeMedia, hasPendingMotPhutVoLePublishedMediaCleanup
 } from './history.mjs';
 import { listMotPhutVoLeVideos } from './catalog.mjs';
 import { getMotPhutVoLeSettings, motPhutVoLeFacebookTokenSaved } from './settings-store.mjs';
 import { getMotPhutVoLeVisualDesign } from './visual-design-store.mjs';
 import { getMotPhutVoLeFacebookVideoStatus, scheduleMotPhutVoLeOnFacebook } from './facebook-publisher.mjs';
 import { logMotPhutVoLeActivity } from './activity-log.mjs';
+
+function cleanupConfirmedMotPhutVoLeMedia(contentId = '') {
+  for (const result of cleanupPublishedMotPhutVoLeMedia(contentId)) {
+    if (result.cleaned) {
+      const freedMb = (Number(result.removedBytes || 0) / (1024 * 1024)).toFixed(1);
+      logMotPhutVoLeActivity('INFO', 'MOT_PHUT_VO_LE_PUBLISHED_MEDIA_CLEANED',
+        `Đã dọn ${result.removedArtifacts || 0} nhóm tệp MPVL sau khi Facebook đăng; giải phóng khoảng ${freedMb} MB.${result.sharedCacheRetained ? ' Giữ cache giọng dùng chung vì nội dung khác còn tham chiếu.' : ''} Lịch sử chữ được giữ để chống trùng.`);
+    } else if (result.failed) {
+      logMotPhutVoLeActivity('WARN', 'MOT_PHUT_VO_LE_PUBLISHED_MEDIA_CLEANUP_FAILED',
+        `Facebook đã đăng MPVL ${String(result.id || '').slice(0, 8)} nhưng chưa dọn hết media: ${result.error}`);
+    }
+  }
+}
 
 export function createMotPhutVoLeManualSchedule(contentId, localDateTime) {
   const settings = getMotPhutVoLeSettings();
@@ -32,6 +46,7 @@ export function deleteMotPhutVoLeScheduleFromApp(id) {
 export async function processMotPhutVoLeScheduleTick({ onError = () => {} } = {}) {
   const settings = getMotPhutVoLeSettings();
   recoverMotPhutVoLeSchedules();
+  cleanupConfirmedMotPhutVoLeMedia();
   const schedules = listMotPhutVoLeSchedules().filter((item) => item.countsTowardLimit);
   const videos = listMotPhutVoLeVideos({ limit: 1000 });
   const alreadyScheduled = new Set(schedules.map((item) => item.contentId));
@@ -81,6 +96,7 @@ export async function processMotPhutVoLeScheduleTick({ onError = () => {} } = {}
           publishedAt: checkedAt, facebookCheckedAt: checkedAt, facebookError: null });
         logMotPhutVoLeActivity('INFO', 'MOT_PHUT_VO_LE_FACEBOOK_PUBLISHED',
           'Facebook xác nhận đã đăng video MPVL ' + String(statusDue.contentId || '').slice(0, 8) + '.');
+        cleanupConfirmedMotPhutVoLeMedia(statusDue.contentId);
       } else if (['error', 'failed'].includes(remoteStatus)) {
         updateMotPhutVoLeSchedule(statusDue.id, { status: 'failed', facebookScheduleState: 'failed',
           facebookCheckedAt: checkedAt, facebookError: `Meta báo video MPVL đã đăng thất bại (${remoteStatus}).` });
@@ -139,6 +155,7 @@ export async function processMotPhutVoLeScheduleTick({ onError = () => {} } = {}
 export function motPhutVoLeSchedulerShouldStayAwake() {
   const settings = getMotPhutVoLeSettings();
   return settings.autoScheduleEnabled || settings.autoGenerationEnabled
+    || hasPendingMotPhutVoLePublishedMediaCleanup()
     || (settings.autoPublishEnabled && settings.facebookPageVerified && settings.facebookPageId && motPhutVoLeFacebookTokenSaved()
       && listMotPhutVoLeSchedules().some((item) => item.status === 'scheduled' && item.facebookScheduleState === 'local'))
     || (settings.facebookPageVerified && settings.facebookPageId && motPhutVoLeFacebookTokenSaved()

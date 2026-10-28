@@ -146,7 +146,7 @@ export async function createThingsYouDidntKnowVideo(job, { onProgress = () => {}
       };
       const speech = await synthesizeThingsNarration({
         text: content.narration, voice: settingsSnapshot.voice, speed: settingsSnapshot.speechRate,
-        outputPath: audioPath, timingPath, settings: ttsSettings
+        outputPath: audioPath, timingPath, contentId: content.id, settings: ttsSettings
       });
       progress(currentJob, 'voice-generation', {
         contentId: content.id, voice: settingsSnapshot.voice, sentenceCount: speech.sentenceCount,
